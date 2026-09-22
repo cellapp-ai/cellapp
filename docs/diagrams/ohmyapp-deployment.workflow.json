@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "OhMyApp 发布与访问流程",
+    "subtitle": "从 AI 生成静态应用，到设备授权、原子发布和密钥访问",
+    "output": "ohmyapp-deployment-flow.html",
+    "viewBox": [720, 860]
+  },
+  "lanes": [
+    { "id": "owner", "label": "所有者浏览器" },
+    { "id": "local", "label": "AI Agent / Skill / CLI" },
+    { "id": "control", "label": "Go 控制面与应用网关" },
+    { "id": "storage", "label": "PostgreSQL / 七牛 S3" },
+    { "id": "visitor", "label": "应用访问者" }
+  ],
+  "phases": [
+    { "id": "prepare", "label": "生成与构建", "fromCol": 0, "toCol": 2 },
+    { "id": "authorize", "label": "授权", "fromCol": 3, "toCol": 3, "variant": "security" },
+    { "id": "release", "label": "发布与访问", "fromCol": 4, "toCol": 5, "variant": "emphasis" }
+  ],
+  "nodes": [
+    { "id": "request", "lane": "owner", "col": 0, "type": "external", "label": "提出需求", "sublabel": "生成网页工具" },
+    { "id": "approve", "lane": "owner", "col": 3, "type": "security", "label": "登录并确认", "sublabel": "dev 固定账号 / GitHub", "tag": "核对匹配码", "width": 112 },
+    { "id": "skill", "lane": "local", "col": 0, "type": "frontend", "label": "部署 Skill", "sublabel": "选择构建参数", "width": 72 },
+    { "id": "build", "lane": "local", "col": 2, "type": "frontend", "label": "本地构建", "sublabel": "校验静态产物", "width": 64 },
+    { "id": "device", "lane": "control", "col": 3, "type": "security", "label": "设备授权", "sublabel": "一次领取凭证", "tag": "10 分钟", "width": 60 },
+    { "id": "upload", "lane": "local", "col": 4, "type": "messagebus", "label": "流式上传", "sublabel": "清单 + 摘要" },
+    { "id": "result", "lane": "local", "col": 5, "type": "frontend", "label": "返回发布结果", "sublabel": "固定地址 + 首次密钥" },
+    { "id": "publish", "lane": "control", "col": 4, "type": "backend", "label": "原子发布", "sublabel": "校验并切换版本", "width": 60 },
+    { "id": "gateway", "lane": "control", "col": 5, "type": "backend", "label": "应用网关", "sublabel": "逐资源鉴权" },
+    { "id": "persist", "lane": "storage", "col": 2, "type": "database", "label": "保存版本", "sublabel": "元数据 + 私有对象" },
+    { "id": "unlock", "lane": "visitor", "col": 3, "type": "security", "label": "输入分享密钥", "sublabel": "换取应用会话" },
+    { "id": "content", "lane": "visitor", "col": 5, "type": "external", "label": "访问静态应用", "sublabel": "HTML / JS / 图片" }
+  ],
+  "edges": [
+    { "from": "request", "to": "skill", "variant": "emphasis", "fromSide": "bottom", "toSide": "top", "route": "drop" },
+    { "from": "skill", "to": "build" },
+    { "from": "build", "to": "device", "label": "无有效凭证", "variant": "security", "fromSide": "bottom", "toSide": "top", "route": "drop" },
+    { "from": "device", "to": "approve", "label": "验证链接 + 匹配码", "variant": "security", "role": "return", "fromSide": "top", "toSide": "bottom", "route": "up-channel", "channelY": 160, "labelAt": [350, 167] },
+    { "from": "approve", "to": "upload", "label": "签发设备凭证", "variant": "emphasis", "fromSide": "bottom", "toSide": "top", "route": "drop", "labelAt": [520, 167] },
+    { "from": "upload", "to": "publish", "variant": "emphasis", "fromSide": "bottom", "toSide": "top", "route": "drop" },
+    { "from": "publish", "to": "persist", "label": "原子提交", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "route": "drop", "labelAt": [400, 415] },
+    { "from": "publish", "to": "result", "label": "成功后返回", "variant": "emphasis", "role": "return", "fromSide": "top", "toSide": "bottom", "route": "drop" },
+    { "from": "unlock", "to": "gateway", "label": "密钥 POST", "variant": "security", "fromSide": "top", "toSide": "bottom", "route": "up-channel", "channelY": 538, "labelAt": [535, 539] },
+    { "from": "gateway", "to": "content", "label": "受保护内容", "variant": "emphasis", "fromSide": "bottom", "toSide": "top", "route": "drop" },
+    { "from": "persist", "to": "gateway", "label": "当前版本", "variant": "dashed", "fromSide": "right", "toSide": "bottom", "route": "outside-right" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "本地与生产", "items": ["本地登录不离开设备", "生产使用 GitHub OAuth + PKCE", "两种模式之后共用同一授权流程"] },
+    { "dot": "emerald", "title": "发布一致性", "items": ["构建失败不会上传", "完整校验后才切换 active version", "发布失败继续提供上一版本"] },
+    { "dot": "rose", "title": "应用访问", "items": ["每个应用独立密钥和来源", "密钥不进入 URL 或日志", "HTML、脚本和图片都先校验会话"] }
+  ]
+}

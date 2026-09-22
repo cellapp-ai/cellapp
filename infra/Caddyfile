@@ -1,0 +1,7 @@
+{
+  auto_https disable_redirects
+}
+https://control.localhost:8443, https://*.apps.localhost:8443 {
+  tls internal
+  reverse_proxy host.docker.internal:3000
+}

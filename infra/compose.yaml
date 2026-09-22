@@ -1,0 +1,23 @@
+services:
+  postgres:
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_USER: ohmyapp
+      POSTGRES_PASSWORD: development
+      POSTGRES_DB: ohmyapp
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: ["postgres:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ohmyapp"]
+      interval: 3s
+      retries: 20
+  proxy:
+    image: caddy:2.10.2-alpine
+    ports: ["127.0.0.1:8443:8443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy:/data
+    extra_hosts: ["host.docker.internal:host-gateway"]
+volumes:
+  postgres:
+  caddy:
