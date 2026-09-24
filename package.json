@@ -1,0 +1,21 @@
+{
+  "name": "cellapp-server",
+  "private": true,
+  "type": "module",
+  "engines": {"node": ">=22.12.0"},
+  "scripts": {
+    "build": "go build -o dist/cellapp-server ./apps/server/cmd/server",
+    "test": "go test ./apps/server/...",
+    "vet": "go vet ./apps/server/...",
+    "dev": "go run ./apps/server/cmd/server",
+    "migrate": "go run ./apps/server/cmd/server -migrate",
+    "browser-test": "go test -count=1 -run TestBrowserEndToEnd -v ./apps/server/internal/hosting",
+    "typecheck-browser": "tsc -p tsconfig.browser.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.4",
+    "playwright-core": "1.63.0",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3"
+  }
+}

@@ -1,0 +1,75 @@
+name: Server checks
+on:
+  push:
+  pull_request:
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.6-alpine
+        env:
+          POSTGRES_USER: ohmyapp
+          POSTGRES_PASSWORD: development
+          POSTGRES_DB: ohmyapp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ohmyapp"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgres://ohmyapp:development@127.0.0.1:5432/ohmyapp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node scripts/check-public-boundary.mjs
+      - run: npm run typecheck-browser
+      - run: go vet ./apps/server/...
+      - run: go test -race -count=1 ./apps/server/...
+      - run: go build -o dist/cellapp-server ./apps/server/cmd/server
+  released-cli-smoke:
+    if: ${{ vars.CELLAPP_CLI_VERSION != '' }}
+    needs: server
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.6-alpine
+        env:
+          POSTGRES_USER: ohmyapp
+          POSTGRES_PASSWORD: development
+          POSTGRES_DB: ohmyapp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ohmyapp"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgres://ohmyapp:development@127.0.0.1:5432/ohmyapp
+      RUN_BROWSER_TESTS: '1'
+      CHROME_PATH: /usr/bin/google-chrome
+      CELLAPP_CLI_ENTRY: ${{ github.workspace }}/.ci-cli/node_modules/@cellapp/cli/dist/packages/cli/src/main.js
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm install --prefix .ci-cli --ignore-scripts @cellapp/cli@${{ vars.CELLAPP_CLI_VERSION }}
+      - run: go test -count=1 -run TestBrowserEndToEnd -v ./apps/server/internal/hosting
