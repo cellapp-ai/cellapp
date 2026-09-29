@@ -1,6 +1,7 @@
 package hosting
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -70,46 +71,55 @@ func (s *Server) listApps(w http.ResponseWriter, r *http.Request) error {
 	if e != nil {
 		return e
 	}
-	rows, e := s.DB.Query(r.Context(), `SELECT id,name,active_deployment,suspended FROM apps WHERE owner_id=$1 AND NOT deleted ORDER BY id`, owner)
+	apps, e := s.ownerApps(r.Context(), owner)
 	if e != nil {
 		return e
+	}
+	jsonResponse(w, 200, apps)
+	return nil
+}
+func (s *Server) ownerApps(ctx context.Context, owner string) ([]App, error) {
+	rows, e := s.DB.Query(ctx, `SELECT id,name,active_deployment,suspended FROM apps WHERE owner_id=$1 AND NOT deleted ORDER BY id`, owner)
+	if e != nil {
+		return nil, e
 	}
 	defer rows.Close()
 	apps := []App{}
 	for rows.Next() {
 		var a App
 		if e = rows.Scan(&a.ID, &a.Name, &a.Active, &a.Suspended); e != nil {
-			return e
+			return nil, e
 		}
 		a.URL = s.Config.AppURL(a.ID)
 		apps = append(apps, a)
 	}
 	if e = rows.Err(); e != nil {
-		return e
+		return nil, e
 	}
-	jsonResponse(w, 200, apps)
-	return nil
+	return apps, nil
 }
 func (s *Server) deleteApp(w http.ResponseWriter, r *http.Request) error {
 	owner, e := s.owner(r)
 	if e != nil {
 		return e
 	}
-	e = s.transaction(r.Context(), func(tx pgx.Tx) error {
-		if e := lockOwner(r.Context(), tx, owner); e != nil {
-			return e
-		}
-		if _, e := s.app(r.Context(), tx, r.PathValue("app"), owner); e != nil {
-			return e
-		}
-		_, e := tx.Exec(r.Context(), `UPDATE apps SET deleted=true,generation=generation+1 WHERE id=$1`, r.PathValue("app"))
-		return e
-	})
-	if e != nil {
+	if e = s.deleteOwnerApp(r.Context(), owner, r.PathValue("app")); e != nil {
 		return e
 	}
 	jsonResponse(w, 200, map[string]bool{"deleted": true})
 	return nil
+}
+func (s *Server) deleteOwnerApp(ctx context.Context, owner, appID string) error {
+	return s.transaction(ctx, func(tx pgx.Tx) error {
+		if e := lockOwner(ctx, tx, owner); e != nil {
+			return e
+		}
+		if _, e := s.app(ctx, tx, appID, owner); e != nil {
+			return e
+		}
+		_, e := tx.Exec(ctx, `UPDATE apps SET deleted=true,generation=generation+1 WHERE id=$1`, appID)
+		return e
+	})
 }
 func (s *Server) resetKey(w http.ResponseWriter, r *http.Request) error {
 	owner, e := s.owner(r)
@@ -125,18 +135,20 @@ func (s *Server) resetKey(w http.ResponseWriter, r *http.Request) error {
 	if !keyValid(in.Key) {
 		return fail(400, "invalid_key", "A random 256-bit hex key is required")
 	}
-	e = s.transaction(r.Context(), func(tx pgx.Tx) error {
-		if _, e := s.app(r.Context(), tx, r.PathValue("app"), owner); e != nil {
-			return e
-		}
-		_, e := tx.Exec(r.Context(), `UPDATE apps SET key_hash=$2,generation=generation+1 WHERE id=$1`, r.PathValue("app"), keyed(s.Config.Secret, in.Key))
-		return e
-	})
-	if e != nil {
+	if e = s.resetOwnerKey(r.Context(), owner, r.PathValue("app"), in.Key); e != nil {
 		return e
 	}
 	jsonResponse(w, 200, map[string]bool{"reset": true})
 	return nil
+}
+func (s *Server) resetOwnerKey(ctx context.Context, owner, appID, key string) error {
+	return s.transaction(ctx, func(tx pgx.Tx) error {
+		if _, e := s.app(ctx, tx, appID, owner); e != nil {
+			return e
+		}
+		_, e := tx.Exec(ctx, `UPDATE apps SET key_hash=$2,generation=generation+1 WHERE id=$1`, appID, keyed(s.Config.Secret, key))
+		return e
+	})
 }
 
 type Deployment struct {
@@ -281,7 +293,7 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) error {
 		}
 		f := d.Manifest[index]
 		// Strictly bounded body: neither chunked encoding nor Content-Length can bypass the manifest.
-		temp, e := os.CreateTemp("", "ohmyapp-upload-*")
+		temp, e := os.CreateTemp("", "cellapp-upload-*")
 		if e != nil {
 			return e
 		}

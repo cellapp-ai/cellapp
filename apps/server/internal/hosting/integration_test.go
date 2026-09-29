@@ -13,10 +13,11 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/fstest"
 	"time"
 
+	"cellapp/apps/server/migrations"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"ohmyapp/apps/server/migrations"
 )
 
 type memoryStorage struct {
@@ -116,7 +117,7 @@ func setup(t *testing.T) *fixture {
 	c.AuthMode = "github"
 	logs := new(bytes.Buffer)
 	storage := &memoryStorage{data: map[string][]byte{}}
-	s := &Server{Config: c, DB: db, Storage: storage, Identity: identityStub{}, Logger: slog.New(slog.NewJSONHandler(logs, nil))}
+	s := &Server{Config: c, DB: db, Storage: storage, Identity: identityStub{}, Logger: slog.New(slog.NewJSONHandler(logs, nil)), Web: fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte(`<html><title>Cellapp</title><main>Enable JavaScript</main></html>`)}}}
 	owner, credential := id(), token()
 	_, e = db.Exec(ctx, `INSERT INTO owners(id,issuer,subject) VALUES($1,'test','owner')`, owner)
 	if e != nil {

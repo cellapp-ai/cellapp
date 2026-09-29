@@ -2,13 +2,13 @@ services:
   postgres:
     image: postgres:17.6-alpine
     environment:
-      POSTGRES_USER: ohmyapp
+      POSTGRES_USER: cellapp
       POSTGRES_PASSWORD: development
-      POSTGRES_DB: ohmyapp
+      POSTGRES_DB: cellapp
     ports: ["127.0.0.1:5432:5432"]
     volumes: ["postgres:/var/lib/postgresql/data"]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ohmyapp"]
+      test: ["CMD-SHELL", "pg_isready -U cellapp"]
       interval: 3s
       retries: 20
   proxy:

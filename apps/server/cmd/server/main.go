@@ -1,14 +1,14 @@
 package main
 
 import (
+	"cellapp/apps/server/internal/hosting"
+	"cellapp/apps/server/migrations"
 	"context"
 	"encoding/json"
 	"flag"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"log/slog"
 	"net/http"
-	"ohmyapp/apps/server/internal/hosting"
-	"ohmyapp/apps/server/migrations"
 	"os"
 	"os/signal"
 	"syscall"
@@ -62,6 +62,10 @@ func run() error {
 	}
 	if c.AuthMode == "github" {
 		server.Identity = hosting.NewIdentity(c)
+	}
+	server.Web, e = hosting.LoadWebFS(c.WebRoot)
+	if e != nil {
+		return e
 	}
 	httpServer := &http.Server{Addr: c.Address, Handler: server.Handler(), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 2 * time.Minute, WriteTimeout: 2 * time.Minute, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	go func() {

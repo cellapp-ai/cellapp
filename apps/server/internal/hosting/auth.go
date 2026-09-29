@@ -9,7 +9,6 @@ import (
 	"html"
 	"io"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -50,7 +49,7 @@ func (i *GitHubIdentity) Exchange(ctx context.Context, code, verifier string) (s
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	req.Header.Set("User-Agent", "OhMyApp")
+	req.Header.Set("User-Agent", "Cellapp")
 	response, e := i.config.Client(ctx, t).Do(req)
 	if e != nil {
 		return "", "", e
@@ -79,15 +78,18 @@ func cookieValue(r *http.Request, name string) string {
 }
 func page(w http.ResponseWriter, title, body string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write([]byte(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>` + html.EscapeString(title) + ` · OhMyApp</title><style>body{font:16px/1.6 system-ui;background:#f5f6fa;color:#182235;margin:0;padding:8vh 20px}main{max-width:520px;margin:auto;background:white;padding:36px;border:1px solid #e0e5ec;border-radius:18px}h1{font-size:26px}input,button{font:inherit;padding:12px;border-radius:8px;border:1px solid #ccd3df;box-sizing:border-box}input{width:100%;margin:12px 0}button{background:#295bdd;color:white;cursor:pointer}a{color:#295bdd}code{overflow-wrap:anywhere}</style><main><p>OhMyApp</p><h1>` + html.EscapeString(title) + `</h1>` + body + `</main></html>`))
+	_, _ = w.Write([]byte(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>` + html.EscapeString(title) + ` · Cellapp</title><style>body{font:16px/1.6 system-ui;background:#f5f6fa;color:#182235;margin:0;padding:8vh 20px}main{max-width:520px;margin:auto;background:white;padding:36px;border:1px solid #e0e5ec;border-radius:18px}h1{font-size:26px}input,button{font:inherit;padding:12px;border-radius:8px;border:1px solid #ccd3df;box-sizing:border-box}input{width:100%;margin:12px 0}button{background:#295bdd;color:white;cursor:pointer}a{color:#295bdd}code{overflow-wrap:anywhere}</style><main><p>Cellapp</p><h1>` + html.EscapeString(title) + `</h1>` + body + `</main></html>`))
 }
 func (s *Server) login(w http.ResponseWriter, r *http.Request) error {
 	if s.Config.AuthMode == "dev" {
-		return s.finishLogin(w, r, "ohmyapp:development", "local-owner", safeReturn(r.URL.Query().Get("return")))
+		if e := s.migrateDevelopmentOwner(r); e != nil {
+			return e
+		}
+		return s.finishLogin(w, r, "cellapp:development", "local-owner", safeControlReturn(r.URL.Query().Get("return")))
 	}
 	state, verifier, browser := token(), token(), token()
 	h := sha256.Sum256([]byte(verifier))
-	data := map[string]string{"state": state, "verifier": verifier, "return": safeReturn(r.URL.Query().Get("return"))}
+	data := map[string]string{"state": state, "verifier": verifier, "return": safeControlReturn(r.URL.Query().Get("return"))}
 	_, e := s.DB.Exec(r.Context(), `INSERT INTO browser_sessions(hash,data,expires_at) VALUES($1,$2,now()+interval '10 minutes')`, keyed(s.Config.Secret, browser), encoded(data))
 	if e != nil {
 		return e
@@ -113,8 +115,32 @@ func (s *Server) callback(w http.ResponseWriter, r *http.Request) error {
 	if e != nil {
 		return fail(401, "invalid_identity", "Identity verification failed")
 	}
-	return s.finishLogin(w, r, issuer, subject, safeReturn(data["return"]))
+	return s.finishLogin(w, r, issuer, subject, safeControlReturn(data["return"]))
 }
+
+// Preserve the owner ID so a brand rename cannot orphan existing apps or credentials.
+func (s *Server) migrateDevelopmentOwner(r *http.Request) error {
+	return s.transaction(r.Context(), func(tx pgx.Tx) error {
+		if _, e := tx.Exec(r.Context(), `SELECT pg_advisory_xact_lock(784232)`); e != nil {
+			return e
+		}
+		var legacy, current bool
+		if e := tx.QueryRow(r.Context(), `SELECT
+			EXISTS(SELECT 1 FROM owners WHERE issuer='ohmyapp:development' AND subject='local-owner'),
+			EXISTS(SELECT 1 FROM owners WHERE issuer='cellapp:development' AND subject='local-owner')`).Scan(&legacy, &current); e != nil {
+			return e
+		}
+		if legacy && current {
+			return fail(409, "development_identity_conflict", "Legacy and Cellapp development owners both exist; resolve their ownership before signing in")
+		}
+		if legacy {
+			_, e := tx.Exec(r.Context(), `UPDATE owners SET issuer='cellapp:development' WHERE issuer='ohmyapp:development' AND subject='local-owner'`)
+			return e
+		}
+		return nil
+	})
+}
+
 func (s *Server) finishLogin(w http.ResponseWriter, r *http.Request, issuer, subject, returnTo string) error {
 	var owner string
 	e := s.DB.QueryRow(r.Context(), `INSERT INTO owners(id,issuer,subject) VALUES($1,$2,$3) ON CONFLICT(issuer,subject) DO UPDATE SET subject=EXCLUDED.subject RETURNING id`, id(), issuer, subject).Scan(&owner)
@@ -132,10 +158,16 @@ func (s *Server) finishLogin(w http.ResponseWriter, r *http.Request, issuer, sub
 	return nil
 }
 func (s *Server) browserOwner(r *http.Request) (string, error) {
+	if cookieValue(r, "__Host-owner") == "" {
+		return "", fail(401, "login_required", "Sign in first")
+	}
 	var owner string
 	e := s.DB.QueryRow(r.Context(), `SELECT owner_id FROM browser_sessions WHERE hash=$1 AND owner_id IS NOT NULL AND expires_at>now()`, keyed(s.Config.Secret, cookieValue(r, "__Host-owner"))).Scan(&owner)
-	if e != nil {
+	if e == pgx.ErrNoRows {
 		return "", fail(401, "login_required", "Sign in first")
+	}
+	if e != nil {
+		return "", e
 	}
 	return owner, nil
 }
@@ -154,13 +186,6 @@ func (s *Server) logoutBrowser(w http.ResponseWriter, r *http.Request) error {
 	http.Redirect(w, r, "/", 303)
 	return e
 }
-func (s *Server) home(w http.ResponseWriter, r *http.Request) error {
-	if r.URL.Path != "/" {
-		return fail(404, "not_found", "Not found")
-	}
-	page(w, "把小工具带到每台设备", `<p>通过部署 Skill 发布静态网页。每个应用拥有独立地址与分享密钥。</p><p><a href="/credentials">管理部署凭证</a></p><p><a href="/device">授权部署设备</a></p>`)
-	return nil
-}
 func (s *Server) createDevice(w http.ResponseWriter, r *http.Request) error {
 	secret := token()
 	code := strings.ToUpper(id()[:10])
@@ -169,14 +194,6 @@ func (s *Server) createDevice(w http.ResponseWriter, r *http.Request) error {
 		return e
 	}
 	jsonResponse(w, 201, map[string]any{"deviceSecret": secret, "userCode": code, "verificationUri": s.Config.ControlOrigin + "/device?code=" + code, "expiresIn": 600, "interval": 5})
-	return nil
-}
-func (s *Server) devicePage(w http.ResponseWriter, r *http.Request) error {
-	if _, e := s.browserOwner(r); e != nil {
-		http.Redirect(w, r, "/auth/login?return="+url.QueryEscape(r.URL.RequestURI()), 302)
-		return nil
-	}
-	page(w, "授权本机部署工具", `<p>仅确认你刚刚在本机 CLI 中发起的请求。确认后，该设备可以管理你的应用。</p><form method="post" action="/device"><label>核对 CLI 中的授权码<input name="code" required value="`+html.EscapeString(r.URL.Query().Get("code"))+`"></label><button name="decision" value="approved">确认授权</button> <button name="decision" value="denied">拒绝</button></form>`)
 	return nil
 }
 func (s *Server) deviceDecision(w http.ResponseWriter, r *http.Request) error {
@@ -191,16 +208,8 @@ func (s *Server) deviceDecision(w http.ResponseWriter, r *http.Request) error {
 	if e = r.ParseForm(); e != nil {
 		return fail(400, "invalid_form", "Invalid form")
 	}
-	decision := r.Form.Get("decision")
-	if decision != "approved" && decision != "denied" {
-		return fail(400, "invalid_decision", "Invalid decision")
-	}
-	result, e := s.DB.Exec(r.Context(), `UPDATE device_authorizations SET owner_id=$1,status=$2 WHERE user_code=$3 AND status='pending' AND expires_at>now()`, owner, decision, strings.ToUpper(r.Form.Get("code")))
-	if e != nil {
+	if e = s.decideDevice(r.Context(), owner, r.Form.Get("code"), r.Form.Get("decision")); e != nil {
 		return e
-	}
-	if result.RowsAffected() != 1 {
-		return fail(400, "invalid_code", "Code expired or already used")
 	}
 	page(w, "已处理授权请求", `<p>回到 AI 对话或命令行继续。</p>`)
 	return nil
@@ -257,30 +266,6 @@ func (s *Server) pollDevice(w http.ResponseWriter, r *http.Request) error {
 	}
 	jsonResponse(w, 200, result)
 	return nil
-}
-func (s *Server) credentialsPage(w http.ResponseWriter, r *http.Request) error {
-	owner, e := s.browserOwner(r)
-	if e != nil {
-		http.Redirect(w, r, "/auth/login?return=/credentials", 302)
-		return nil
-	}
-	rows, e := s.DB.Query(r.Context(), `SELECT id,expires_at FROM credentials WHERE owner_id=$1 AND NOT revoked AND expires_at>now() ORDER BY created_at DESC`, owner)
-	if e != nil {
-		return e
-	}
-	defer rows.Close()
-	body := `<p>撤销后，该设备需要重新授权。</p>`
-	for rows.Next() {
-		var id string
-		var expires time.Time
-		if e = rows.Scan(&id, &expires); e != nil {
-			return e
-		}
-		body += `<form method="post" action="/credentials/revoke"><p><code>` + html.EscapeString(id) + `</code><br>到期 ` + expires.Format(time.RFC3339) + `</p><input type="hidden" name="id" value="` + html.EscapeString(id) + `"><button>撤销</button></form>`
-	}
-	body += `<form method="post" action="/auth/logout"><p><button>退出登录</button></p></form>`
-	page(w, "部署凭证", body)
-	return rows.Err()
 }
 func (s *Server) revokeBrowser(w http.ResponseWriter, r *http.Request) error {
 	if e := s.browserPost(r); e != nil {
