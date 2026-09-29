@@ -99,6 +99,15 @@ RUN_BROWSER_TESTS=1 TEST_DATABASE_URL=<isolated-test-dsn> go test -race -count=1
 
 客户端独立检查见子仓库 AGENTS。文档修改检查事实、链接、命令即可，不增加镜像实现的形式化测试。缺少必要环境时记录缺口，不以跳过代替通过。
 
+## 默认使用 Worktree 开发
+
+- 涉及文件修改的任务默认在独立 Git worktree 中执行；只读调查可在当前检出中进行。
+- 开始前检查主仓库、skills 子仓库及已有 worktree 状态，优先复用适合当前任务且没有其他工作占用的 worktree。
+- 没有合适 worktree 时，自动创建，无需再次确认。Codex 桌面端优先使用内置 worktree 工具。
+- 修改前创建或切换到 `codex/<任务名>` 开发分支，后续编辑、安装依赖、测试和提交均在该 worktree 中完成。
+- 初始化 skills 子模块并保持主仓库固定的提交；不覆盖原检出中的未提交工作。
+- 任务完成后报告 worktree 路径、分支及两个仓库的提交/推送状态；通过内置归档工具清理不再需要的 worktree。
+
 ## 子模块与工作区保护
 
 首次克隆使用 `git clone --recurse-submodules <parent-url>`；已有检出先初始化。日常执行 `git pull --recurse-submodules`，按主仓库固定提交更新。可主动运行仓库本地 `git config submodule.recurse true`，使普通 pull 更新已初始化子模块；新子模块仍需初始化。不要用 `update --remote` 隐式追随最新版本。
