@@ -10,13 +10,31 @@
 
 额度涵盖应用数、文件数、单文件/部署大小、全部暂存和保留版本占用、每应用 UTC 月流量。`UPLOAD_TTL_SECONDS` 和 `RETENTION_SECONDS` 控制回收期限。免费额度耗尽返回错误，不收费。具体数值必须在上线前结合预算配置。
 
+## 命名升级
+
+当前构建产物为配套的 `dist/cellapp-server` 和 `dist/web/`，新环境的数据库和角色均使用 `cellapp`。旧 CLI 别名、项目配置与凭证仍兼容；历史验收记录保留当时名称。
+
+已有 PostgreSQL 数据卷不会因修改 `POSTGRES_USER`、`POSTGRES_DB` 自动改名。可以暂时保留原来的 `DATABASE_URL`，并在 Compose 中同时保留旧角色、库名及健康检查参数；或在停机并备份数据库及角色后原位升级。以下命令仅适用于 README 的本地开发实例；先确认不存在同名 `cellapp` 角色、数据库或 `cellapp_rename_admin` 临时角色，并停止服务端及其他旧数据库连接。角色不能由它自身的会话改名，以下步骤通过本地 Unix socket 使用临时管理员；将 `/secure/backup` 替换为已准备好的私有备份目录：
+
+```sh
+docker compose -f infra/compose.yaml exec -T postgres pg_dump -U ohmyapp -d ohmyapp -Fc > /secure/backup/cellapp-before-rename.dump
+docker compose -f infra/compose.yaml exec -T postgres pg_dumpall -U ohmyapp --roles-only > /secure/backup/cellapp-before-rename-roles.sql
+docker compose -f infra/compose.yaml exec -T postgres psql -U ohmyapp -d postgres -v ON_ERROR_STOP=1 -c 'CREATE ROLE cellapp_rename_admin LOGIN SUPERUSER;'
+docker compose -f infra/compose.yaml exec -T postgres psql -U cellapp_rename_admin -d postgres -v ON_ERROR_STOP=1 -c 'ALTER DATABASE ohmyapp RENAME TO cellapp;'
+docker compose -f infra/compose.yaml exec -T postgres psql -U cellapp_rename_admin -d postgres -v ON_ERROR_STOP=1 -c 'ALTER ROLE ohmyapp RENAME TO cellapp;'
+```
+
+角色 OID 和数据库内容保持不变。旧实例使用 README 中的开发密码；若实际使用 MD5 密码，角色改名会清空密码，需通过 `psql -U cellapp -d postgres` 的 `\password cellapp` 交互重设。随后更新自己的 `DATABASE_URL`、Compose 初始化变量和健康检查配置，启动新服务并验证登录与应用访问，最后使用 `psql -U cellapp -d postgres -c 'DROP ROLE cellapp_rename_admin;'` 删除临时管理员。不要删除数据卷或重新初始化。若中途失败，按数据库实际状态完成后续步骤或用备份恢复，不要直接重复全部命令。回滚时先停服务，通过另一个管理员会话在 `postgres` 库中反向改名数据库和角色，并恢复连接配置及必要密码；完成后删除临时管理员。
+
+首次开发登录会将 `ohmyapp:development` 原位改为 `cellapp:development`，保留原账号 ID、应用、凭证与会话。若两种身份均已存在，返回 `development_identity_conflict`，需人工核对账号和资源，不能自动合并。回滚旧服务前，停止所有新旧服务，并在备份和确认没有冲突后将该固定账号的 issuer 原位改回旧值；不要同时运行使用不同开发 issuer 的服务。GitHub 所有者身份不受影响。
+
 ## 迁移、清理和停用
 
 ```sh
-./dist/ohmyapp-server -migrate
-./dist/ohmyapp-server -cleanup
-./dist/ohmyapp-server -metrics
-./dist/ohmyapp-server -suspend APP_ID
+./dist/cellapp-server -migrate
+./dist/cellapp-server -cleanup
+./dist/cellapp-server -metrics
+./dist/cellapp-server -suspend APP_ID
 ```
 
 维护命令使用服务端数据库权限，应仅向运营人员开放。服务运行时每分钟清理一次；失败记录 `cleanup_failed`，修复依赖后可重试。`-metrics` 输出应用总数和已预留存储；数据库 `usage` 表提供按应用/月份流量明细。停用即时阻止新分发，并提升密钥代数，使已有会话失效。
@@ -40,3 +58,11 @@
 - 验证备份恢复、运营停用、Secret 脱敏及代理端口隔离。
 
 以上真实环境验收未完成前，不应把单元测试通过解释为已可公网运营。
+
+## Web 控制面交付
+
+`npm run build` 生成服务端和完整 Web 静态产物。将两者放在同一版本的发布目录，正常服务显式设置 `WEB_ROOT=/absolute/release/web`；默认目录仅适用于仓库开发。启动时检查 index 和 assets，缺失则失败，不回退到旧首页。数据库迁移、清理、暂停和统计维护命令独立于静态目录。
+
+控制域提供 `/login`、`/applications`、`/applications/<id>`、`/credentials` 和 `/device`，有效深链可刷新。`/api/console` 使用浏览器会话和严格 Origin，CLI `/apps` 等接口继续要求 Bearer。未知资源/API 返回 404，API 与 HTML 不缓存，带指纹资源可长期缓存。CSP 限制资源来自本站并禁止嵌入；不放宽访客网关边界。
+
+部署后检查登录、应用列表、深链与资源加载，并回归 CLI 与访客域。回滚恢复配套的前一版可执行文件和 Web 目录，不恢复已重置的密钥、已撤销凭证或已删除应用。浏览器接口字段及失败恢复见 [Web API](web-api.md)，本轮验收见 [Web 控制面验收](web-control-plane-verification.md)。

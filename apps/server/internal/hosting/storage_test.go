@@ -142,8 +142,8 @@ func TestLiveS3(t *testing.T) {
 	if e = storage.Health(ctx); e != nil {
 		t.Fatal(e)
 	}
-	key := "ohmyapp-probes/" + id()
-	body := []byte("ohmyapp-private-storage-probe")
+	key := "cellapp-probes/" + id()
+	body := []byte("cellapp-private-storage-probe")
 	if e = storage.Put(ctx, key, bytes.NewReader(body), int64(len(body))); e != nil {
 		t.Fatal(e)
 	}

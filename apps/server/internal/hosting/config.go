@@ -21,6 +21,7 @@ type Limits struct {
 	Requests        int64 `json:"requests"`
 }
 type Config struct {
+	WebRoot                                                          string
 	Production                                                       bool
 	Address, ControlOrigin, AppsDomain, AppPort, Secret, DatabaseURL string
 	AuthMode                                                         string
@@ -50,6 +51,10 @@ func LoadConfig(get func(string) string) (c Config, err error) {
 		return n
 	}
 	c.Address = get("LISTEN_ADDRESS")
+	c.WebRoot = get("WEB_ROOT")
+	if c.WebRoot == "" {
+		c.WebRoot = "apps/web/dist"
+	}
 	if c.Address == "" {
 		c.Address = "127.0.0.1:3000"
 	}
@@ -60,7 +65,7 @@ func LoadConfig(get func(string) string) (c Config, err error) {
 		c.AppPort = "8443"
 	}
 	c.Secret = value("SECRET", "local-development-secret-not-for-production")
-	c.DatabaseURL = value("DATABASE_URL", "postgres://ohmyapp:development@localhost:5432/ohmyapp")
+	c.DatabaseURL = value("DATABASE_URL", "postgres://cellapp:development@localhost:5432/cellapp")
 	c.AuthMode = get("AUTH_MODE")
 	if c.AuthMode == "" {
 		if c.Production {

@@ -5,31 +5,31 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { Client, randomKey } from '../packages/cli/src/client.js';
-import { deploy } from '../packages/cli/src/deploy.js';
+import { Client, randomKey } from '../skills/packages/cli/src/client.js';
+import { deploy } from '../skills/packages/cli/src/deploy.js';
 
 const origin = process.env.TEST_CONTROL_ORIGIN!;
-const root = await mkdtemp(join(tmpdir(), 'ohmyapp-browser-'));
+const root = await mkdtemp(join(tmpdir(), 'cellapp-browser-'));
 const browser = await chromium.launch({executablePath: process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true, args: ['--host-resolver-rules=MAP *.localhost 127.0.0.1']});
 try {
-  // This bypass is restricted to the disposable, self-signed test certificate in Chromium;
-  // the CLI still verifies the fixture CA via NODE_EXTRA_CA_CERTS.
-  const ownerContext = await browser.newContext({ignoreHTTPSErrors: true});
+  // The test CA is trusted by the OS; both browser and CLI verify TLS.
+  const ownerContext = await browser.newContext({ignoreHTTPSErrors: false});
   const ownerPage = await ownerContext.newPage();
   const client = new Client(origin, join(root, 'credentials'));
   let verification!: (uri: string) => void;
   const ready = new Promise<string>(resolve => { verification = resolve; });
   const loggingIn = client.login(message => { verification(message.match(/https:\/\/\S+/)![0]); });
   await ownerPage.goto(await ready);
-  const decisionResponse = ownerPage.waitForResponse(r => r.request().method() === 'POST' && new URL(r.url()).pathname === '/device');
-  await ownerPage.getByRole('button', {name: '确认授权'}).click();
+  await ownerPage.getByRole('link', {name: 'Continue to sign in'}).click();
+  const decisionResponse = ownerPage.waitForResponse(r => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/console/device/decision');
+  await ownerPage.getByRole('button', {name: 'Approve access'}).click();
   const decision = await decisionResponse;
   assert.equal(decision.status(), 200, await decision.text());
-  await ownerPage.getByText('已处理授权请求').waitFor();
+  await ownerPage.getByRole('status').filter({hasText: 'Deployment access approved'}).waitFor();
   await loggingIn;
   assert.ok(client.token);
   const cli = async (...args: string[]) => {
-    const {stdout} = await promisify(execFile)(process.execPath, ['--import', 'tsx', 'packages/cli/src/main.ts', ...args, '--origin', origin, '--config-dir', join(root, 'credentials')]);
+    const {stdout} = await promisify(execFile)(process.execPath, ['--import', 'tsx', 'skills/packages/cli/src/main.ts', ...args, '--origin', origin, '--config-dir', join(root, 'credentials')]);
     return JSON.parse(stdout);
   };
 
@@ -40,11 +40,11 @@ try {
   const first = await deploy(client, project, {output: 'dist', spa: true}, () => {});
   assert.ok('shareKey' in first && first.shareKey);
   const key = (first as {shareKey: string}).shareKey;
-  const metadata = JSON.parse(await readFile(join(project, 'ohmyapp.json'), 'utf8'));
+  const metadata = JSON.parse(await readFile(join(project, 'cellapp.json'), 'utf8'));
   assert.ok((await cli('apps')).some((app: {id: string}) => app.id === metadata.appId));
   assert.ok(!JSON.stringify(metadata).includes(key));
-  const context1 = await browser.newContext({ignoreHTTPSErrors: true});
-  const context2 = await browser.newContext({ignoreHTTPSErrors: true});
+  const context1 = await browser.newContext({ignoreHTTPSErrors: false});
+  const context2 = await browser.newContext({ignoreHTTPSErrors: false});
   const page1 = await context1.newPage(); const page2 = await context2.newPage();
   for (const page of [page1, page2]) {
     await page.goto(first.url + '/notes');
@@ -79,7 +79,7 @@ try {
     try { await fetch(origin + '/apps', {credentials: 'include'}); return false; } catch { return true; }
   }, origin), true);
   const asset = await context1.request.get(first.url + '/missing.js'); assert.equal(asset.status(), 404);
-  const outsider = await browser.newContext({ignoreHTTPSErrors: true});
+  const outsider = await browser.newContext({ignoreHTTPSErrors: false});
   for (const method of ['GET', 'HEAD']) {
     const response: APIResponse = await outsider.request.fetch(first.url + '/main.js', {method, headers: {'Accept': '*/*', 'If-None-Match': '*'}});
     assert.equal(response.status(), 401);
@@ -95,16 +95,31 @@ try {
   client.request = originalRequest;
   const update = await deploy(client, project, {}, () => {}); assert.equal(update.url, first.url);
   await page1.reload(); await page1.getByRole('heading', {name: 'Version 2'}).waitFor();
+  await ownerPage.goto(origin + '/applications');
+  await ownerPage.locator(`a[href="/applications/${metadata.appId}"]`).waitFor();
+  await ownerPage.goto(origin + '/applications/' + metadata.appId);
+  await ownerPage.reload();
+  await ownerPage.getByRole('heading',{name:'Current release'}).waitFor();
+  await ownerPage.getByRole('button',{name:'Reset share key',exact:true}).click();
+  await ownerPage.getByRole('button',{name:'Confirm',exact:true}).click();
+  await ownerPage.getByRole('heading',{name:'New share key'}).waitFor();
+  const webKey = await ownerPage.getByRole('heading',{name:'New share key'}).locator('..').locator('code').textContent();
+  assert(webKey && /^[a-f0-9]{64}$/.test(webKey));
+  await page1.reload(); await page1.getByLabel('分享密钥').waitFor();
+  await page1.getByLabel('分享密钥').fill(webKey);await page1.getByRole('button',{name:'打开应用'}).click();await page1.getByRole('heading',{name:'Version 2'}).waitFor();
   const newKey: string = (await cli('reset-key', metadata.appId)).shareKey;
   for (const page of [page1, page2]) { await page.reload(); await page.getByLabel('分享密钥').waitFor(); }
   await page1.getByLabel('分享密钥').fill(newKey); await page1.getByRole('button', {name: '打开应用'}).click();
   await page1.getByRole('heading', {name: 'Version 2'}).waitFor();
-  await cli('delete', metadata.appId);
+  await ownerPage.getByRole('button',{name:'Delete application',exact:true}).click();
+  await ownerPage.getByRole('button',{name:'Confirm',exact:true}).click();
+  await ownerPage.getByRole('heading',{name:'Applications',exact:true}).waitFor();
   assert.equal((await context1.request.get(first.url)).status(), 404);
   await otherPage.reload(); await otherPage.getByRole('heading', {name: 'Another app'}).waitFor();
   await ownerPage.goto(origin + '/credentials');
-  await ownerPage.getByRole('button', {name: '撤销', exact: true}).click();
-  await ownerPage.waitForLoadState();
+  await ownerPage.getByRole('button', {name: 'Revoke', exact: true}).click();
+  await ownerPage.getByRole('button', {name: 'Confirm', exact: true}).click();
+  await ownerPage.getByRole('status').filter({hasText:'Deployment credential revoked'}).waitFor();
   await assert.rejects(client.request('/apps'), /expired or revoked/);
   await client.logout(); await assert.rejects(readFile(client.credentialFile));
   console.log('Browser + CLI: device login, publish, two sessions, local data isolation, SW/CORS rejection, update, reset, delete and logout passed.');

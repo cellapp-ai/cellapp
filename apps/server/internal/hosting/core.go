@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -125,6 +126,14 @@ func safeReturn(path string) string {
 		return "/"
 	}
 	return path
+}
+func safeControlReturn(value string) string {
+	value = safeReturn(value)
+	u, e := url.ParseRequestURI(value)
+	if e != nil || u.IsAbs() || u.Fragment != "" || !webUIPath(u.Path) {
+		return "/"
+	}
+	return value
 }
 func objectKey(deployment, path string) string {
 	return fmt.Sprintf("releases/%s/%s", deployment, digest([]byte(path)))

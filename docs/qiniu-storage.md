@@ -31,6 +31,6 @@ export QINIU_SECRET_KEY='你的SecretKey'
 RUN_S3_TESTS=1 go test -count=1 -run TestLiveS3 -v ./apps/server/internal/hosting
 ```
 
-测试在 `ohmyapp-probes/<随机ID>` 写入一个很小的对象，验证读取、匿名拒绝及删除；不会创建或删除 Bucket，不读取业务对象。异常中断留下的该前缀对象可由所有者清理。测试可能产生少量云端请求与存储用量；只有显式设置开关才执行。
+测试在 `cellapp-probes/<随机ID>` 写入一个很小的对象，验证读取、匿名拒绝及删除；不会创建或删除 Bucket，不读取业务对象。异常中断留下的该前缀对象可由所有者清理。测试可能产生少量云端请求与存储用量；只有显式设置开关才执行。
 
 之后用真实账号完成一次 CLI 发布，验证 `/health`、资源访问、密钥重置和删除后的回收，并人工检查七牛原生下载域名的私有访问设置。这些步骤在凭证尚未配置时保持待验收。

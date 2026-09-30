@@ -1,0 +1,31 @@
+{
+  "name": "@cellapp/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "typecheck": "tsc -b",
+    "lint": "oxlint --deny-warnings .",
+    "test": "npm run build && tsx tests/browser.ts",
+    "build": "npm run typecheck && vite build",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@types/react": "18.3.31",
+    "@types/react-dom": "18.3.7",
+    "@vitejs/plugin-react": "6.1.1",
+    "autoprefixer": "10.6.1",
+    "oxlint": "1.86.0",
+    "postcss": "8.5.28",
+    "tailwindcss": "3.4.1",
+    "vite": "8.3.1"
+  },
+  "dependencies": {
+    "@fontsource/dm-mono": "5.3.0",
+    "@fontsource/space-grotesk": "5.3.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  }
+}

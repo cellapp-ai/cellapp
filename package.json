@@ -1,21 +1,20 @@
 {
-  "name": "ohmyapp",
+  "name": "cellapp",
   "private": true,
   "type": "module",
-  "workspaces": [
-    "packages/cli",
-    "packages/shared"
-  ],
   "engines": {
     "node": ">=22.12.0"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && go build -o dist/ohmyapp-server ./apps/server/cmd/server",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --import tsx --test tests/*.test.ts && go test ./apps/server/...",
+    "build": "node scripts/project.mjs build",
+    "typecheck": "node scripts/project.mjs typecheck",
+    "test": "node scripts/project.mjs test",
     "dev": "go run ./apps/server/cmd/server",
-    "cli": "tsx packages/cli/src/main.ts",
-    "migrate": "go run ./apps/server/cmd/server -migrate"
+    "cli": "node scripts/project.mjs cli",
+    "migrate": "go run ./apps/server/cmd/server -migrate",
+    "dev:web": "npm run dev --workspace @cellapp/web --",
+    "preview:web": "npm run preview --workspace @cellapp/web --",
+    "lint:web": "npm run lint --workspace @cellapp/web"
   },
   "devDependencies": {
     "@types/node": "22.20.4",
@@ -24,13 +23,7 @@
     "typescript": "5.9.3"
   },
   "version": "0.1.0",
-  "bin": {
-    "ohmyapp": "dist/packages/cli/src/main.js"
-  },
-  "files": [
-    "dist/packages",
-    "skills/deploy-static-app",
-    "README.md",
-    "docs"
+  "workspaces": [
+    "apps/web"
   ]
 }

@@ -1,6 +1,6 @@
 # 本轮实现与验证记录
 
-变更：`static-app-hosting`。服务端按用户要求采用 Go；对象存储使用七牛云 S3，密钥仅从系统环境注入。OpenSpec 任务进度为 30/30，未归档。
+变更：`static-app-hosting`。服务端按用户要求采用 Go；对象存储使用七牛云 S3，密钥仅从系统环境注入。OpenSpec 任务进度为 30/30，已归档至 `openspec/changes/archive/2026-09-22-static-app-hosting/`。以下为该轮历史验收，不代表后续变更的验证结果。
 
 ## 已验证
 
@@ -24,11 +24,11 @@
 ```sh
 npm run typecheck
 npm run build
-node --import tsx --test tests/*.test.ts
-TEST_DATABASE_URL=postgres://ohmyapp:development@127.0.0.1:5432/ohmyapp go test -race -count=1 -v ./apps/server/...
-RUN_BROWSER_TESTS=1 TEST_DATABASE_URL=postgres://ohmyapp:development@127.0.0.1:5432/ohmyapp go test -race -count=1 -run TestBrowserEndToEnd -v ./apps/server/internal/hosting
+npm --prefix skills test
+TEST_DATABASE_URL=postgres://cellapp:development@127.0.0.1:5432/cellapp go test -race -count=1 -v ./apps/server/...
+RUN_BROWSER_TESTS=1 TEST_DATABASE_URL=postgres://cellapp:development@127.0.0.1:5432/cellapp go test -race -count=1 -run TestBrowserEndToEnd -v ./apps/server/internal/hosting
 go vet ./apps/server/...
-openspec validate static-app-hosting --strict
+openspec validate --specs --strict
 ```
 
 测试创建并删除自己的随机数据库 schema。测试所用数据库服务保持本机运行，不清除用户数据卷。

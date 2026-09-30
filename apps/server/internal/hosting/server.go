@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -20,6 +21,7 @@ type Identity interface {
 	Exchange(context.Context, string, string) (string, string, error)
 }
 type Server struct {
+	Web      fs.FS
 	Config   Config
 	DB       *pgxpool.Pool
 	Storage  Storage
@@ -56,12 +58,23 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /auth/login", s.wrap(s.login))
 	mux.HandleFunc("GET /auth/callback", s.wrap(s.callback))
 	mux.HandleFunc("POST /auth/logout", s.wrap(s.logoutBrowser))
-	mux.HandleFunc("GET /", s.wrap(s.home))
-	mux.HandleFunc("GET /device", s.wrap(s.devicePage))
+	mux.HandleFunc("GET /", s.wrap(s.webPage))
+	mux.HandleFunc("GET /device", s.wrap(s.webPage))
+	mux.HandleFunc("GET /credentials", s.wrap(s.webPage))
+	mux.HandleFunc("GET /assets/", s.wrap(s.webAsset))
+	mux.HandleFunc("GET /logos/", s.wrap(s.webAsset))
+	mux.HandleFunc("GET /api/console/session", s.webAPI(s.webSession))
+	mux.HandleFunc("POST /api/console/logout", s.webAPI(s.webLogout))
+	mux.HandleFunc("GET /api/console/apps", s.webAPI(s.webApps))
+	mux.HandleFunc("GET /api/console/apps/{app}", s.webAPI(s.webApp))
+	mux.HandleFunc("DELETE /api/console/apps/{app}", s.webAPI(s.webDeleteApp))
+	mux.HandleFunc("POST /api/console/apps/{app}/key", s.webAPI(s.webResetKey))
+	mux.HandleFunc("GET /api/console/credentials", s.webAPI(s.webCredentials))
+	mux.HandleFunc("POST /api/console/credentials/{credential}/revoke", s.webAPI(s.webRevoke))
+	mux.HandleFunc("POST /api/console/device/decision", s.webAPI(s.webDevice))
 	mux.HandleFunc("POST /device", s.wrap(s.deviceDecision))
 	mux.HandleFunc("POST /device-authorizations", s.wrap(s.createDevice))
 	mux.HandleFunc("POST /device-authorizations/poll", s.wrap(s.pollDevice))
-	mux.HandleFunc("GET /credentials", s.wrap(s.credentialsPage))
 	mux.HandleFunc("POST /credentials/revoke", s.wrap(s.revokeBrowser))
 	mux.HandleFunc("DELETE /credentials/current", s.wrap(s.revokeCurrent))
 	mux.HandleFunc("GET /limits", s.wrap(func(w http.ResponseWriter, r *http.Request) error {
