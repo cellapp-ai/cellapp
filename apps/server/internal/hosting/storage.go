@@ -32,7 +32,7 @@ func NewStorage(c Config) (*S3Storage, error) {
 	if c.Production && u.Scheme != "https" {
 		return nil, fmt.Errorf("production S3 endpoint must use HTTPS")
 	}
-	client, e := minio.New(u.Host, &minio.Options{Creds: credentials.NewStaticV4(c.QiniuAccessKey, c.QiniuSecretKey, ""), Secure: u.Scheme == "https", Region: c.S3Region, BucketLookup: minio.BucketLookupPath})
+	client, e := minio.New(u.Host, &minio.Options{Creds: credentials.NewStaticV4(c.S3AccessKeyID, c.S3SecretAccessKey, ""), Secure: u.Scheme == "https", Region: c.S3Region, BucketLookup: minio.BucketLookupPath})
 	return &S3Storage{client, c.S3Bucket}, e
 }
 func (s *S3Storage) Put(ctx context.Context, key string, r io.Reader, n int64) error {

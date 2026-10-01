@@ -25,7 +25,7 @@
     },
     {
       "id": "storage",
-      "label": "PostgreSQL / 七牛 S3"
+      "label": "PostgreSQL / 私有 S3"
     },
     {
       "id": "visitor",
