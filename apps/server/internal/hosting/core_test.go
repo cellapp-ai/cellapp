@@ -49,9 +49,12 @@ func TestConfig(t *testing.T) {
 	if c.AuthMode != "dev" {
 		t.Fatal("development should default to local authentication")
 	}
-	c, e = load(map[string]string{"QINIU_ACCESS_KEY": "access-from-environment", "QINIU_SECRET_KEY": "secret-from-environment"})
-	if e != nil || c.QiniuAccessKey != "access-from-environment" || c.QiniuSecretKey != "secret-from-environment" {
-		t.Fatal("Qiniu credentials were not loaded from the process environment")
+	if c.S3Endpoint != "http://127.0.0.1:9000" || c.S3Region != "us-east-1" || c.S3Bucket != "cellapp" || c.S3AccessKeyID != "cellapp-local" || c.S3SecretAccessKey != "cellapp-local-development-only" {
+		t.Fatal("unexpected local S3 defaults")
+	}
+	c, e = load(map[string]string{"S3_ENDPOINT": "https://storage.example.com", "S3_REGION": "custom-region", "S3_BUCKET": "existing-bucket"})
+	if e != nil || c.S3Endpoint != "https://storage.example.com" || c.S3Region != "custom-region" || c.S3Bucket != "existing-bucket" {
+		t.Fatal("explicit S3 configuration was not preserved")
 	}
 }
 func TestSecretsAndReturnPath(t *testing.T) {

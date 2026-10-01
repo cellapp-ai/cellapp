@@ -26,7 +26,7 @@ type Config struct {
 	Address, ControlOrigin, AppsDomain, AppPort, Secret, DatabaseURL string
 	AuthMode                                                         string
 	GitHubClientID, GitHubClientSecret                               string
-	S3Endpoint, S3Region, S3Bucket, QiniuAccessKey, QiniuSecretKey   string
+	S3Endpoint, S3Region, S3Bucket, S3AccessKeyID, S3SecretAccessKey string
 	Limits                                                           Limits
 	UploadTTL, Retention                                             time.Duration
 }
@@ -80,11 +80,21 @@ func LoadConfig(get func(string) string) (c Config, err error) {
 	} else if c.AuthMode != "dev" && err == nil {
 		err = fmt.Errorf("AUTH_MODE must be github or dev")
 	}
-	c.S3Endpoint = value("S3_ENDPOINT", "https://s3.cn-east-1.qiniucs.com")
-	c.S3Region = value("S3_REGION", "cn-east-1")
-	c.S3Bucket = value("S3_BUCKET", "unconfigured-bucket")
-	c.QiniuAccessKey = value("QINIU_ACCESS_KEY", "unconfigured-access-key")
-	c.QiniuSecretKey = value("QINIU_SECRET_KEY", "unconfigured-secret-key")
+	c.S3Endpoint = value("S3_ENDPOINT", "http://127.0.0.1:9000")
+	c.S3Region = value("S3_REGION", "us-east-1")
+	c.S3Bucket = value("S3_BUCKET", "cellapp")
+	access, secret := get("S3_ACCESS_KEY_ID"), get("S3_SECRET_ACCESS_KEY")
+	if access == "" && secret == "" && !c.Production {
+		access, secret = "cellapp-local", "cellapp-local-development-only"
+	}
+	if err == nil {
+		if access == "" {
+			err = fmt.Errorf("missing configuration: S3_ACCESS_KEY_ID")
+		} else if secret == "" {
+			err = fmt.Errorf("missing configuration: S3_SECRET_ACCESS_KEY")
+		}
+	}
+	c.S3AccessKeyID, c.S3SecretAccessKey = access, secret
 	c.Limits = Limits{number("MAX_APPS", 10), number("MAX_FILES", 1000), number("MAX_FILE_BYTES", 10_000_000), number("MAX_DEPLOYMENT_BYTES", 50_000_000), number("MAX_STORAGE_BYTES", 500_000_000), number("MAX_MONTHLY_TRAFFIC_BYTES", 1_000_000_000), number("MAX_REQUESTS_PER_MINUTE", 120)}
 	c.UploadTTL = time.Duration(number("UPLOAD_TTL_SECONDS", 3600)) * time.Second
 	c.Retention = time.Duration(number("RETENTION_SECONDS", 86400)) * time.Second
