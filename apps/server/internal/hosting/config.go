@@ -83,15 +83,24 @@ func LoadConfig(get func(string) string) (c Config, err error) {
 	c.S3Endpoint = value("S3_ENDPOINT", "http://127.0.0.1:9000")
 	c.S3Region = value("S3_REGION", "us-east-1")
 	c.S3Bucket = value("S3_BUCKET", "cellapp")
-	access, secret := get("S3_ACCESS_KEY_ID"), get("S3_SECRET_ACCESS_KEY")
+	accessName, secretName := "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"
+	access, secret := get(accessName), get(secretName)
+	// Keep legacy credentials as one pair; mixing groups can sign with the wrong identity.
+	if access == "" && secret == "" {
+		legacyAccess, legacySecret := get("QINIU_ACCESS_KEY"), get("QINIU_SECRET_KEY")
+		if legacyAccess != "" || legacySecret != "" {
+			accessName, secretName = "QINIU_ACCESS_KEY", "QINIU_SECRET_KEY"
+			access, secret = legacyAccess, legacySecret
+		}
+	}
 	if access == "" && secret == "" && !c.Production {
 		access, secret = "cellapp-local", "cellapp-local-development-only"
 	}
 	if err == nil {
 		if access == "" {
-			err = fmt.Errorf("missing configuration: S3_ACCESS_KEY_ID")
+			err = fmt.Errorf("missing configuration: %s", accessName)
 		} else if secret == "" {
-			err = fmt.Errorf("missing configuration: S3_SECRET_ACCESS_KEY")
+			err = fmt.Errorf("missing configuration: %s", secretName)
 		}
 	}
 	c.S3AccessKeyID, c.S3SecretAccessKey = access, secret

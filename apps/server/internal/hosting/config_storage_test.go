@@ -12,8 +12,13 @@ func TestS3CredentialGroups(t *testing.T) {
 		access, secret, missing string
 	}{
 		{"generic", map[string]string{"S3_ACCESS_KEY_ID": "new-ak", "S3_SECRET_ACCESS_KEY": "new-sk"}, "new-ak", "new-sk", ""},
-		{"access only", map[string]string{"S3_ACCESS_KEY_ID": "new-ak"}, "", "", "S3_SECRET_ACCESS_KEY"},
-		{"secret only", map[string]string{"S3_SECRET_ACCESS_KEY": "new-sk"}, "", "", "S3_ACCESS_KEY_ID"},
+		{"legacy", map[string]string{"QINIU_ACCESS_KEY": "old-ak", "QINIU_SECRET_KEY": "old-sk"}, "old-ak", "old-sk", ""},
+		{"generic precedence", map[string]string{"S3_ACCESS_KEY_ID": "new-ak", "S3_SECRET_ACCESS_KEY": "new-sk", "QINIU_ACCESS_KEY": "old-ak", "QINIU_SECRET_KEY": "old-sk"}, "new-ak", "new-sk", ""},
+		{"complete generic ignores incomplete legacy", map[string]string{"S3_ACCESS_KEY_ID": "new-ak", "S3_SECRET_ACCESS_KEY": "new-sk", "QINIU_SECRET_KEY": "old-sk"}, "new-ak", "new-sk", ""},
+		{"generic access only", map[string]string{"S3_ACCESS_KEY_ID": "new-ak", "QINIU_ACCESS_KEY": "old-ak", "QINIU_SECRET_KEY": "old-sk"}, "", "", "S3_SECRET_ACCESS_KEY"},
+		{"generic secret only", map[string]string{"S3_SECRET_ACCESS_KEY": "new-sk", "QINIU_ACCESS_KEY": "old-ak"}, "", "", "S3_ACCESS_KEY_ID"},
+		{"legacy access only", map[string]string{"QINIU_ACCESS_KEY": "old-ak"}, "", "", "QINIU_SECRET_KEY"},
+		{"legacy secret only", map[string]string{"QINIU_SECRET_KEY": "old-sk"}, "", "", "QINIU_ACCESS_KEY"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c, err := LoadConfig(func(k string) string { return tc.vars[k] })
@@ -27,14 +32,6 @@ func TestS3CredentialGroups(t *testing.T) {
 				t.Fatal("incorrect credential selection", err)
 			}
 		})
-	}
-}
-
-func TestLegacyCredentialsIgnored(t *testing.T) {
-	legacy := map[string]string{"QINIU_ACCESS_KEY": "old-ak", "QINIU_SECRET_KEY": "old-sk"}
-	c, err := LoadConfig(func(k string) string { return legacy[k] })
-	if err != nil || c.S3AccessKeyID != "cellapp-local" || c.S3SecretAccessKey != "cellapp-local-development-only" {
-		t.Fatal("legacy credentials changed development defaults", err)
 	}
 }
 
@@ -66,7 +63,7 @@ func TestProductionS3RequiresExplicitConfiguration(t *testing.T) {
 		t.Fatal("production accepted default credentials")
 	}
 	vars["QINIU_ACCESS_KEY"], vars["QINIU_SECRET_KEY"] = "legacy-ak", "legacy-sk"
-	if _, err := LoadConfig(func(k string) string { return vars[k] }); err == nil {
-		t.Fatal("production accepted legacy credentials")
+	if _, err := LoadConfig(func(k string) string { return vars[k] }); err != nil {
+		t.Fatal("complete legacy production configuration rejected", err)
 	}
 }
