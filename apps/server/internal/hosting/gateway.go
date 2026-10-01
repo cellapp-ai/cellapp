@@ -29,15 +29,18 @@ func (s *Server) serveApp(w http.ResponseWriter, r *http.Request, appID string) 
 	var file Entry
 	var showPage bool
 	var redirect string
+	var publicData *AppData
 	e := s.transaction(r.Context(), func(tx pgx.Tx) error {
 		var a App
-		e := tx.QueryRow(r.Context(), `SELECT id,active_deployment,key_hash,generation,deleted,suspended FROM apps WHERE id=$1 FOR UPDATE`, appID).Scan(&a.ID, &a.Active, &a.KeyHash, &a.Generation, &a.Deleted, &a.Suspended)
+		var provider, dataURL, anonKey *string
+		e := tx.QueryRow(r.Context(), `SELECT id,active_deployment,key_hash,generation,deleted,suspended,data_provider,data_url,data_anon_key FROM apps WHERE id=$1 FOR UPDATE`, appID).Scan(&a.ID, &a.Active, &a.KeyHash, &a.Generation, &a.Deleted, &a.Suspended, &provider, &dataURL, &anonKey)
 		if e != nil || a.Deleted {
 			return fail(404, "app_not_found", "Application not found")
 		}
 		if a.Suspended {
 			return fail(403, "app_suspended", "Application suspended")
 		}
+		a.Data = parseAppData(provider, dataURL, anonKey)
 		if r.Method == "POST" {
 			if r.Header.Get("Origin") != s.Config.AppURL(appID) {
 				return fail(403, "origin_rejected", "Invalid form origin")
@@ -58,7 +61,8 @@ func (s *Server) serveApp(w http.ResponseWriter, r *http.Request, appID string) 
 			redirect = safeReturn(r.Form.Get("return"))
 			return nil
 		}
-		if strings.HasPrefix(r.URL.Path, "/_hosting/") {
+		dataRequest := r.URL.Path == "/_hosting/data"
+		if strings.HasPrefix(r.URL.Path, "/_hosting/") && !dataRequest {
 			return fail(404, "not_found", "Unknown platform path")
 		}
 		var valid bool
@@ -73,6 +77,13 @@ func (s *Server) serveApp(w http.ResponseWriter, r *http.Request, appID string) 
 				return nil
 			}
 			return fail(401, "key_required", "Enter the application share key")
+		}
+		if dataRequest {
+			if a.Data == nil {
+				return fail(404, "data_not_configured", "No data backend is bound")
+			}
+			publicData = a.Data
+			return nil
 		}
 		if a.Active == nil {
 			return fail(404, "not_published", "Application has not been published")
@@ -148,6 +159,14 @@ func (s *Server) serveApp(w http.ResponseWriter, r *http.Request, appID string) 
 	if showPage {
 		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; worker-src 'none'")
 		page(w, "输入分享密钥", `<p>此应用由独立密钥保护。验证后可在当前浏览器访问。</p><form method="post" action="/_hosting/unlock"><input type="hidden" name="return" value="`+html.EscapeString(safeReturn(r.URL.RequestURI()))+`"><label>分享密钥<input type="password" name="key" autocomplete="current-password" required autofocus></label><button>打开应用</button></form>`)
+		return nil
+	}
+	if publicData != nil {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(200)
+		if r.Method != "HEAD" {
+			_ = json.NewEncoder(w).Encode(publicData)
+		}
 		return nil
 	}
 	kind := mime.TypeByExtension(path.Ext(file.Path))

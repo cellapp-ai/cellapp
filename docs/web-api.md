@@ -6,7 +6,7 @@ Cellapp Web 通过控制域下的 `/api/console` 访问浏览器专用 JSON 接�
 
 所有接口使用现有 `__Host-owner` Cookie（Secure、HttpOnly、SameSite=Lax、Path=/），不接受部署 Bearer 凭证替代浏览器会话。每个资源请求再次限定当前所有者。无会话或过期返回 `401 login_required`；资源不存在、已删除或属于其他所有者返回 404，不泄露其信息。数据库故障返回 500，不伪装成未登录或空列表。
 
-所有 POST/DELETE 要求 `Origin` 与 `CONTROL_ORIGIN` 精确一致，缺失或不匹配返回 `403 origin_rejected`。有请求体时要求 `application/json`，否则返回 `415 json_required`；设备决策最多 1 MiB，只允许声明的字段和一个 JSON 值，无效内容返回 `400 invalid_json`。接口不开放携带凭证的 CORS。API 和页面使用 `private, no-store`。
+所有 POST/PUT/DELETE 要求 `Origin` 与 `CONTROL_ORIGIN` 精确一致，缺失或不匹配返回 `403 origin_rejected`。有请求体时要求 `application/json`，否则返回 `415 json_required`；设备决策与数据绑定最多 1 MiB，只允许声明的字段和一个 JSON 值，无效内容返回 `400 invalid_json`。接口不开放携带凭证的 CORS。API 和页面使用 `private, no-store`。
 
 GET `/auth/login?return=<本站管理路径>` 和 `/auth/callback` 保留现有登录流程。设备链接仍为 `/device?code=...`；打开或登录不会自动批准。CLI 的 `/apps`、设备创建/轮询、发布等路径及 Bearer 授权保持原契约。
 
@@ -17,14 +17,16 @@ GET `/auth/login?return=<本站管理路径>` 和 `/auth/callback` 保留现有�
 | GET `/api/console/session` | `{ownerId,authMode}`；模式为 `dev` 或 `github` |
 | POST `/api/console/logout` | 无请求体；`{loggedOut:true}`，删除当前会话并清除 Cookie |
 | GET `/api/console/apps` | 未删除自有应用数组，空时 `[]` |
-| GET `/api/console/apps/{app}` | 应用字段及可空 `release` |
+| GET `/api/console/apps/{app}` | 应用字段、可空 `release`、可空 `data` |
 | DELETE `/api/console/apps/{app}` | 无请求体；`{deleted:true}`，使用既有墓碑和清理机制 |
 | POST `/api/console/apps/{app}/key` | 无请求体；`{key}`，32 字节随机密钥的 64 字符小写 hex |
+| PUT `/api/console/apps/{app}/data` | `{provider,url,anonKey}`；成功返回 `{provider,url,anonKey,dataset}`，`dataset` 恒为 `shared` |
+| DELETE `/api/console/apps/{app}/data` | 无请求体；`{cleared:true}` |
 | GET `/api/console/credentials` | 有效未撤销自有凭证数组 `{id,createdAt,expiresAt}` |
 | POST `/api/console/credentials/{credential}/revoke` | 无请求体；`{revoked:true}`；重复撤销自有记录安全成功 |
 | POST `/api/console/device/decision` | `{code,decision}`；决策为 `approved` 或 `denied`；返回 `{status}` |
 
-应用字段为 `id,name,activeDeployment,suspended,url`，其中 `activeDeployment` 可空。当前发布字段为 `id,status,createdAt,publishedAt,spa,fileCount,bytes`，其中 `publishedAt` 可空，时间均为 RFC3339；详情不返回发布历史、存储凭证或密钥摘要。凭证列表不返回 token，也不存在设备名称或头像字段。
+应用字段为 `id,name,activeDeployment,suspended,url`，其中 `activeDeployment` 可空。当前发布字段为 `id,status,createdAt,publishedAt,spa,fileCount,bytes`，其中 `publishedAt` 可空，时间均为 RFC3339；详情不返回发布历史、存储凭证或分享密钥明文。已绑定数据后端时详情含 `data`：`provider` 为本期唯一的 `supabase`，`url` 为 HTTPS origin，`anonKey` 为公开 anon/publishable key，`dataset` 为 `shared`；未绑定则省略 `data`。列表不返回 `data`。凭证列表不返回 token，也不存在设备名称或头像字段。非法数据绑定返回 `400 invalid_data`。
 
 ## 错误与操作结果
 

@@ -1,7 +1,8 @@
 export type Session = { ownerId: string; authMode: 'dev' | 'github' };
 export type Application = { id: string; name: string; activeDeployment: string | null; suspended: boolean; url: string };
 export type Release = { id: string; status: string; createdAt: string; publishedAt: string | null; spa: boolean; fileCount: number; bytes: number };
-export type ApplicationDetail = Application & { release: Release | null };
+export type AppData = { provider: 'supabase'; url: string; anonKey: string; dataset: 'shared' };
+export type ApplicationDetail = Application & { release: Release | null; data: AppData | null };
 export type Credential = { id: string; createdAt: string; expiresAt: string };
 
 export class RequestError extends Error {
@@ -44,12 +45,21 @@ export function application(value: unknown): Application {
   if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) throw new Error('Unexpected application address.');
   return { id: identifier(data.id), name: text(data.name), activeDeployment: data.activeDeployment === null ? null : identifier(data.activeDeployment), suspended: boolean(data.suspended), url: url.href };
 }
+export function appData(value: unknown): AppData {
+  const data = record(value);
+  const url = new URL(text(data.url));
+  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || (url.pathname !== '' && url.pathname !== '/')) throw new Error('Unexpected data backend address.');
+  const anonKey = text(data.anonKey);
+  if (data.provider !== 'supabase' || data.dataset !== 'shared' || !anonKey || anonKey.length > 4096 || /\s/.test(anonKey)) throw new Error('Unexpected response. Try again.');
+  return { provider: 'supabase', url: url.origin, anonKey, dataset: 'shared' };
+}
 export function detail(value: unknown): ApplicationDetail {
   const data = record(value);
   const app = application(data);
-  if (data.release === null) return { ...app, release: null };
+  const bound = data.data == null ? null : appData(data.data);
+  if (data.release === null) return { ...app, release: null, data: bound };
   const release = record(data.release);
-  return { ...app, release: { id: identifier(release.id), status: text(release.status), createdAt: date(release.createdAt), publishedAt: release.publishedAt === null ? null : date(release.publishedAt), spa: boolean(release.spa), fileCount: number(release.fileCount), bytes: number(release.bytes) } };
+  return { ...app, data: bound, release: { id: identifier(release.id), status: text(release.status), createdAt: date(release.createdAt), publishedAt: release.publishedAt === null ? null : date(release.publishedAt), spa: boolean(release.spa), fileCount: number(release.fileCount), bytes: number(release.bytes) } };
 }
 export function credential(value: unknown): Credential {
   const data = record(value);
