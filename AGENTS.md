@@ -6,7 +6,7 @@
 
 ## 架构与目录
 
-Cellapp 提供静态应用托管。Go 单服务负责控制 API、浏览器授权页面和应用网关；PostgreSQL 保存控制元数据，七牛私有 S3 兼容存储保存产物。构建在用户本机执行，服务端不运行上传的程序。
+Cellapp 提供静态应用托管。Go 单服务负责控制 API、浏览器授权页面和应用网关；PostgreSQL 保存控制元数据，私有 S3 兼容存储保存产物，本地开发默认使用 MinIO。构建在用户本机执行，服务端不运行上传的程序。
 
 ```text
 Agent --> Skill --> CLI --> Control API --> PostgreSQL
@@ -35,7 +35,7 @@ cellapp/
 |   +-- scripts/                # 公开边界、Skill 与包检查
 |-- scripts/                   # 主仓库开发命令编排
 |-- tests/                     # 跨服务浏览器验收与编排测试
-|-- infra/                     # 本地 PostgreSQL 与 HTTPS 代理
+|-- infra/                     # 本地 PostgreSQL、MinIO 与 HTTPS 代理
 |-- docs/                      # 运维、架构与验收记录
 +-- openspec/                  # 主规格、变更设计与归档
 ```

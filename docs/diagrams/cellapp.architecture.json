@@ -15,12 +15,12 @@
     { "id": "proxy", "type": "cloud", "label": "Caddy / TLS", "sublabel": "控制域 + 应用域", "pos": [245, 245], "size": [140, 64] },
     { "id": "server", "type": "backend", "label": "Go Hosting Service", "sublabel": "控制 API + 应用网关", "pos": [470, 245], "size": [150, 64], "tag": "单一服务" },
     { "id": "postgres", "type": "database", "label": "PostgreSQL", "sublabel": "账号 / 应用 / 版本 / 会话", "pos": [730, 170], "size": [170, 64] },
-    { "id": "qiniu", "type": "cloud", "label": "七牛 S3 私有 Bucket", "sublabel": "静态发布产物", "pos": [730, 340], "size": [170, 64], "tag": "禁止匿名读" },
+    { "id": "s3", "type": "cloud", "label": "私有 S3 / 本地 MinIO", "sublabel": "静态发布产物", "pos": [730, 340], "size": [170, 64], "tag": "禁止匿名读" },
     { "id": "visitor", "type": "external", "label": "应用访问者", "sublabel": "独立分享密钥", "pos": [40, 610], "size": [140, 64] }
   ],
   "boundaries": [
     { "kind": "region", "label": "Cellapp 自托管运行环境", "wraps": ["proxy", "server", "postgres"] },
-    { "kind": "security-group", "label": "控制数据与静态产物均不公开直读", "wraps": ["server", "postgres", "qiniu"] }
+    { "kind": "security-group", "label": "控制数据与静态产物均不公开直读", "wraps": ["server", "postgres", "s3"] }
   ],
   "connections": [
     { "from": "browser", "to": "proxy", "label": "HTTPS", "variant": "emphasis" },
@@ -29,12 +29,12 @@
     { "from": "proxy", "to": "server" },
     { "from": "github", "to": "server", "label": "OAuth / user ID", "variant": "security", "fromSide": "bottom", "toSide": "top", "labelAt": [597, 138] },
     { "from": "server", "to": "postgres", "label": "SQL", "fromSide": "right", "toSide": "left", "route": "orthogonal-h", "labelDy": -30 },
-    { "from": "server", "to": "qiniu", "label": "S3 API", "fromSide": "right", "toSide": "left", "route": "orthogonal-h", "labelDy": 30 },
+    { "from": "server", "to": "s3", "label": "S3 API", "fromSide": "right", "toSide": "left", "route": "orthogonal-h", "labelDy": 30 },
     { "from": "visitor", "to": "proxy", "label": "应用 HTTPS", "variant": "emphasis", "fromSide": "right", "toSide": "bottom", "route": "orthogonal-v", "via": [[210, 642], [210, 330], [315, 330]] }
   ],
   "cards": [
     { "dot": "cyan", "title": "认证模式", "items": ["本地：AUTH_MODE=dev，固定 local-owner", "生产：AUTH_MODE=github，GitHub 数字用户 ID", "生产环境无法启用开发绕过"] },
-    { "dot": "emerald", "title": "发布边界", "items": ["Agent 调用 Skill，Skill 驱动 CLI", "CLI 只上传构建后的静态文件", "PostgreSQL 保存元数据，七牛保存文件"] },
+    { "dot": "emerald", "title": "发布边界", "items": ["Agent 调用 Skill，Skill 驱动 CLI", "CLI 只上传构建后的静态文件", "PostgreSQL 保存元数据，S3 保存文件"] },
     { "dot": "rose", "title": "访问保护", "items": ["每个应用拥有独立分享密钥", "验证成功后签发 host-only 会话", "所有资源请求都经过 Go 应用网关"] }
   ]
 }

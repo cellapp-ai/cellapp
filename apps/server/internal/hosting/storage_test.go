@@ -96,7 +96,7 @@ func TestS3SignedObjectRoundTrip(t *testing.T) {
 	}))
 	defer endpoint.Close()
 	u, _ := url.Parse(endpoint.URL)
-	client, e := minio.New(u.Host, &minio.Options{Creds: credentials.NewStaticV4("test-ak", "test-sk", ""), Secure: true, Region: "cn-east-1", BucketLookup: minio.BucketLookupPath, Transport: endpoint.Client().Transport})
+	client, e := minio.New(u.Host, &minio.Options{Creds: credentials.NewStaticV4("test-ak", "test-sk", ""), Secure: true, Region: "us-east-1", BucketLookup: minio.BucketLookupPath, Transport: endpoint.Client().Transport})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -125,9 +125,32 @@ func TestS3SignedObjectRoundTrip(t *testing.T) {
 	}
 }
 
+func TestS3BucketHealthFailures(t *testing.T) {
+	for _, status := range []int{http.StatusNotFound, http.StatusForbidden} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != "HEAD" || r.URL.Path != "/private-bucket/" {
+					t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+				}
+				w.WriteHeader(status)
+			}))
+			defer endpoint.Close()
+			c, _ := LoadConfig(func(string) string { return "" })
+			c.S3Endpoint, c.S3Bucket = endpoint.URL, "private-bucket"
+			storage, err := NewStorage(c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = storage.Health(context.Background()); err == nil {
+				t.Fatal("unavailable bucket reported healthy")
+			}
+		})
+	}
+}
+
 func TestLiveS3(t *testing.T) {
 	if os.Getenv("RUN_S3_TESTS") != "1" {
-		t.Skip("Qiniu bucket and credentials deferred; set RUN_S3_TESTS=1 explicitly after configuration")
+		t.Skip("Live private S3 test disabled; set RUN_S3_TESTS=1 with isolated storage configuration")
 	}
 	c, e := LoadConfig(os.Getenv)
 	if e != nil {
@@ -144,9 +167,6 @@ func TestLiveS3(t *testing.T) {
 	}
 	key := "cellapp-probes/" + id()
 	body := []byte("cellapp-private-storage-probe")
-	if e = storage.Put(ctx, key, bytes.NewReader(body), int64(len(body))); e != nil {
-		t.Fatal(e)
-	}
 	defer func() {
 		cleanup, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
@@ -154,6 +174,9 @@ func TestLiveS3(t *testing.T) {
 			t.Errorf("probe cleanup failed: %v", e)
 		}
 	}()
+	if e = storage.Put(ctx, key, bytes.NewReader(body), int64(len(body))); e != nil {
+		t.Fatal(e)
+	}
 	object, e := storage.Get(ctx, key)
 	if e != nil {
 		t.Fatal(e)

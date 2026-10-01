@@ -1,6 +1,7 @@
 package hosting
 
 import (
+	"context"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
@@ -36,6 +37,21 @@ func TestBrowserEndToEnd(t *testing.T) {
 		t.Skip("RUN_BROWSER_TESTS=1 and a local Chrome executable are required")
 	}
 	f := setup(t)
+	// Browser acceptance uses real S3 so a storage substitute cannot mask release failures.
+	storageConfig, e := LoadConfig(os.Getenv)
+	if e != nil {
+		t.Fatal(e)
+	}
+	storage, e := NewStorage(storageConfig)
+	if e != nil {
+		t.Fatal(e)
+	}
+	probeCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if e = storage.Health(probeCtx); e != nil {
+		t.Fatalf("isolated S3 bucket is required for browser acceptance: %v", e)
+	}
+	f.server.Storage = storage
 	server := httptest.NewUnstartedServer(nil)
 	_, port, _ := net.SplitHostPort(server.Listener.Addr().String())
 	f.server.Config.ControlOrigin = "https://control.localhost:" + port
