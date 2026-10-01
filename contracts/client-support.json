@@ -1,0 +1,7 @@
+{
+  "contractVersion": "1.0.0",
+  "supportedCliVersions": [],
+  "candidateCliVersions": ["0.1.0"],
+  "publicContractSource": "CellApp public repository contracts/http-v1.json",
+  "pinPolicy": "Update this copy only after the public contract version is released and server conformance tests pass."
+}
