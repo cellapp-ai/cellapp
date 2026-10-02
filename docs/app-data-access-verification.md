@@ -10,6 +10,7 @@
 - `go vet ./apps/server/...`
 - `TEST_DATABASE_URL=postgres://ohmyapp:development@127.0.0.1:5432/ohmyapp go test -race -count=1 ./apps/server/...`：含迁移升级、所有者绑定/拒绝 service role、访客会话下 `/_hosting/data`、控制台 Origin 检查
 - `npm run lint:web`
+- `CHROME_PATH=/usr/local/bin/google-chrome npm test --workspace @cellapp/web`：6 组 UI fixture 通过，含应用详情绑定表单保存后回读
 - `node scripts/check-public-boundary.mjs`：改为只扫描服务端公开面（`apps/server/` 与既有允许文件），不再把 Web/OpenSpec/文档当作越界
 
 ## 跳过 / 未执行
