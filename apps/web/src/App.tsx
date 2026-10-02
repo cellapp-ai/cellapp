@@ -66,11 +66,6 @@ function DataBackend({ id, current, busy, setBusy }: { id: string; current: AppD
   const [feedback, setFeedback] = useState('');
   const [error, setError] = useState('');
   const [confirmClear, setConfirmClear] = useState(false);
-  useEffect(() => {
-    setBound(current);
-    setUrl(current?.url ?? '');
-    setAnonKey(current?.anonKey ?? '');
-  }, [current]);
   const save = async () => {
     if (busy) return;
     setBusy(true); setError(''); setFeedback('');

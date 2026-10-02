@@ -31,7 +31,7 @@ func TestPinnedPublicContract(t *testing.T) {
 	if err := json.Unmarshal(raw, &contract); err != nil {
 		t.Fatal(err)
 	}
-	if contract.ContractVersion != "1.0.0" || len(contract.Operations) != 12 {
+	if contract.ContractVersion != "1.1.0" || len(contract.Operations) != 15 {
 		t.Fatalf("unexpected contract version or operation count: %s, %d", contract.ContractVersion, len(contract.Operations))
 	}
 	serverSource, err := os.ReadFile("server.go")
@@ -39,7 +39,7 @@ func TestPinnedPublicContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	allSource := string(serverSource)
-	for _, filename := range []string{"auth.go", "apps.go", "core.go"} {
+	for _, filename := range []string{"auth.go", "apps.go", "core.go", "data.go"} {
 		file, err := os.ReadFile(filename)
 		if err != nil {
 			t.Fatal(err)
@@ -82,6 +82,8 @@ func TestPinnedPublicContract(t *testing.T) {
 		"GET /apps":   []App{{}},
 		"POST /apps":  App{},
 		"GET /apps/{app}/deployments/{deployment}": Deployment{},
+		"GET /apps/{app}/data":                     AppData{},
+		"PUT /apps/{app}/data":                     AppData{},
 	}
 	for _, operation := range contract.Operations {
 		fixture, ok := responseShapes[operation.Method+" "+operation.Path]
