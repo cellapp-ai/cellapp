@@ -6,14 +6,16 @@
 
 ## 架构与目录
 
-Cellapp 提供静态应用托管。Go 单服务负责控制 API、浏览器授权页面和应用网关；PostgreSQL 保存控制元数据，私有 S3 兼容存储保存产物，本地开发默认使用 MinIO。构建在用户本机执行，服务端不运行上传的程序。
+Cellapp 提供静态应用托管。Go 单服务负责控制 API、浏览器授权页面和应用网关；PostgreSQL 保存控制元数据，私有 S3 兼容存储保存产物，本地开发默认使用 MinIO。构建在用户本机执行，服务端不运行上传的程序。应用可绑定所有者自带的 Supabase 项目，由浏览器直连，平台不代理查询。
 
 ```text
 Agent --> Skill --> CLI --> Control API --> PostgreSQL
-                                |
-                                v
-                         Private Storage
+ |
+ v
+ Private Storage
 Browser --> App Gateway --> Access Check --> Active Release
+                         |
+                         +--> Public data config --> Owner Supabase
 ```
 
 ```text

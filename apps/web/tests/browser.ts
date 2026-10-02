@@ -21,6 +21,7 @@ const ownerID = '2'.repeat(32);
 const credentialID = '3'.repeat(32);
 const key = '4'.repeat(64);
 let mode: 'normal' | 'empty' | 'error' | 'expired' | 'lost' = 'normal';
+let bound: {url: string; anonKey: string} | null = null;
 let mutations = 0;
 let deviceDecision = '';
 let browser;
@@ -39,13 +40,24 @@ try {
       mutations++;
       if (mode === 'lost') { await route.abort('failed'); return; }
       if (path.endsWith('/key')) { await route.fulfill({json: {key}}); return; }
+      if (path.endsWith('/data') && method === 'PUT') {
+        const body = route.request().postDataJSON() as {url: string; anonKey: string};
+        bound = {url: body.url, anonKey: body.anonKey};
+        await route.fulfill({json: {provider: 'supabase', url: new URL(body.url).origin, anonKey: body.anonKey, dataset: 'shared'}});
+        return;
+      }
+      if (path.endsWith('/data') && method === 'DELETE') {
+        bound = null;
+        await route.fulfill({json: {cleared: true}});
+        return;
+      }
       if (path === '/device/decision') { deviceDecision = route.request().postDataJSON().decision; await route.fulfill({json: {status: deviceDecision}}); return; }
       await route.fulfill({json: {deleted: true, revoked: true, loggedOut: true}}); return;
     }
     if (path === '/session') { await route.fulfill({json: {ownerId: ownerID, authMode: 'github'}}); return; }
     if (mode === 'error') { await route.fulfill({status: 503, json: {message: 'Service temporarily unavailable.'}}); return; }
     const app = {id: appID, name: 'Shared notes', url: `https://${appID}.apps.localhost`, activeDeployment: null, suspended: false};
-    const value = path === '/apps' ? mode === 'empty' ? [] : [app] : path === '/credentials' ? mode === 'empty' ? [] : [{id: credentialID, createdAt:'2026-09-01T00:00:00Z', expiresAt:'2026-10-01T00:00:00Z'}] : {...app, release: null};
+    const value = path === '/apps' ? mode === 'empty' ? [] : [app] : path === '/credentials' ? mode === 'empty' ? [] : [{id: credentialID, createdAt:'2026-09-01T00:00:00Z', expiresAt:'2026-10-01T00:00:00Z'}] : {...app, release: null, data: bound ? {provider: 'supabase', url: new URL(bound.url).origin, anonKey: bound.anonKey, dataset: 'shared'} : null};
     await route.fulfill({json: value});
   });
   await page.goto(origin + '/applications');
@@ -74,7 +86,14 @@ try {
   await page.getByRole('heading',{name:'Shared notes'}).click();
   await page.getByRole('heading',{name:'Shared notes',exact:true}).waitFor();
   await page.getByText('No release has been published.',{exact:false}).waitFor();
+  await page.getByText('No data backend is bound.').waitFor();
+  await page.getByLabel('Supabase URL').fill('https://demo.supabase.co');
+  await page.getByLabel('Anon or publishable key').fill('sb_publishable_example');
+  await page.getByRole('button',{name:'Save data backend'}).click();
+  await page.getByRole('status').filter({hasText:'Data backend saved'}).waitFor();
+  await page.getByText('Currently bound to https://demo.supabase.co.').waitFor();
   await page.reload();await page.getByRole('heading',{name:'Shared notes',exact:true}).waitFor();
+  await page.getByText('Currently bound to https://demo.supabase.co.').waitFor();
   await page.getByRole('button',{name:'Reset share key',exact:true}).click();
   await page.getByRole('dialog').waitFor();
   const before = mutations;

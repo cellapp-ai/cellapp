@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { application, credential, decisionResult, detail, keyResult, list, message, request, RequestError, session, success } from '@/api';
-import type { Session } from '@/api';
+import { application, appData, credential, decisionResult, detail, keyResult, list, message, request, RequestError, session, success } from '@/api';
+import type { AppData, Session } from '@/api';
 
 type Load<T> = { kind: 'loading' } | { kind: 'ready'; value: T } | { kind: 'error'; message: string };
 function useResource<T>(path: string, parse: (value: unknown) => T) {
@@ -59,6 +59,47 @@ function Applications() {
     {state.kind === 'ready' && (state.value.length === 0 ? <section className="empty"><h2>No applications yet</h2><p>Use the Cellapp deployment Skill in your AI conversation, or run <code>cellapp deploy</code> from your local project. Your applications will appear here after deployment.</p><button onClick={reload}>Refresh applications</button></section> : <div className="application-list">{state.value.map(app => <a className="application-row" href={`/applications/${app.id}`} key={app.id}><div><h2>{app.name}</h2><p>{app.url}</p></div><span className="badge">{app.suspended ? 'Suspended' : app.activeDeployment ? 'Published' : 'Not published'}</span><span aria-hidden="true">↗</span></a>)}</div>)}
   </>;
 }
+function DataBackend({ id, current, busy, setBusy }: { id: string; current: AppData | null; busy: boolean; setBusy: (value: boolean) => void }) {
+  const [bound, setBound] = useState<AppData | null>(current);
+  const [url, setUrl] = useState(current?.url ?? '');
+  const [anonKey, setAnonKey] = useState(current?.anonKey ?? '');
+  const [feedback, setFeedback] = useState('');
+  const [error, setError] = useState('');
+  const [confirmClear, setConfirmClear] = useState(false);
+  const save = async () => {
+    if (busy) return;
+    setBusy(true); setError(''); setFeedback('');
+    try {
+      const result = await request(`/apps/${id}/data`, appData, { method: 'PUT', body: { provider: 'supabase', url, anonKey } });
+      setBound(result); setUrl(result.url); setAnonKey(result.anonKey);
+      setFeedback('Data backend saved. Authorized visitors share this Supabase project.');
+    } catch (caught) {
+      setError(`${message(caught)} The result may already have taken effect. Refresh to check, or save again when ready.`);
+    } finally { setBusy(false); }
+  };
+  const clear = async () => {
+    if (busy) return;
+    setBusy(true); setError(''); setFeedback(''); setConfirmClear(false);
+    try {
+      await request(`/apps/${id}/data`, success('cleared'), { method: 'DELETE' });
+      setBound(null); setUrl(''); setAnonKey('');
+      setFeedback('Data backend removed. Visitors will no longer receive this configuration.');
+    } catch (caught) {
+      setError(`${message(caught)} The result may already have taken effect. Refresh to check.`);
+    } finally { setBusy(false); }
+  };
+  return <section className="panel"><h2>Data access</h2>
+    <p>Bind a Supabase project you own. Authorized visitors share one dataset. Cellapp does not run a database or proxy queries. Use the anon or publishable key, never the service role key. Anyone who can open the app can also call that project with this public key.</p>
+    <p>{bound ? `Currently bound to ${bound.url}.` : 'No data backend is bound.'}</p>
+    <form className="fields" onSubmit={event => { event.preventDefault(); void save(); }}>
+      <label htmlFor={`data-url-${id}`}>Supabase URL<input id={`data-url-${id}`} type="url" value={url} onChange={event => setUrl(event.target.value)} autoComplete="off" spellCheck={false} required disabled={busy} /></label>
+      <label htmlFor={`data-key-${id}`}>Anon or publishable key<input id={`data-key-${id}`} value={anonKey} onChange={event => setAnonKey(event.target.value)} autoComplete="off" spellCheck={false} required disabled={busy} /></label>
+      <div className="actions"><button className="primary" type="submit" disabled={busy}>{busy ? 'Working…' : 'Save data backend'}</button>{bound && <button type="button" disabled={busy} onClick={() => setConfirmClear(true)}>Remove data backend</button>}</div>
+    </form>
+    {feedback && <Feedback>{feedback}</Feedback>}{error && <Feedback error>{error}</Feedback>}
+    {confirmClear && <Confirm title="Remove data backend?" busy={busy} onClose={() => setConfirmClear(false)} onConfirm={() => { void clear(); }}>Visitors will stop receiving this Supabase configuration. Published files are unchanged. Anyone who already copied the public key can still call the project until you rotate it in Supabase.</Confirm>}
+  </section>;
+}
 function ApplicationPage({ id }: { id: string }) {
   const { state, reload } = useResource(`/apps/${id}`, detail);
   const [operation, setOperation] = useState<'key' | 'delete' | null>(null);
@@ -87,6 +128,7 @@ function ApplicationPage({ id }: { id: string }) {
     {state.kind === 'ready' && <><div className="page-heading"><p className="eyebrow">APPLICATION</p><h1>{state.value.name}</h1><span className="badge">{state.value.suspended ? 'Suspended' : state.value.release ? 'Published' : 'Not published'}</span></div>
       <section className="panel"><h2>Application address</h2><Copy value={state.value.url} label="Copy address" /><a className="text-link" href={state.value.url} target="_blank" rel="noopener noreferrer">Open application ↗</a><p>Visitors need the current share key to open this application.</p></section>
       <section className="panel"><h2>Current release</h2>{state.value.release ? <dl><dt>Release</dt><dd><code>{state.value.release.id}</code></dd><dt>Published</dt><dd>{state.value.release.publishedAt ? date(state.value.release.publishedAt) : 'Not published'}</dd><dt>Files</dt><dd>{state.value.release.fileCount}</dd><dt>Size</dt><dd>{state.value.release.bytes.toLocaleString('en-GB')} bytes</dd><dt>Navigation</dt><dd>{state.value.release.spa ? 'Single page application' : 'Static pages'}</dd></dl> : <p>No release has been published. Deploy from your local project using the Skill or CLI.</p>}</section>
+      <DataBackend id={id} current={state.value.data} busy={busy} setBusy={setBusy} />
       <section className="panel"><h2>Access and lifecycle</h2><p>Reset access for visitors, or permanently delete this application.</p><div className="actions"><button disabled={busy} onClick={() => setOperation('key')}>Reset share key</button><button className="danger" disabled={busy} onClick={() => setOperation('delete')}>Delete application</button><button disabled={busy} onClick={() => { setNewKey(''); reload(); }}>Refresh details</button></div></section>
     </>}
     {feedback && <Feedback>{feedback}</Feedback>}{error && <Feedback error>{error}</Feedback>}

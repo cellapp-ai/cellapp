@@ -69,6 +69,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/console/apps/{app}", s.webAPI(s.webApp))
 	mux.HandleFunc("DELETE /api/console/apps/{app}", s.webAPI(s.webDeleteApp))
 	mux.HandleFunc("POST /api/console/apps/{app}/key", s.webAPI(s.webResetKey))
+	mux.HandleFunc("PUT /api/console/apps/{app}/data", s.webAPI(s.webPutData))
+	mux.HandleFunc("DELETE /api/console/apps/{app}/data", s.webAPI(s.webDeleteData))
 	mux.HandleFunc("GET /api/console/credentials", s.webAPI(s.webCredentials))
 	mux.HandleFunc("POST /api/console/credentials/{credential}/revoke", s.webAPI(s.webRevoke))
 	mux.HandleFunc("POST /api/console/device/decision", s.webAPI(s.webDevice))
@@ -88,6 +90,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /apps", s.wrap(s.createApp))
 	mux.HandleFunc("DELETE /apps/{app}", s.wrap(s.deleteApp))
 	mux.HandleFunc("POST /apps/{app}/key", s.wrap(s.resetKey))
+	mux.HandleFunc("GET /apps/{app}/data", s.wrap(s.getOwnerData))
+	mux.HandleFunc("PUT /apps/{app}/data", s.wrap(s.putOwnerData))
+	mux.HandleFunc("DELETE /apps/{app}/data", s.wrap(s.deleteOwnerData))
 	mux.HandleFunc("POST /apps/{app}/deployments", s.wrap(s.createDeployment))
 	mux.HandleFunc("GET /apps/{app}/deployments/{deployment}", s.wrap(s.deploymentStatus))
 	mux.HandleFunc("PUT /apps/{app}/deployments/{deployment}/files/{index}", s.wrap(s.upload))
@@ -182,22 +187,25 @@ func lockOwner(ctx context.Context, tx pgx.Tx, owner string) error {
 }
 
 type App struct {
-	ID         string  `json:"id"`
-	Name       string  `json:"name"`
-	Active     *string `json:"activeDeployment"`
-	KeyHash    string  `json:"-"`
-	Generation int     `json:"-"`
-	Deleted    bool    `json:"-"`
-	Suspended  bool    `json:"suspended"`
-	URL        string  `json:"url"`
+	ID         string   `json:"id"`
+	Name       string   `json:"name"`
+	Active     *string  `json:"activeDeployment"`
+	KeyHash    string   `json:"-"`
+	Generation int      `json:"-"`
+	Deleted    bool     `json:"-"`
+	Suspended  bool     `json:"suspended"`
+	URL        string   `json:"url"`
+	Data       *AppData `json:"data,omitempty"`
 }
 
 func (s *Server) app(ctx context.Context, tx pgx.Tx, app, owner string) (a App, err error) {
-	err = tx.QueryRow(ctx, `SELECT id,name,active_deployment,key_hash,generation,deleted,suspended FROM apps WHERE id=$1 AND owner_id=$2 FOR UPDATE`, app, owner).Scan(&a.ID, &a.Name, &a.Active, &a.KeyHash, &a.Generation, &a.Deleted, &a.Suspended)
+	var provider, dataURL, anonKey *string
+	err = tx.QueryRow(ctx, `SELECT id,name,active_deployment,key_hash,generation,deleted,suspended,data_provider,data_url,data_anon_key FROM apps WHERE id=$1 AND owner_id=$2 FOR UPDATE`, app, owner).Scan(&a.ID, &a.Name, &a.Active, &a.KeyHash, &a.Generation, &a.Deleted, &a.Suspended, &provider, &dataURL, &anonKey)
 	if err != nil || a.Deleted {
 		return a, fail(404, "app_not_found", "App not found")
 	}
 	a.URL = s.Config.AppURL(a.ID)
+	a.Data = parseAppData(provider, dataURL, anonKey)
 	return
 }
 func keyValid(k string) bool { return len(k) == 64 && digestPattern.MatchString(k) }

@@ -69,3 +69,9 @@ test('complete commands include web checks and propagate web failure', () => {
     rmSync(root, {recursive: true, force: true});
   }
 });
+
+test('server public boundary check covers the server surface without rejecting the monorepo', () => {
+  const result = spawnSync(process.execPath, ['scripts/check-public-boundary.mjs'], {encoding: 'utf8', cwd: join(import.meta.dirname, '..')});
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Public server source boundary passed/);
+});

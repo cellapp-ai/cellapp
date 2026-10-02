@@ -1,6 +1,6 @@
 # Cellapp
 
-免费静态应用托管：在本机通过 Skill / CLI 构建发布，使用固定 HTTPS 地址和应用独立分享密钥访问。服务端为 Go，CLI 为 TypeScript；PostgreSQL 保存控制元数据，私有 S3 兼容存储保存发布产物，本地开发默认使用 MinIO。
+免费静态应用托管：在本机通过 Skill / CLI 构建发布，使用固定 HTTPS 地址和应用独立分享密钥访问。服务端为 Go，CLI 为 TypeScript；PostgreSQL 保存控制元数据，私有 S3 兼容存储保存发布产物，本地开发默认使用 MinIO。静态应用可以绑定所有者自带的 Supabase 项目。
 
 ## 开发
 
@@ -125,4 +125,4 @@ RUN_BROWSER_TESTS=1 TEST_DATABASE_URL=postgres://cellapp:development@127.0.0.1:5
 
 未提供 `TEST_DATABASE_URL` 时，真实数据库集成测试会明确跳过。集成测试创建随机独立 schema，结束后清理，不操作其他 schema。浏览器测试默认使用本机 macOS Chrome，可用 `CHROME_PATH` 指定其他平台 Chrome 可执行文件。macOS 跨服务浏览器测试为本轮临时 CA 建立临时钥匙串信任，并在结束时恢复搜索列表、移除信任与临时钥匙串，不关闭 TLS 校验；已有受信任的隔离测试 CA 时，可通过 `TEST_BROWSER_CA_CERT` 和 `TEST_BROWSER_CA_KEY` 指定证书及私钥，测试只用它签发临时 localhost 证书，不修改系统信任。macOS 禁止自动信任时也使用此方式。测试身份提供方和存储替身仅编译在测试中；生产服务没有认证绕过入口。内存对象存储测试替身不能代替真实 MinIO / S3 与匿名读取验收。
 
-范围：在线 HTML/JS/CSS 与静态资源；不提供后端运行、数据库同步、公开免密、自定义域名或离线 PWA。更多运维配置见 [operations.md](docs/operations.md)。本次目录与子模块迁移验收见 [仓库协作规范验收](docs/repository-workflow-verification.md)。
+范围：在线 HTML/JS/CSS 与静态资源；不提供后端运行、平台代建数据库、公开免密、自定义域名或离线 PWA。所有者可绑定自有 Supabase 项目供访客共用数据，见 [应用数据访问](docs/app-data-access.md)。更多运维配置见 [operations.md](docs/operations.md)。本次目录与子模块迁移验收见 [仓库协作规范验收](docs/repository-workflow-verification.md)。
