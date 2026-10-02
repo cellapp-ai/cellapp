@@ -20,4 +20,4 @@
 
 ## 缺口
 
-将 `typecheck-browser` 补进根 `package.json`，以匹配现有 CI 脚本。未把 `contracts/client-support.json` 升到 1.1.0：该文件注明须在公开契约发布且服务端一致性测试通过后再更新。
+将 `typecheck-browser` 补进根 `package.json`：客户端子模块未初始化时跳过（与 Server checks 默认不拉 `skills` 一致），本地完整检出仍会检查 `tests/browser.e2e.ts`。未把 `contracts/client-support.json` 升到 1.1.0：该文件注明须在公开契约发布且服务端一致性测试通过后再更新。
