@@ -76,12 +76,12 @@ docker compose -f infra/compose.yaml exec -T postgres psql -U cellapp_rename_adm
 一次命令只发布应用和维护 job。提前准备并验证：
 
 - Google Cloud 项目、启用的 Cloud Build/Cloud Run/Artifact Registry/Secret Manager API、镜像仓库、可部署的服务账号，以及同区域的 Direct VPC 网络与子网，或 VPC connector。仅使用 Cloud SQL 时才配置 `cloudsql_instance`。
-- 已迁移或新建的 PostgreSQL、私有 S3 Bucket 和 HTTPS S3 Endpoint；运行身份能访问它们。Secret Manager 中保存稳定的 `SECRET`、`DATABASE_URL`、GitHub OAuth secret 和 S3 凭证，服务账号具有读取这些版本的权限。秘密值不写入配置 JSON、镜像或构建参数。
+- 已迁移或新建的 PostgreSQL、私有 S3 Bucket 和 HTTPS S3 Endpoint；运行身份能访问它们。应用数据使用独立数据库，按[应用数据运维说明](app-data-operations.md#生产准备)初始化，并为 provisioner 和 PostgREST authenticator 设置不同的生产密码。Secret Manager 中保存 `SECRET`、`DATABASE_URL`、`APP_DATA_DATABASE_URL`、`PGRST_DB_URI`、应用数据 JWT、GitHub OAuth secret 和 S3 凭证；服务账号仅获所需 Secret 的读取权限。秘密值不写入配置 JSON、镜像或构建参数。
 - GitHub OAuth App 的 callback URL 精确等于 `${CONTROL_ORIGIN}/auth/callback`。`CONTROL_ORIGIN` 为 HTTPS 控制域，`APPS_DOMAIN` 为另一个注册域的访客基域，生产 `APP_PORT` 为空。
 - 已配置的全局外部 HTTPS 负载均衡、两个域名的 DNS、控制域证书，以及访客域 `*.apps.example.net` 的 DNS 授权通配证书。Cloud Run 原生域名映射不支持所需通配证书。负载均衡通过 serverless NEG 指向本服务，保留原始 Host；默认 `run.app` 地址不作为产品入口。
 - 已启用的 Cloud Scheduler HTTP job，名称和区域见配置文件，目标为 `https://run.googleapis.com/v2/projects/PROJECT/locations/REGION/jobs/SERVICE-cleanup:run`，用具备 Cloud Run job 执行权限的身份调用。Cloud Run 会缩到零，服务内每分钟清理仅作补充；定时 job 是生产清理入口。
 
-复制 [非秘密配置示例](../infra/cloudrun.example.json) 到 `infra/cloudrun.json` 并填写实际资源名称、生产额度/保留期限及 Secret Manager `name:version` 引用；上线前按预算核定额度，生产缺少任一项会拒绝启动。该本地文件已从 Git、Docker 和 Cloud Build 上传上下文排除。使用具备 Cloud Build、Artifact Registry、Cloud Run、Secret Manager、Cloud Scheduler 和相关资源读取/部署权限的 gcloud 身份，并使用支持 `gcloud run jobs deploy` 的新版 Google Cloud CLI。运行：
+复制 [非秘密配置示例](../infra/cloudrun.example.json) 到 `infra/cloudrun.json` 并填写实际资源名称、生产额度/保留期限及 Secret Manager `name:version` 引用；上线前按预算核定额度，生产缺少任一项会拒绝启动。该本地文件已从 Git、Docker 和 Cloud Build 上传上下文排除。Cloud Run 镜像内的 PostgREST 只监听 `127.0.0.1:3001`；`APP_DATA_JWT_SECRET` 与 `PGRST_JWT_SECRET` 必须引用同一 Secret 版本，且不得与平台 `SECRET` 相同。使用具备 Cloud Build、Artifact Registry、Cloud Run、Secret Manager、Cloud Scheduler 和相关资源读取/部署权限的 gcloud 身份，并使用支持 `gcloud run jobs deploy` 的新版 Google Cloud CLI。运行：
 
 示例配置面向俄勒冈 `us-west1` 的验证/测试环境，未配置 Cloud SQL。自建 PostgreSQL 应部署在同一区域，通过私有地址供 Cloud Run 服务和迁移 job 访问；`DATABASE_URL` 在 Secret Manager 中保存，配置文件只引用秘密版本。示例使用 Direct VPC egress 的 `network` 与 `subnet`，无需持续计费的 VPC connector；若使用已有 connector，改为只填写 `vpc_connector`。`s3_region` 取决于实际对象存储区域，无须与 Cloud Run 区域相同。
 

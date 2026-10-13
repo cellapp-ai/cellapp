@@ -69,11 +69,11 @@ npm test --workspace @cellapp/web
 
 ## Cloud Run 服务部署
 
-生产服务使用单一镜像交付 Go server、配套 Web console 和 Caddy。Caddy 接收 Cloud Run 的 HTTP 端口，公网 TLS 由预先配置的 HTTPS 负载均衡终止。控制域与 `*.apps` 访客域须位于不同注册域，负载均衡、通配 DNS 和 DNS 授权通配证书须在部署前就绪；Cloud Run 原生域名映射不能提供所需通配证书。
+生产服务使用单一镜像交付 Go server、配套 Web console、内部 PostgREST 和 Caddy。Caddy 接收 Cloud Run 的 HTTP 端口，公网 TLS 由预先配置的 HTTPS 负载均衡终止。控制域与 `*.apps` 访客域须位于不同注册域，负载均衡、通配 DNS 和 DNS 授权通配证书须在部署前就绪；Cloud Run 原生域名映射不能提供所需通配证书。
 
 先按 [Cloud Run 运维说明](docs/operations.md#cloud-run-部署) 配置 PostgreSQL、私有 S3、Secret Manager、GitHub OAuth、服务账号/VPC、Artifact Registry 和定时清理触发器。复制非秘密示例并填写实际资源名称和 Secret Manager **版本引用**；不要在 JSON 中填写秘密值：
 
-示例默认使用俄勒冈 `us-west1` 验证/测试环境和自建 PostgreSQL；数据库连接串通过 `DATABASE_URL` 的 Secret Manager 引用提供。
+示例默认使用俄勒冈 `us-west1` 验证/测试环境和自建 PostgreSQL；控制库、独立应用数据库、PostgREST 专用账号及应用数据 JWT 均通过 Secret Manager 版本引用提供。
 
 ```sh
 cp infra/cloudrun.example.json infra/cloudrun.json

@@ -16,8 +16,8 @@ ROOT = Path(__file__).resolve().parents[1]
 NAME = re.compile(r"^[a-z][a-z0-9-]{1,61}[a-z0-9]$")
 DOMAIN = re.compile(r"^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$")
 DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
-SECRET_KEYS = ("SECRET", "DATABASE_URL", "GITHUB_CLIENT_SECRET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY")
-PUBLIC_ENV = ("NODE_ENV", "AUTH_MODE", "CONTROL_ORIGIN", "APPS_DOMAIN", "GITHUB_CLIENT_ID", "S3_ENDPOINT", "S3_REGION", "S3_BUCKET", "MAX_APPS", "MAX_FILES", "MAX_FILE_BYTES", "MAX_DEPLOYMENT_BYTES", "MAX_STORAGE_BYTES", "MAX_MONTHLY_TRAFFIC_BYTES", "MAX_REQUESTS_PER_MINUTE", "UPLOAD_TTL_SECONDS", "RETENTION_SECONDS")
+SECRET_KEYS = ("SECRET", "DATABASE_URL", "APP_DATA_DATABASE_URL", "APP_DATA_JWT_SECRET", "PGRST_DB_URI", "PGRST_JWT_SECRET", "GITHUB_CLIENT_SECRET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY")
+PUBLIC_ENV = ("NODE_ENV", "AUTH_MODE", "CONTROL_ORIGIN", "APPS_DOMAIN", "GITHUB_CLIENT_ID", "S3_ENDPOINT", "S3_REGION", "S3_BUCKET", "POSTGREST_URL", "PGRST_SERVER_HOST", "PGRST_SERVER_PORT", "PGRST_DB_SCHEMAS", "PGRST_DB_PRE_CONFIG", "PGRST_DB_ANON_ROLE", "PGRST_OPENAPI_MODE", "PGRST_DB_POOL", "PGRST_DB_MAX_ROWS", "PGRST_DB_PRE_REQUEST", "MAX_APPS", "MAX_FILES", "MAX_FILE_BYTES", "MAX_DEPLOYMENT_BYTES", "MAX_STORAGE_BYTES", "MAX_MONTHLY_TRAFFIC_BYTES", "MAX_REQUESTS_PER_MINUTE", "UPLOAD_TTL_SECONDS", "RETENTION_SECONDS")
 LIMIT_KEYS = ("MAX_APPS", "MAX_FILES", "MAX_FILE_BYTES", "MAX_DEPLOYMENT_BYTES", "MAX_STORAGE_BYTES", "MAX_MONTHLY_TRAFFIC_BYTES", "MAX_REQUESTS_PER_MINUTE", "UPLOAD_TTL_SECONDS", "RETENTION_SECONDS")
 
 
@@ -81,6 +81,8 @@ def load_config(path):
         ref = secrets[key]
         if not isinstance(ref, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,254}:(?:latest|[1-9][0-9]*)", ref):
             raise DeploymentError(f"invalid secret reference: {key}")
+    if secrets["APP_DATA_JWT_SECRET"] != secrets["PGRST_JWT_SECRET"]:
+        raise DeploymentError("APP_DATA_JWT_SECRET and PGRST_JWT_SECRET must reference the same secret version")
     if "cloudsql_instance" in config and not re.fullmatch(r"[a-z][a-z0-9-]+:[a-z0-9-]+:[a-z][a-z0-9-]+", config["cloudsql_instance"]):
         raise DeploymentError("invalid cloudsql_instance")
     if not re.fullmatch(r"[a-z][a-z0-9-]*@[a-z][a-z0-9-]*\.iam\.gserviceaccount\.com", config["service_account"]):
@@ -143,6 +145,10 @@ def settings(c):
         "NODE_ENV": "production", "AUTH_MODE": "github", "CONTROL_ORIGIN": c["control_origin"],
         "APPS_DOMAIN": c["apps_domain"], "GITHUB_CLIENT_ID": c["github_client_id"],
         "S3_ENDPOINT": c["s3_endpoint"], "S3_REGION": c["s3_region"], "S3_BUCKET": c["s3_bucket"],
+        "POSTGREST_URL": "http://127.0.0.1:3001", "PGRST_SERVER_HOST": "127.0.0.1", "PGRST_SERVER_PORT": "3001",
+        "PGRST_DB_SCHEMAS": "cellapp_api", "PGRST_DB_PRE_CONFIG": "cellapp_internal.pre_config",
+        "PGRST_DB_ANON_ROLE": "cellapp_appdata_anon", "PGRST_OPENAPI_MODE": "disabled",
+        "PGRST_DB_POOL": "5", "PGRST_DB_MAX_ROWS": "1000", "PGRST_DB_PRE_REQUEST": "cellapp_internal.pre_request",
     }
     env.update({key: str(c["limits"][key]) for key in LIMIT_KEYS})
     for key in PUBLIC_ENV:
@@ -215,6 +221,7 @@ def release(c):
                  for service in services)
     deployed = gcloud("service deploy", "run", "deploy", c["service"], f"--image={image}",
                       "--ingress=internal-and-cloud-load-balancing", "--port=8080", "--allow-unauthenticated",
+                      "--startup-probe=httpGet.path=/health,httpGet.port=8080,periodSeconds=5,timeoutSeconds=5,failureThreshold=24",
                       *(["--no-traffic"] if exists else []), *flags, json_output=True)
     revision = deployed.get("status", {}).get("latestCreatedRevisionName")
     if not revision:
