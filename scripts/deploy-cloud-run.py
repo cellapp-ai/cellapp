@@ -81,6 +81,16 @@ def load_config(path):
         ref = secrets[key]
         if not isinstance(ref, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,254}:(?:latest|[1-9][0-9]*)", ref):
             raise DeploymentError(f"invalid secret reference: {key}")
+    edge = config.get("cloudflare_edge")
+    if edge is not None:
+        if not isinstance(edge, dict) or set(edge) != {"origin_host", "secret"}:
+            raise DeploymentError("cloudflare_edge requires origin_host and secret")
+        if not isinstance(edge["origin_host"], str) or not DOMAIN.fullmatch(edge["origin_host"]):
+            raise DeploymentError("invalid cloudflare_edge origin_host")
+        if edge["origin_host"] == origin.hostname or edge["origin_host"].endswith("." + config["apps_domain"]):
+            raise DeploymentError("cloudflare_edge origin_host overlaps a public domain")
+        if not isinstance(edge["secret"], str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,254}:(?:latest|[1-9][0-9]*)", edge["secret"]):
+            raise DeploymentError("invalid cloudflare_edge secret reference")
     if secrets["APP_DATA_JWT_SECRET"] != secrets["PGRST_JWT_SECRET"]:
         raise DeploymentError("APP_DATA_JWT_SECRET and PGRST_JWT_SECRET must reference the same secret version")
     if "cloudsql_instance" in config and not re.fullmatch(r"[a-z][a-z0-9-]+:[a-z0-9-]+:[a-z][a-z0-9-]+", config["cloudsql_instance"]):
@@ -133,6 +143,9 @@ def preflight(c):
     for key in SECRET_KEYS:
         name, version = c["secrets"][key].rsplit(":", 1)
         gcloud(f"secret reference {key}", "secrets", "versions", "describe", version, f"--secret={name}", f"--project={project}")
+    if c.get("cloudflare_edge"):
+        name, version = c["cloudflare_edge"]["secret"].rsplit(":", 1)
+        gcloud("edge secret reference", "secrets", "versions", "describe", version, f"--secret={name}", f"--project={project}")
     scheduler = gcloud("cleanup scheduler", "scheduler", "jobs", "describe", c["scheduler_job"], f"--location={c['scheduler_region']}", f"--project={project}", json_output=True)
     expected = f"/projects/{project}/locations/{region}/jobs/{c['service']}-cleanup:run"
     uri = scheduler.get("httpTarget", {}).get("uri", "")
@@ -164,6 +177,16 @@ def settings(c):
     return common
 
 
+def service_settings(c):
+    flags = settings(c)
+    edge = c.get("cloudflare_edge")
+    if edge:
+        flags = [flag + ",EDGE_ORIGIN_HOST=" + edge["origin_host"] if flag.startswith("--set-env-vars=")
+                 else flag + ",EDGE_ORIGIN_SECRET=" + edge["secret"] if flag.startswith("--set-secrets=")
+                 else flag for flag in flags]
+    return flags
+
+
 def image_digest(c):
     tag = f"{c['region']}-docker.pkg.dev/{c['project']}/{c['repository']}/cellapp:{c['source_revision']}"
     gcloud("Cloud Build", "builds", "submit", ".", f"--tag={tag}", "--ignore-file=.gcloudignore", f"--project={c['project']}", f"--region={c['region']}")
@@ -184,9 +207,36 @@ def deploy_job(c, image, suffix, arg):
     return name
 
 
+def activate_edge_candidate(c, revision):
+    gcloud("candidate tag", "run", "services", "update-traffic", c["service"],
+           f"--update-tags=release-candidate={revision}", f"--project={c['project']}", f"--region={c['region']}")
+    service = gcloud("candidate lookup", "run", "services", "describe", c["service"],
+                     f"--project={c['project']}", f"--region={c['region']}", json_output=True)
+    url = next((item.get("url") for item in service.get("status", {}).get("traffic", [])
+                if item.get("tag") == "release-candidate" and item.get("revisionName") == revision), None)
+    if not url:
+        raise DeploymentError("candidate revision has no tagged test URL; previous traffic remains active")
+    status, request_id = probe(url + "/health")
+    if status != 200 or not request_id:
+        raise DeploymentError("candidate health check failed; previous traffic remains active")
+    active = gcloud("candidate readiness", "run", "revisions", "describe", revision,
+                    f"--project={c['project']}", f"--region={c['region']}", json_output=True)
+    conditions = {item.get("type"): item.get("status") for item in active.get("status", {}).get("conditions", [])}
+    if any(conditions.get(key) != "True" for key in ("Ready", "Active", "ContainerHealthy", "ResourcesAvailable")):
+        raise DeploymentError("candidate revision is not active and healthy; previous traffic remains active")
+
+
 def release(c):
     preflight(c)
-    flags = settings(c)
+    services = gcloud("service inventory", "run", "services", "list",
+                      f"--project={c['project']}", f"--region={c['region']}", json_output=True)
+    if not isinstance(services, list):
+        raise DeploymentError("service inventory returned invalid JSON")
+    current = next((service for service in services if isinstance(service, dict)
+                    and service.get("metadata", {}).get("name") == c["service"]), None)
+    if current and not c.get("cloudflare_edge") and current.get("metadata", {}).get("annotations", {}).get("run.googleapis.com/ingress") == "all":
+        raise DeploymentError("existing service uses public ingress; configure cloudflare_edge before releasing")
+    flags = service_settings(c)
     source_state = subprocess.run(["git", "status", "--porcelain"], cwd=ROOT, capture_output=True, text=True, check=False)
     if source_state.returncode:
         raise DeploymentError("cannot inspect source worktree")
@@ -213,18 +263,12 @@ def release(c):
     deploy_job(c, image, "-cleanup", "-cleanup")
     if c.get("cloudsql_instance"):
         flags.append("--set-cloudsql-instances=" + c["cloudsql_instance"])
-    services = gcloud("service inventory", "run", "services", "list",
-                      f"--project={c['project']}", f"--region={c['region']}", json_output=True)
-    if not isinstance(services, list):
-        raise DeploymentError("service inventory returned invalid JSON")
-    current = next((service for service in services if isinstance(service, dict)
-                    and service.get("metadata", {}).get("name") == c["service"]), None)
     exists = current is not None
     previous_traffic = [f"{item['revisionName']}={item['percent']}" for item in
                         (current or {}).get("status", {}).get("traffic", [])
                         if item.get("revisionName") and item.get("percent", 0) > 0]
     deployed = gcloud("service deploy", "run", "deploy", c["service"], f"--image={image}",
-                      "--ingress=internal-and-cloud-load-balancing", "--port=8080", "--allow-unauthenticated",
+                      "--ingress=" + ("all" if c.get("cloudflare_edge") else "internal-and-cloud-load-balancing"), "--port=8080", "--allow-unauthenticated",
                       "--startup-probe=httpGet.path=/health,httpGet.port=8080,periodSeconds=5,timeoutSeconds=5,failureThreshold=24",
                       *(["--no-traffic"] if exists else []), *flags, json_output=True)
     revision = deployed.get("status", {}).get("latestCreatedRevisionName")
@@ -237,6 +281,8 @@ def release(c):
     conditions = ready.get("status", {}).get("conditions", [])
     if not any(item.get("type") == "Ready" and item.get("status") == "True" for item in conditions):
         raise DeploymentError(f"revision {revision} is not ready; previous traffic remains active")
+    if c.get("cloudflare_edge"):
+        activate_edge_candidate(c, revision)
     try:
         gcloud("traffic switch", "run", "services", "update-traffic", c["service"], f"--to-revisions={revision}=100", f"--project={c['project']}", f"--region={c['region']}")
     except DeploymentError as exc:
@@ -270,7 +316,7 @@ def verify_routes(c):
     control_status, control_id = probe(c["control_origin"] + "/login")
     invalid_status, invalid_id = probe("https://cellapp-invalid-probe." + c["apps_domain"] + "/")
     if control_status != 200 or not control_id or invalid_status != 404 or not invalid_id:
-        raise DeploymentError("custom domain checks failed; inspect load balancer routing and TLS; revision remains available for rollback")
+        raise DeploymentError("custom domain checks failed; inspect edge routing and TLS; revision remains available for rollback")
 
 
 def main():

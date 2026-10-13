@@ -3,6 +3,7 @@ package hosting
 import (
 	"cellapp/apps/server/appdata"
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -128,8 +129,9 @@ func (s *Server) Handler() http.Handler {
 			mux.ServeHTTP(w, r)
 			return
 		}
-		// Host is validated directly; forwarding headers are never trusted for authorization.
-		if r.Host == control.Host {
+		// An edge assertion is trusted only from the configured origin Host with its dedicated secret.
+		host := s.requestHost(r)
+		if host == control.Host {
 			w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
 			if r.Method != "GET" && r.Method != "HEAD" && r.Header.Get("Origin") != "" && r.Header.Get("Origin") != s.Config.ControlOrigin {
 				errorResponse(w, fail(403, "origin_rejected", "Invalid origin"))
@@ -146,8 +148,8 @@ func (s *Server) Handler() http.Handler {
 		if s.Config.AppPort != "" {
 			suffix += ":" + s.Config.AppPort
 		}
-		app := strings.TrimSuffix(r.Host, suffix)
-		if app == r.Host || !idPattern.MatchString(app) {
+		app := strings.TrimSuffix(host, suffix)
+		if app == host || !idPattern.MatchString(app) {
 			errorResponse(w, fail(404, "not_found", "Unknown host"))
 			return
 		}
@@ -160,6 +162,18 @@ func (s *Server) Handler() http.Handler {
 		}
 	})
 }
+
+func (s *Server) requestHost(r *http.Request) string {
+	if s.Config.EdgeOriginHost == "" || len(s.Config.EdgeOriginSecret) < 32 || r.Host != s.Config.EdgeOriginHost {
+		return r.Host
+	}
+	proof := r.Header.Get("X-Cellapp-Edge-Secret")
+	if subtle.ConstantTimeCompare([]byte(proof), []byte(s.Config.EdgeOriginSecret)) != 1 {
+		return r.Host
+	}
+	return r.Header.Get("X-Cellapp-Original-Host")
+}
+
 func remoteIP(r *http.Request) string { // Reverse proxy is local; do not trust arbitrary X-Forwarded-For.
 	host := r.RemoteAddr
 	if i := strings.LastIndex(host, ":"); i >= 0 {

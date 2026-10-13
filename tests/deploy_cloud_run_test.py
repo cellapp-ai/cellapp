@@ -51,6 +51,18 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config["secrets"]["GITHUB_CLIENT_SECRET"],
                          "cellapp-github-oauth-Ov23limVEZjXdRicZdzw:1")
 
+    def test_cloudflare_edge_requires_origin_and_secret_reference(self):
+        config = self.config(lambda c: c.update(cloudflare_edge={
+            "origin_host": "cellapp-nok7htj6gq-uw.a.run.app", "secret": "cellapp-edge-origin-secret:1"}))
+        flags = deploy.service_settings(config)
+        self.assertIn("EDGE_ORIGIN_HOST=cellapp-nok7htj6gq-uw.a.run.app", " ".join(flags))
+        self.assertIn("EDGE_ORIGIN_SECRET=cellapp-edge-origin-secret:1", " ".join(flags))
+        self.assertNotIn("EDGE_ORIGIN_SECRET", " ".join(deploy.settings(config)))
+        for edge in ({"origin_host": "console.example.com", "secret": "literal"},
+                     {"origin_host": "console.example.com"}):
+            with self.subTest(edge=edge), self.assertRaises(deploy.DeploymentError):
+                self.config(lambda c: c.update(cloudflare_edge=edge))
+
     def test_preflight_checks_dependencies_and_scheduler_target(self):
         calls = []
         config = self.config()
@@ -135,6 +147,22 @@ class ReleaseTests(unittest.TestCase):
         self.assertIn("--ignore-file=.gcloudignore", dict(commands)["Cloud Build"])
         self.assertIn("--image=" + self.image, dict(commands)["cellapp-migrate job deploy"])
 
+    def test_existing_edge_service_rejects_legacy_config_before_build(self):
+        calls = []
+
+        def fake_gcloud(stage, *args, **kwargs):
+            calls.append(stage)
+            if stage == "service inventory":
+                return [{"metadata": {"name": self.config["service"],
+                                      "annotations": {"run.googleapis.com/ingress": "all"}}}]
+            return {}
+
+        with patch.object(deploy, "preflight"), patch.object(deploy, "gcloud", side_effect=fake_gcloud), patch.object(deploy, "image_digest") as build:
+            with self.assertRaisesRegex(deploy.DeploymentError, "configure cloudflare_edge"):
+                deploy.release(self.config)
+        build.assert_not_called()
+        self.assertEqual(calls, ["service inventory"])
+
     def test_unready_revision_keeps_previous_traffic(self):
         calls = []
 
@@ -216,6 +244,56 @@ class ReleaseTests(unittest.TestCase):
         self.assertLess(stages.index("revision readiness"), stages.index("traffic switch"))
         self.assertTrue(any(self.image in arg for stage, args in calls for arg in args if stage.endswith("job deploy") or stage == "service deploy"))
         self.assertIn("--no-traffic", dict(calls)["service deploy"])
+
+    def test_cloudflare_edge_uses_public_ingress_and_service_only_secret(self):
+        self.config["cloudflare_edge"] = {"origin_host": "cellapp-nok7htj6gq-uw.a.run.app",
+                                          "secret": "cellapp-edge-origin-secret:1"}
+        calls = []
+
+        def fake_gcloud(stage, *args, **kwargs):
+            calls.append((stage, args))
+            if stage == "service inventory":
+                return [{"metadata": {"name": self.config["service"]}}]
+            if stage == "migration execution lookup":
+                return {"status": {"latestCreatedExecution": {"name": "cellapp-migrate-00001"}}}
+            if stage == "migration result":
+                return {"status": {"succeededCount": 1, "failedCount": 0, "completionTime": "2026-10-08T00:00:00Z"}}
+            if stage == "service deploy":
+                return {"status": {"latestCreatedRevisionName": "cellapp-00001"}}
+            if stage == "revision readiness":
+                return {"spec": {"containers": [{"image": self.image}]}, "status": {"conditions": [{"type": "Ready", "status": "True"}]}}
+            return {}
+
+        git = [subprocess.CompletedProcess([], 0, "", ""), subprocess.CompletedProcess([], 0, "abc123def456\n", "")]
+        with patch.object(deploy, "preflight"), patch.object(deploy, "image_digest", return_value=self.image), patch.object(deploy.subprocess, "run", side_effect=git), patch.object(deploy, "gcloud", side_effect=fake_gcloud), patch.object(deploy, "verify_routes"), patch.object(deploy, "activate_edge_candidate") as candidate:
+            deploy.release(self.config)
+        candidate.assert_called_once_with(self.config, "cellapp-00001")
+        self.assertIn("--ingress=all", dict(calls)["service deploy"])
+        self.assertIn("EDGE_ORIGIN_SECRET=cellapp-edge-origin-secret:1", " ".join(dict(calls)["service deploy"]))
+        self.assertNotIn("EDGE_ORIGIN_SECRET", " ".join(dict(calls)["cellapp-migrate job deploy"]))
+
+    def test_edge_candidate_requires_tagged_health_and_active_revision(self):
+        config = dict(self.config)
+        calls = []
+
+        def fake_gcloud(stage, *args, **kwargs):
+            calls.append(stage)
+            if stage == "candidate lookup":
+                return {"status": {"traffic": [{"tag": "release-candidate", "revisionName": "cellapp-00010",
+                                               "url": "https://release-candidate---cellapp-example.a.run.app"}]}}
+            if stage == "candidate readiness":
+                return {"status": {"conditions": [{"type": key, "status": "True"}
+                                                   for key in ("Ready", "Active", "ContainerHealthy", "ResourcesAvailable")]}}
+            return {}
+
+        with patch.object(deploy, "gcloud", side_effect=fake_gcloud), patch.object(deploy, "probe", return_value=(200, "request-id")) as probe:
+            deploy.activate_edge_candidate(config, "cellapp-00010")
+        probe.assert_called_once_with("https://release-candidate---cellapp-example.a.run.app/health")
+        self.assertEqual(calls, ["candidate tag", "candidate lookup", "candidate readiness"])
+
+        with patch.object(deploy, "gcloud", side_effect=fake_gcloud), patch.object(deploy, "probe", return_value=(503, None)):
+            with self.assertRaises(deploy.DeploymentError):
+                deploy.activate_edge_candidate(config, "cellapp-00010")
 
     def test_failed_traffic_switch_restores_previous_revision(self):
         calls = []
