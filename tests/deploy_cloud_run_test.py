@@ -217,6 +217,33 @@ class ReleaseTests(unittest.TestCase):
         self.assertTrue(any(self.image in arg for stage, args in calls for arg in args if stage.endswith("job deploy") or stage == "service deploy"))
         self.assertIn("--no-traffic", dict(calls)["service deploy"])
 
+    def test_failed_traffic_switch_restores_previous_revision(self):
+        calls = []
+
+        def fake_gcloud(stage, *args, **kwargs):
+            calls.append((stage, args))
+            if stage == "service inventory":
+                return [{"metadata": {"name": self.config["service"]},
+                         "status": {"traffic": [{"revisionName": "cellapp-00004", "percent": 100}]}}]
+            if stage == "migration execution lookup":
+                return {"status": {"latestCreatedExecution": {"name": "cellapp-migrate-00001"}}}
+            if stage == "migration result":
+                return {"status": {"succeededCount": 1, "failedCount": 0, "completionTime": "2026-10-08T00:00:00Z"}}
+            if stage == "service deploy":
+                return {"status": {"latestCreatedRevisionName": "cellapp-00005"}}
+            if stage == "revision readiness":
+                return {"spec": {"containers": [{"image": self.image}]},
+                        "status": {"conditions": [{"type": "Ready", "status": "True"}]}}
+            if stage == "traffic switch":
+                raise deploy.DeploymentError("traffic switch failed")
+            return {}
+
+        git = [subprocess.CompletedProcess([], 0, "", ""), subprocess.CompletedProcess([], 0, "abc123def456\n", "")]
+        with patch.object(deploy, "preflight"), patch.object(deploy, "image_digest", return_value=self.image), patch.object(deploy.subprocess, "run", side_effect=git), patch.object(deploy, "gcloud", side_effect=fake_gcloud):
+            with self.assertRaises(deploy.DeploymentError):
+                deploy.release(self.config)
+        self.assertIn("--to-revisions=cellapp-00004=100", dict(calls)["traffic rollback"])
+
     def test_first_service_deploy_omits_no_traffic(self):
         calls = []
 
