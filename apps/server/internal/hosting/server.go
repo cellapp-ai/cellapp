@@ -77,9 +77,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/console/session", s.webAPI(s.webSession))
 	mux.HandleFunc("GET /api/console/profile", s.webAPI(s.webProfile))
 	mux.HandleFunc("PUT /api/console/profile", s.webAPI(s.webUpdateProfile))
+	mux.HandleFunc("PUT /api/console/profile/slug", s.webAPI(s.webUpdateUserSlug))
 	mux.HandleFunc("POST /api/console/logout", s.webAPI(s.webLogout))
 	mux.HandleFunc("GET /api/console/apps", s.webAPI(s.webApps))
 	mux.HandleFunc("GET /api/console/apps/{app}", s.webAPI(s.webApp))
+	mux.HandleFunc("PUT /api/console/apps/{app}/slug", s.webAPI(s.webUpdateAppSlug))
 	mux.HandleFunc("DELETE /api/console/apps/{app}", s.webAPI(s.webDeleteApp))
 	mux.HandleFunc("POST /api/console/apps/{app}/key", s.webAPI(s.webResetKey))
 	mux.HandleFunc("GET /api/console/apps/{app}/access", s.webAPI(s.webAccess))
@@ -143,10 +145,23 @@ func (s *Server) Handler() http.Handler {
 		if s.Config.AppPort != "" {
 			suffix += ":" + s.Config.AppPort
 		}
-		app := strings.TrimSuffix(r.Host, suffix)
-		if app == r.Host || !idPattern.MatchString(app) {
+		label := strings.TrimSuffix(r.Host, suffix)
+		if label == r.Host || (!idPattern.MatchString(label) && !aliasPart.MatchString(label)) {
 			errorResponse(w, fail(404, "not_found", "Unknown host"))
 			return
+		}
+		app := label
+		if !idPattern.MatchString(label) {
+			e := s.DB.QueryRow(r.Context(), `SELECT h.app_id FROM app_hostnames h JOIN apps a ON a.id=h.app_id
+    WHERE h.label=$1 AND NOT a.deleted`, label).Scan(&app)
+			if e == pgx.ErrNoRows {
+				errorResponse(w, fail(404, "not_found", "Unknown host"))
+				return
+			}
+			if e != nil {
+				errorResponse(w, e)
+				return
+			}
 		}
 		if e := s.rate(r.Context(), "app:"+app+":"+remoteIP(r), s.Config.Limits.Requests); e != nil {
 			errorResponse(w, e)
@@ -208,6 +223,7 @@ type App struct {
 	Name       string  `json:"name"`
 	Namespace  string  `json:"namespace"`
 	Slug       string  `json:"slug"`
+	HostLabel  string  `json:"-"`
 	AliasURL   string  `json:"aliasUrl"`
 	Active     *string `json:"activeDeployment"`
 	KeyHash    string  `json:"-"`
@@ -220,12 +236,12 @@ type App struct {
 }
 
 func (s *Server) app(ctx context.Context, tx pgx.Tx, app, owner string) (a App, err error) {
-	err = tx.QueryRow(ctx, `SELECT a.id,a.name,a.active_deployment,a.key_hash,a.generation,a.deleted,a.suspended,a.data_state,a.visibility,n.handle,a.slug
-    FROM apps a JOIN app_namespaces n ON n.id=a.namespace_id WHERE a.id=$1 AND a.owner_id=$2 FOR UPDATE OF a`, app, owner).Scan(&a.ID, &a.Name, &a.Active, &a.KeyHash, &a.Generation, &a.Deleted, &a.Suspended, &a.DataState, &a.Visibility, &a.Namespace, &a.Slug)
+	err = tx.QueryRow(ctx, `SELECT a.id,a.name,a.active_deployment,a.key_hash,a.generation,a.deleted,a.suspended,a.data_state,a.visibility,n.handle,a.slug,COALESCE(a.host_label,'')
+    FROM apps a JOIN app_namespaces n ON n.id=a.namespace_id WHERE a.id=$1 AND a.owner_id=$2 FOR UPDATE OF a`, app, owner).Scan(&a.ID, &a.Name, &a.Active, &a.KeyHash, &a.Generation, &a.Deleted, &a.Suspended, &a.DataState, &a.Visibility, &a.Namespace, &a.Slug, &a.HostLabel)
 	if err != nil || a.Deleted {
 		return a, fail(404, "app_not_found", "App not found")
 	}
-	a.URL = s.Config.AppURL(a.ID)
+	a.URL = s.appURL(a.ID, a.HostLabel)
 	a.AliasURL = s.appAliasURL(a.Namespace, a.Slug)
 	return
 }

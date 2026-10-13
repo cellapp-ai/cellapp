@@ -204,3 +204,35 @@ func TestAppAccessConstraints(t *testing.T) {
 		t.Fatal("invalid visibility accepted")
 	}
 }
+
+func TestReadableHostBackfillKeepsLongLegacyAliases(t *testing.T) {
+	pool, _ := migrationDatabase(t)
+	ctx := context.Background()
+	for _, item := range controlMigrations[:len(controlMigrations)-1] {
+		if _, err := pool.Exec(ctx, item.sql); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO owners(id,issuer,subject) VALUES('legacy-one','test','legacy-one'),('legacy-two','test','legacy-two');
+INSERT INTO app_namespaces(id,owner_id,handle) VALUES
+('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','legacy-one','averylongusernamethatexceedstheavailablehostlabelspace'),
+('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb','legacy-two','alice');
+INSERT INTO apps(id,owner_id,namespace_id,slug,name,key_hash,create_key,create_digest) VALUES
+('long-app','legacy-one','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','averylongapplicationslugthatexceedstheavailablehostlabelspace','Long','hash','long-key','digest'),
+('short-app','legacy-two','bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb','notes','Notes','hash','short-key','digest');`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, appSlugHosts); err != nil {
+		t.Fatal(err)
+	}
+	var longLabel, shortLabel *string
+	if err := pool.QueryRow(ctx, `SELECT host_label FROM apps WHERE id='long-app'`).Scan(&longLabel); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT host_label FROM apps WHERE id='short-app'`).Scan(&shortLabel); err != nil {
+		t.Fatal(err)
+	}
+	if longLabel != nil || shortLabel == nil || *shortLabel != "notes-alice" {
+		t.Fatalf("legacy backfill changed incompatible aliases: long=%v short=%v", longLabel, shortLabel)
+	}
+}

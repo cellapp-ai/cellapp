@@ -58,7 +58,7 @@ func (s *Server) serveApp(w http.ResponseWriter, r *http.Request, appID string) 
 			return fail(403, "app_suspended", "Application suspended")
 		}
 		if r.Method == "POST" {
-			if r.Header.Get("Origin") != s.Config.AppURL(appID) {
+			if r.Header.Get("Origin") != "https://"+r.Host {
 				return fail(403, "origin_rejected", "Invalid form origin")
 			}
 			user, sessionError := s.appSession(r, appID)
@@ -94,7 +94,8 @@ func (s *Server) serveApp(w http.ResponseWriter, r *http.Request, appID string) 
 		user, sessionError := s.appSession(r, appID)
 		if sessionError != nil {
 			if r.Method == "GET" && navigation {
-				redirect = s.Config.ControlOrigin + "/auth/app?app=" + appID + "&return=" + url.QueryEscape(appReturn(r.URL.RequestURI()))
+				label := strings.TrimSuffix(strings.TrimSuffix(r.Host, ":"+s.Config.AppPort), "."+s.Config.AppsDomain)
+				redirect = s.Config.ControlOrigin + "/auth/app?" + url.Values{"app": {appID}, "host": {label}, "return": {appReturn(r.URL.RequestURI())}}.Encode()
 				return nil
 			}
 			return sessionError

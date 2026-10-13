@@ -129,7 +129,7 @@ func (s *Server) serveData(w http.ResponseWriter, r *http.Request, appID string)
 		return fail(405, "method_not_allowed", "Unsupported data operation")
 	}
 	if r.Method == http.MethodPost || r.Method == http.MethodPatch || r.Method == http.MethodDelete {
-		if r.Header.Get("Origin") != s.Config.AppURL(appID) {
+		if r.Header.Get("Origin") != "https://"+r.Host {
 			return fail(403, "origin_rejected", "Invalid data request origin")
 		}
 	}

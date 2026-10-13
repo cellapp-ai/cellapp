@@ -67,7 +67,7 @@ func (s *Server) appMe(w http.ResponseWriter, r *http.Request, appID string) err
 }
 
 func (s *Server) requestAppAccess(w http.ResponseWriter, r *http.Request, appID string) error {
-	if r.Header.Get("Origin") != s.Config.AppURL(appID) {
+	if r.Header.Get("Origin") != "https://"+r.Host {
 		return fail(403, "origin_rejected", "Invalid form origin")
 	}
 	user, err := s.appSession(r, appID)

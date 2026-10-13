@@ -4,7 +4,7 @@
 
 从 `.env.example` 创建自己的配置，设置 `NODE_ENV=production` 和 `AUTH_MODE=github`，替换 GitHub OAuth、S3、数据库、SECRET 和域名。GitHub OAuth App 的 callback URL 必须精确设置为 `${CONTROL_ORIGIN}/auth/callback`。`AUTH_MODE=dev` 只供 localhost 非生产开发，生产或非本地控制域会拒绝启动。服务启动时检查必填配置和正数额度；SECRET 必须稳定保存，变更会使所有摘要凭证不可用。
 
-控制域和应用域必须使用不同注册域，例如 `control.example.com` 与 `*.example-apps.net`；精确 Host 路由隔离应用。反向代理终止 TLS，保留原始 Host，不将应用内容与控制面共享缓存。后端端口仅暴露给代理，不能开放给公网。网关响应为 `private, no-store`。
+控制域和应用域必须使用不同注册域，例如 `console.cellapp.ai` 与 `*.ce11.app`；生产环境设置 `APPS_DOMAIN=ce11.app`，并为泛域名配置 DNS 与 TLS 证书。应用主机名使用 `{应用slug}-{用户slug}.ce11.app`，保留的旧 ID 域名继续解析。精确 Host 路由隔离应用；反向代理终止 TLS 并保留原始 Host，不将应用内容与控制面共享缓存。后端端口仅暴露给代理，不能开放给公网。网关响应为 `private, no-store`。
 
 对象 bucket 必须私有。S3 使用通用配置变量，生产显式注入 `S3_ACCESS_KEY_ID` 和 `S3_SECRET_ACCESS_KEY`，Endpoint 必须为 HTTPS；服务只探测配置的 Bucket，不自动创建生产 Bucket。本地 MinIO、凭证兼容和已有后端升级见 [S3 存储配置](s3-storage.md)。运行匿名 GET 验收时应返回拒绝，不得返回对象内容；仅服务端具备读写权限。不要在客户端发放对象读取签名 URL。对象上传使用有界临时文件，配置足够的临时磁盘并限制并发入口，上传失败不会发布版本。
 

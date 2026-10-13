@@ -27,12 +27,24 @@ func (s *Server) startAppHandoff(w http.ResponseWriter, r *http.Request) error {
 		return fail(404, "app_not_found", "Application not found")
 	}
 	returnTo := appReturn(r.URL.Query().Get("return"))
-	var exists bool
-	if err := s.DB.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM apps WHERE id=$1 AND NOT deleted AND NOT suspended)`, appID).Scan(&exists); err != nil {
+	var canonical string
+	if err := s.DB.QueryRow(r.Context(), `SELECT COALESCE(host_label,'') FROM apps WHERE id=$1 AND NOT deleted AND NOT suspended`, appID).Scan(&canonical); err != nil && err != pgx.ErrNoRows {
 		return err
-	}
-	if !exists {
+	} else if err == pgx.ErrNoRows {
 		return fail(404, "app_not_found", "Application not found")
+	}
+	label := r.URL.Query().Get("host")
+	if label == "" {
+		label = canonical
+		if label == "" {
+			label = appID
+		}
+	}
+	if label != appID {
+		var claimed string
+		if err := s.DB.QueryRow(r.Context(), `SELECT app_id FROM app_hostnames WHERE label=$1`, label).Scan(&claimed); err != nil || claimed != appID {
+			return fail(404, "app_not_found", "Application host not found")
+		}
 	}
 	owner, err := s.browserOwner(r)
 	if err != nil {
@@ -40,7 +52,7 @@ func (s *Server) startAppHandoff(w http.ResponseWriter, r *http.Request) error {
 		if !errors.As(err, &api) || api.Status != http.StatusUnauthorized {
 			return err
 		}
-		query := url.Values{"return": {"/auth/app?" + url.Values{"app": {appID}, "return": {returnTo}}.Encode()}}
+		query := url.Values{"return": {"/auth/app?" + url.Values{"app": {appID}, "host": {label}, "return": {returnTo}}.Encode()}}
 		http.Redirect(w, r, "/auth/login?"+query.Encode(), http.StatusSeeOther)
 		return nil
 	}
@@ -52,7 +64,7 @@ func (s *Server) startAppHandoff(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	http.Redirect(w, r, s.Config.AppURL(appID)+"/_cellapp/handoff?"+url.Values{"ticket": {secret}}.Encode(), http.StatusSeeOther)
+	http.Redirect(w, r, s.Config.AppHostURL(label)+"/_cellapp/handoff?"+url.Values{"ticket": {secret}}.Encode(), http.StatusSeeOther)
 	return nil
 }
 

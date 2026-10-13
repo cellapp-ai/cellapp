@@ -49,4 +49,4 @@ GET `/auth/login?return=<本站管理路径>` 和 `/auth/callback` 保留现有�
 
 `/rest/v1/{table}` 支持 `supabase-js` 2.117.3 的表级 select、insert、update、delete、eq、order、range 与写后 select。每次请求重新检查登录、应用访问、表授权及行策略，浏览器提交的 Authorization 和 profile 不生效。Auth、Storage、Realtime、Functions、RPC 等路径返回 `501 unsupported_feature`；其他 Supabase API 不在本期范围内。所有者通过 Bearer CLI 的 `/apps/{app}/data`、`/plan`、`/apply`、`/verify` 管理表；表版本和静态发布独立。
 
-应用显示名允许重复。`namespace` 是所有者公开命名空间，`slug` 在该空间内唯一；控制域的 `aliasUrl` 对应 `@namespace/slug`，以临时重定向跳转到已有 ID 域名，登录、Cookie、权限和数据库仍按应用 ID 隔离。删除后别名不再解析，也不分配给新应用。新所有者首次创建应用可指定命名空间，创建时可指定应用别名；未指定则自动生成。已存在的命名空间及别名在本期不可修改。
+应用显示名允许重复。`namespace` 是账户的用户 slug，`slug` 是应用 slug，新应用 URL 为 `https://{slug}-{namespace}.<APPS_DOMAIN>`，组合后的单个 DNS 标签最长 63 位。用户 slug 至少 3 位；两种 slug 均使用小写字母开头，后续可包含小写字母、数字、连字符，且拒绝 `accounts`、`cloud`、`login`、`app` 等平台保留词。组合域名全局唯一并在删除、改名后保留占用。控制域 `aliasUrl` 对应 `@namespace/slug`，临时重定向到当前 URL。内部 ID 仍用于登录授权、应用数据和部署隔离；旧 ID 域名及先前分配的组合域名可继续访问原应用。历史别名过长或冲突时保留旧 ID 域名，设置合规 slug 后启用组合域名。新所有者首次创建应用可通过 CLI 指定 `namespace` 和 `slug`，控制台的 Profile 与应用详情页可分别修改这两个值。
