@@ -23,6 +23,7 @@ const key = '4'.repeat(64);
 let mode: 'normal' | 'empty' | 'error' | 'expired' | 'lost' = 'normal';
 let mutations = 0;
 let deviceDecision = '';
+let displayName = '';
 let browser;
 try {
   browser = await chromium.launch({ executablePath, headless: true });
@@ -40,12 +41,13 @@ try {
       if (mode === 'lost') { await route.abort('failed'); return; }
       if (path.endsWith('/key')) { await route.fulfill({json: {key}}); return; }
       if (path === '/device/decision') { deviceDecision = route.request().postDataJSON().decision; await route.fulfill({json: {status: deviceDecision}}); return; }
+      if (path === '/profile' && method === 'PUT') { displayName = route.request().postDataJSON().displayName; await route.fulfill({json: {displayName}}); return; }
       await route.fulfill({json: {deleted: true, revoked: true, loggedOut: true}}); return;
     }
     if (path === '/session') { await route.fulfill({json: {ownerId: ownerID, authMode: 'github'}}); return; }
     if (mode === 'error') { await route.fulfill({status: 503, json: {message: 'Service temporarily unavailable.'}}); return; }
     const app = {id: appID, name: 'Shared notes', namespace: 'demo', slug: 'shared-notes', aliasUrl: 'https://control.localhost/a/demo/shared-notes', url: `https://${appID}.apps.localhost`, activeDeployment: null, suspended: false, visibility: 'restricted', dataState: 'ready'};
-    const value = path === '/apps' ? mode === 'empty' ? [] : [app] : path === '/credentials' ? mode === 'empty' ? [] : [{id: credentialID, createdAt:'2026-09-01T00:00:00Z', expiresAt:'2026-10-01T00:00:00Z'}] : path.endsWith('/access') ? {requests: [], grants: []} : path.endsWith('/data') ? {state:'ready',version:1,digest:'f'.repeat(64)} : {...app, release: null};
+    const value = path === '/apps' ? mode === 'empty' ? [] : [app] : path === '/credentials' ? mode === 'empty' ? [] : [{id: credentialID, createdAt:'2026-09-01T00:00:00Z', expiresAt:'2026-10-01T00:00:00Z'}] : path === '/profile' ? {displayName} : path.endsWith('/access') ? {requests: [], grants: []} : path.endsWith('/data') ? {state:'ready',version:1,digest:'f'.repeat(64)} : {...app, release: null};
     await route.fulfill({json: value});
   });
   await page.goto(origin + '/applications');
@@ -100,6 +102,23 @@ try {
   await page.goto(origin+'/device?code=ABC123');await page.getByLabel('Authorization code').waitFor();assert.equal(await page.getByLabel('Authorization code').inputValue(),'ABC123');assert.equal(deviceDecision,'');
   await page.getByRole('button',{name:'Deny access'}).click();await page.getByRole('status').filter({hasText:'Authorization denied'}).waitFor();assert.equal(deviceDecision,'denied');
   checks.push('Credential confirmation and explicit device decision with prefilled code');
+  await page.goto(origin+'/profile');await page.getByRole('heading',{name:'Profile settings'}).waitFor();
+  await page.getByLabel('Name',{exact:true}).fill('Alice');
+  await page.getByRole('button',{name:'Save name'}).click();
+  await page.getByRole('status').filter({hasText:'Display name saved'}).waitFor();
+  assert.equal(displayName,'Alice');
+  await page.reload();assert.equal(await page.getByLabel('Name',{exact:true}).inputValue(),'Alice');
+  await page.getByLabel('Name',{exact:true}).fill(' changed ');
+  assert(await page.getByRole('button',{name:'Save name'}).isDisabled());
+  await page.getByRole('button',{name:'Discard changes'}).click();
+  assert.equal(await page.getByLabel('Name',{exact:true}).inputValue(),'Alice');
+  for (const width of [320,390,768,800,801,1440]) {
+    await page.setViewportSize({width,height:900});
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `Profile overflow at ${width}`);
+    assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa']).analyze()).violations, []);
+    if ([390,1440].includes(width)) await page.screenshot({path: `${artifacts}/profile-${width}.png`,fullPage:true});
+  }
+  checks.push('Profile deep link, save, reload, validation, discard and responsive layout');
   mode='empty';await page.goto(origin+'/applications');await page.getByRole('heading',{name:'No applications yet'}).waitFor();
   mode='error';await page.getByRole('button',{name:'Refresh applications'}).click();await page.getByRole('alert').filter({hasText:'Service temporarily unavailable'}).waitFor();
   assert.equal(await page.getByRole('heading',{name:'No applications yet'}).count(),0);

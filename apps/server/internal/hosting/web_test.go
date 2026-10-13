@@ -85,6 +85,48 @@ func TestWebOwnerManagement(t *testing.T) {
 	response[any](t, f.webRequest(t, "POST", "/logout", nil, session, origin), 200)
 	response[any](t, f.webRequest(t, "GET", "/session", nil, session, ""), 401)
 }
+
+func TestWebProfile(t *testing.T) {
+	f := setup(t)
+	session := f.webSessionCookie(t)
+	origin := f.server.Config.ControlOrigin
+	response[any](t, f.webRequest(t, "GET", "/profile", nil, "", ""), 401)
+	response[any](t, f.webRequest(t, "PUT", "/profile", map[string]string{"displayName": "Alice"}, "", f.server.Config.ControlOrigin), 401)
+	initial := response[webProfileData](t, f.webRequest(t, "GET", "/profile", nil, session, ""), 200)
+	if initial.DisplayName != "" {
+		t.Fatal(initial)
+	}
+	for _, invalid := range []map[string]any{{}, {"displayName": " padded "}, {"displayName": strings.Repeat("a", 81)}, {"displayName": "a\nb"}, {"displayName": nil}} {
+		response[any](t, f.webRequest(t, "PUT", "/profile", invalid, session, origin), 400)
+	}
+	response[any](t, f.webRequest(t, "PUT", "/profile", map[string]string{"displayName": "Alice"}, session, ""), 403)
+	response[any](t, f.webRequest(t, "PUT", "/profile", map[string]string{"displayName": "Alice"}, session, "https://outside.example"), 403)
+	updated := response[webProfileData](t, f.webRequest(t, "PUT", "/profile", map[string]string{"displayName": "Alice"}, session, origin), 200)
+	if updated.DisplayName != "Alice" {
+		t.Fatal(updated)
+	}
+	if got := response[webProfileData](t, f.webRequest(t, "GET", "/profile", nil, session, ""), 200); got.DisplayName != "Alice" {
+		t.Fatal(got)
+	}
+	otherOwner, otherSession := id(), token()
+	if _, err := f.db.Exec(context.Background(), `INSERT INTO owners(id,issuer,subject) VALUES($1,'test',$1)`, otherOwner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.Exec(context.Background(), `INSERT INTO browser_sessions(hash,owner_id,expires_at) VALUES($1,$2,now()+interval '1 day')`, keyed(f.server.Config.Secret, otherSession), otherOwner); err != nil {
+		t.Fatal(err)
+	}
+	if got := response[webProfileData](t, f.webRequest(t, "GET", "/profile", nil, otherSession, ""), 200); got.DisplayName != "" {
+		t.Fatal(got)
+	}
+	response[webProfileData](t, f.webRequest(t, "PUT", "/profile", map[string]string{"displayName": "Bob"}, otherSession, origin), 200)
+	if got := response[webProfileData](t, f.webRequest(t, "GET", "/profile", nil, session, ""), 200); got.DisplayName != "Alice" {
+		t.Fatal(got)
+	}
+	response[webProfileData](t, f.webRequest(t, "PUT", "/profile", map[string]string{"displayName": ""}, session, origin), 200)
+	if got := response[webProfileData](t, f.webRequest(t, "GET", "/profile", nil, session, ""), 200); got.DisplayName != "" {
+		t.Fatal(got)
+	}
+}
 func TestWebResourceScopeAndCredentials(t *testing.T) {
 	f := setup(t)
 	session := f.webSessionCookie(t)
@@ -184,7 +226,7 @@ func TestControlReturnPaths(t *testing.T) {
 			t.Fatal("unsafe return", value)
 		}
 	}
-	for _, value := range []string{"/applications", "/applications/" + id(), "/device?code=ABC", "/credentials"} {
+	for _, value := range []string{"/applications", "/applications/" + id(), "/device?code=ABC", "/credentials", "/profile"} {
 		if safeControlReturn(value) != value {
 			t.Fatal("valid return lost", value)
 		}
@@ -259,7 +301,7 @@ func TestWebStaticDelivery(t *testing.T) {
 		t.Fatal(e)
 	}
 	s := Server{Web: web}
-	for _, p := range []string{"/", "/login", "/applications", "/applications/" + id(), "/credentials", "/device?code=ABC"} {
+	for _, p := range []string{"/", "/login", "/applications", "/applications/" + id(), "/credentials", "/device?code=ABC", "/profile"} {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest("GET", p, nil)
 		if e := s.webPage(w, r); e != nil || w.Code != 200 || !strings.Contains(w.Header().Get("Content-Security-Policy"), "script-src 'self'") {

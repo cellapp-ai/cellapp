@@ -66,7 +66,7 @@ func TestRunFreshAndRepeat(t *testing.T) {
 		t.Fatal(err)
 	}
 	var count int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&count); err != nil || count != 4 {
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&count); err != nil || count != len(controlMigrations) {
 		t.Fatalf("migration count=%d, err=%v", count, err)
 	}
 	for _, table := range []string{"owners", "apps", "deployments", "access_sessions"} {
@@ -158,7 +158,7 @@ func TestRunConcurrent(t *testing.T) {
 		}
 	}
 	var count int
-	if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM schema_migrations`).Scan(&count); err != nil || count != 4 {
+	if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM schema_migrations`).Scan(&count); err != nil || count != len(controlMigrations) {
 		t.Fatalf("migration count=%d, err=%v", count, err)
 	}
 }

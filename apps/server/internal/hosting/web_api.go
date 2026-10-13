@@ -19,7 +19,7 @@ func (s *Server) webAPI(h webHandler) http.HandlerFunc {
 				return e
 			}
 			if r.ContentLength != 0 {
-				if r.URL.Path != "/api/console/device/decision" {
+				if r.URL.Path != "/api/console/device/decision" && r.URL.Path != "/api/console/profile" {
 					return fail(400, "invalid_json", "This operation does not accept a request body")
 				}
 				kind, _, e := mime.ParseMediaType(r.Header.Get("Content-Type"))
