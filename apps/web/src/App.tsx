@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { access, application, credential, dataStatus, decisionResult, detail, keyResult, list, message, request, RequestError, session, success } from '@/api';
+import { access, application, credential, dataStatus, decisionResult, detail, keyResult, list, message, profile, request, RequestError, session, success } from '@/api';
 import type { Session } from '@/api';
 
 type Load<T> = { kind: 'loading' } | { kind: 'ready'; value: T } | { kind: 'error'; message: string };
@@ -23,7 +23,7 @@ function date(value: string) { return new Date(value).toLocaleString('en-GB', { 
 function loginReturn(): string {
   const value = new URLSearchParams(window.location.search).get('return') ?? '/applications';
   const path = value.split('?')[0] ?? '';
-  return ['/applications', '/credentials', '/device'].includes(path) || /^\/applications\/[a-f0-9]{32}$/.test(path) ? value : '/applications';
+  return ['/applications', '/credentials', '/device', '/profile'].includes(path) || /^\/applications\/[a-f0-9]{32}$/.test(path) ? value : '/applications';
 }
 function Feedback({ children, error = false }: { children: ReactNode; error?: boolean }) {
   return <p className={error ? 'feedback error' : 'feedback'} role={error ? 'alert' : 'status'}>{children}</p>;
@@ -130,6 +130,32 @@ function Credentials() {
     {selected && <Confirm title="Revoke deployment access?" onClose={() => setSelected(null)} busy={busy} onConfirm={() => { void revoke(); }}>The tool using this credential will need to authorize again. Published applications remain available.</Confirm>}
   </>;
 }
+function ProfilePage({ owner }: { owner: Session }) {
+  const { state, reload } = useResource('/profile', profile);
+  const [draft, setDraft] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState('');
+  const [error, setError] = useState('');
+  const saved = state.kind === 'ready' ? state.value.displayName : '';
+  const name = draft ?? saved;
+  const valid = name === name.trim() && Array.from(name).length <= 80 && !Array.from(name).some(character => { const code = character.codePointAt(0) ?? 0; return code < 32 || code === 127; });
+  const save = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!valid || busy || state.kind !== 'ready') return;
+    setBusy(true); setFeedback(''); setError('');
+    try {
+      await request('/profile', profile, { method: 'PUT', body: { displayName: name } });
+      setDraft(null); reload(); setFeedback('Display name saved.');
+    } catch (caught) {
+      setError(`${message(caught)} Refresh the profile to check whether the change was saved.`);
+    } finally { setBusy(false); }
+  };
+  return <><div className="page-heading"><p className="eyebrow">YOUR ACCOUNT</p><h1>Profile settings</h1><p>Manage the name shown in your Cellapp account.</p></div>
+    <LoadingError state={state} retry={reload} />
+    {state.kind === 'ready' && <><section className="panel"><h2>Display name</h2><form className="profile-form" onSubmit={event => { void save(event); }}><label htmlFor="display-name">Name</label><input id="display-name" value={name} disabled={busy} onChange={event => { setDraft(event.target.value); setFeedback(''); setError(''); }} aria-describedby="display-name-help" /><p id="display-name-help">Optional, up to 80 characters. Leave blank to clear it.</p><div className="actions"><button className="primary" type="submit" disabled={busy || !valid || name === saved}>{busy ? 'Saving…' : 'Save name'}</button><button type="button" disabled={busy || name === saved} onClick={() => { setDraft(null); setError(''); }}>Discard changes</button><button type="button" disabled={busy} onClick={() => { setDraft(null); setFeedback(''); setError(''); reload(); }}>Refresh profile</button></div>{!valid && <Feedback error>Remove leading or trailing spaces, control characters, and use no more than 80 characters.</Feedback>}{feedback && <Feedback>{feedback}</Feedback>}{error && <Feedback error>{error}</Feedback>}</form></section>
+      <section className="panel"><h2>Account details</h2><dl><dt>Account ID</dt><dd><code>{owner.ownerId}</code></dd><dt>Sign-in mode</dt><dd>{owner.authMode === 'dev' ? 'Local development' : 'GitHub'}</dd></dl><p>Your account ID is fixed. Changing your display name does not change application addresses.</p></section></>}
+  </>;
+}
 function Device() {
   const [code, setCode] = useState(new URLSearchParams(window.location.search).get('code') ?? '');
   const [busy, setBusy] = useState(false);
@@ -161,7 +187,7 @@ function Workspace({ owner }: { owner: Session }) {
     return () => window.removeEventListener('keydown', escape);
   }, [menu]);
   const id = path.startsWith('/applications/') ? path.slice('/applications/'.length) : '';
-  return <div className="workspace min-w-0"><header className="sidebar"><a className="brand" href="/applications" aria-label="Cellapp applications"><img src="/logos/cellapp-landscape.svg" alt="Cellapp" /></a><button className="menu-toggle" ref={toggle} aria-label={menu ? 'Close menu' : 'Open menu'} aria-expanded={menu} aria-controls="navigation" onClick={() => setMenu(value => !value)}>Menu</button><nav id="navigation" aria-label="Workspace" className={menu ? 'navigation is-open' : 'navigation'}><a href="/applications" aria-current={path.startsWith('/applications') ? 'page' : undefined}>Applications</a><a href="/credentials" aria-current={path === '/credentials' ? 'page' : undefined}>Deployment credentials</a><a href="/device" aria-current={path === '/device' ? 'page' : undefined}>Authorize tool</a></nav><div className="account"><p className="eyebrow">{owner.authMode === 'dev' ? 'LOCAL DEVELOPMENT' : 'SIGNED IN'}</p><code title={owner.ownerId}>{owner.ownerId.slice(0, 8)}…</code><button disabled={busy} onClick={() => { void logout(); }}>{busy ? 'Signing out…' : 'Sign out'}</button></div></header><main id="content" tabIndex={-1} className="content">{error && <Feedback error>{error}</Feedback>}{path === '/credentials' ? <Credentials /> : path === '/device' ? <Device /> : /^[a-f0-9]{32}$/.test(id) ? <ApplicationPage id={id} /> : path === '/applications' ? <Applications /> : <><h1>Page not found</h1><a href="/applications">Return to applications</a></>}</main></div>;
+  return <div className="workspace min-w-0"><header className="sidebar"><a className="brand" href="/applications" aria-label="Cellapp applications"><img src="/logos/cellapp-landscape.svg" alt="Cellapp" /></a><button className="menu-toggle" ref={toggle} aria-label={menu ? 'Close menu' : 'Open menu'} aria-expanded={menu} aria-controls="navigation" onClick={() => setMenu(value => !value)}>Menu</button><nav id="navigation" aria-label="Workspace" className={menu ? 'navigation is-open' : 'navigation'}><a href="/applications" aria-current={path.startsWith('/applications') ? 'page' : undefined}>Applications</a><a href="/credentials" aria-current={path === '/credentials' ? 'page' : undefined}>Deployment credentials</a><a href="/device" aria-current={path === '/device' ? 'page' : undefined}>Authorize tool</a><a href="/profile" aria-current={path === '/profile' ? 'page' : undefined}>Profile settings</a></nav><div className="account"><p className="eyebrow">{owner.authMode === 'dev' ? 'LOCAL DEVELOPMENT' : 'SIGNED IN'}</p><code title={owner.ownerId}>{owner.ownerId.slice(0, 8)}…</code><button disabled={busy} onClick={() => { void logout(); }}>{busy ? 'Signing out…' : 'Sign out'}</button></div></header><main id="content" tabIndex={-1} className="content">{error && <Feedback error>{error}</Feedback>}{path === '/credentials' ? <Credentials /> : path === '/device' ? <Device /> : path === '/profile' ? <ProfilePage owner={owner} /> : /^[a-f0-9]{32}$/.test(id) ? <ApplicationPage id={id} /> : path === '/applications' ? <Applications /> : <><h1>Page not found</h1><a href="/applications">Return to applications</a></>}</main></div>;
 }
 export function App() {
   const [state, setState] = useState<Load<Session> | { kind: 'signed-out' }>({ kind: 'loading' });
