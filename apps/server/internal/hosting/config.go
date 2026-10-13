@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -11,6 +12,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/net/publicsuffix"
 )
+
+var edgeOriginHostPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$`)
 
 type Limits struct {
 	Apps            int64 `json:"apps"`
@@ -25,6 +28,7 @@ type Config struct {
 	WebRoot                                                                              string
 	Production                                                                           bool
 	Address, ControlOrigin, AppsDomain, AppPort, Secret, DatabaseURL, AppDataDatabaseURL string
+	EdgeOriginHost, EdgeOriginSecret                                                     string
 	PostgRESTURL, AppDataJWTSecret                                                       string
 	AuthMode                                                                             string
 	GitHubClientID, GitHubClientSecret                                                   string
@@ -63,6 +67,8 @@ func LoadConfig(get func(string) string) (c Config, err error) {
 	c.ControlOrigin = value("CONTROL_ORIGIN", "https://control.localhost:8443")
 	c.AppsDomain = value("APPS_DOMAIN", "apps.localhost")
 	c.AppPort = get("APP_PORT")
+	c.EdgeOriginHost = get("EDGE_ORIGIN_HOST")
+	c.EdgeOriginSecret = get("EDGE_ORIGIN_SECRET")
 	if !c.Production && c.AppPort == "" {
 		c.AppPort = "8443"
 	}
@@ -141,6 +147,16 @@ func LoadConfig(get func(string) string) (c Config, err error) {
 		p, e := strconv.Atoi(c.AppPort)
 		if e != nil || p < 1 || p > 65535 {
 			return c, fmt.Errorf("invalid APP_PORT")
+		}
+	}
+	if (c.EdgeOriginHost == "") != (c.EdgeOriginSecret == "") {
+		return c, fmt.Errorf("EDGE_ORIGIN_HOST and EDGE_ORIGIN_SECRET must be configured together")
+	}
+	if c.EdgeOriginHost != "" {
+		if !edgeOriginHostPattern.MatchString(c.EdgeOriginHost) || len(c.EdgeOriginSecret) < 32 ||
+			c.EdgeOriginHost == origin.Hostname() || c.EdgeOriginHost == c.AppsDomain ||
+			strings.HasSuffix(c.EdgeOriginHost, "."+c.AppsDomain) {
+			return c, fmt.Errorf("invalid edge origin configuration")
 		}
 	}
 	controlDB, e := pgxpool.ParseConfig(c.DatabaseURL)

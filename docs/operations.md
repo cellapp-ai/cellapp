@@ -71,17 +71,34 @@ docker compose -f infra/compose.yaml exec -T postgres psql -U cellapp_rename_adm
 
 ## Cloud Run 部署
 
-根目录 `Dockerfile` 从同一提交构建 Go server 与 Web console，并把 Caddy 放在单一运行镜像中。容器内 Go 只监听 loopback，Caddy 监听 Cloud Run 的 `$PORT`；外部 HTTPS 由负载均衡终止，生产不使用本地 `tls internal`。Cloud Run service ingress 必须是 `internal-and-cloud-load-balancing`，控制域和访客域的 Host 原样转发给 Go。当前按直接连接地址限流，代理后的请求可能共享来源配额；上线前按实际流量评估，不因转发头而放宽授权。
+### Cloudflare 直连模式
+
+如需由 Cloudflare 为 `console.cellapp.ai` 和 `*.ce11.app` 提供 HTTPS，并绕开 Google HTTPS 负载均衡，在 `infra/cloudrun.json` 中增加：
+
+```json
+"cloudflare_edge": {
+  "origin_host": "cellapp-nok7htj6gq-uw.a.run.app",
+  "secret": "cellapp-edge-origin-secret:1"
+}
+```
+
+`origin_host` 是该 Cloud Run 服务的稳定 `run.app` 主机名；`secret` 是只授予服务运行账号读取权限的 Secret Manager `name:version` 引用。为 Cloudflare Worker 单独生成随机密钥，并将同一个值设置为 Worker 的 `EDGE_ORIGIN_SECRET` secret binding。不要把密钥值写入配置、仓库或 Worker 源码。Worker 源码见 [cloudflare-worker.mjs](../infra/cloudflare-worker.mjs)，需要配置 `CONTROL_HOST`、`APPS_DOMAIN`、`ORIGIN_URL` 和 `EDGE_ORIGIN_SECRET`；`PROBE_HOST` 只用于临时 workers.dev 测试。
+
+此模式下发布脚本将服务 ingress 设为 `all`，因为 Cloudflare Worker 从公网访问 `run.app`。Go 服务仅在请求的 Host 等于配置的 `origin_host` 且两个专用请求头的密钥匹配时，才接受 `X-Cellapp-Original-Host`；其他直接访问保持原有未知域名响应。Cloudflare 的 DNS 记录要开启代理，并为 `console.cellapp.ai/*` 与 `*.ce11.app/*` 安装 Worker 路由。正式 Worker 名为 `cellapp-edge`；由于它自行请求 `run.app`，这两条代理 A 记录可使用 Cloudflare 推荐的保留占位地址 `192.0.2.0`，不依赖 Google 负载均衡 IP。确保 Cloudflare 安全设置不会对正常访客持续发起人机验证。Cloudflare 免费 Workers 有每日请求额度，达到额度后的行为应按所选套餐设置与监控；它仍产生 Cloud Run、出网、数据库和存储费用。
+
+初次切换时先用独立测试 Worker 和服务验证 `/login` 返回 200、未知访客域返回 404 且带 `X-Request-ID`，并确认直接 `run.app` 访问无法作为有效控制域。随后打开 DNS 代理，检查两个真实域名的 HTTPS 证书、GitHub 登录与访客资源。若 Google 负载均衡尚在，可将 DNS 改回仅 DNS 作为临时回退。当前环境已移除负载均衡；后续应用回滚应保留 Cloudflare Worker、代理 DNS 和专用回源密钥，将正式 Cloud Run 服务流量切回兼容该回源协议的旧修订版本。不能把 DNS 改回已释放的旧 IP。
+
+根目录 `Dockerfile` 从同一提交构建 Go server 与 Web console，并把 Caddy 放在单一运行镜像中。容器内 Go 只监听 loopback，Caddy 监听 Cloud Run 的 `$PORT`；外部 HTTPS 由 Google 负载均衡或 Cloudflare 终止，生产不使用本地 `tls internal`。未配置 `cloudflare_edge` 时，Cloud Run service ingress 为 `internal-and-cloud-load-balancing`，控制域和访客域的 Host 原样转发给 Go。当前按直接连接地址限流，代理后的请求可能共享来源配额；上线前按实际流量评估，不因转发头而放宽授权。
 
 一次命令只发布应用和维护 job。提前准备并验证：
 
 - Google Cloud 项目、启用的 Cloud Build/Cloud Run/Artifact Registry/Secret Manager API、镜像仓库、可部署的服务账号，以及同区域的 Direct VPC 网络与子网，或 VPC connector。仅使用 Cloud SQL 时才配置 `cloudsql_instance`。
 - 已迁移或新建的 PostgreSQL、私有 S3 Bucket 和 HTTPS S3 Endpoint；运行身份能访问它们。应用数据使用独立数据库，按[应用数据运维说明](app-data-operations.md#生产准备)初始化，并为 provisioner 和 PostgREST authenticator 设置不同的生产密码。Secret Manager 中保存 `SECRET`、`DATABASE_URL`、`APP_DATA_DATABASE_URL`、`PGRST_DB_URI`、应用数据 JWT、GitHub OAuth secret 和 S3 凭证；服务账号仅获所需 Secret 的读取权限。秘密值不写入配置 JSON、镜像或构建参数。
 - GitHub OAuth App 的 callback URL 精确等于 `${CONTROL_ORIGIN}/auth/callback`。`CONTROL_ORIGIN` 为 HTTPS 控制域，`APPS_DOMAIN` 为另一个注册域的访客基域，生产 `APP_PORT` 为空。
-- 已配置的全局外部 HTTPS 负载均衡、两个域名的 DNS、控制域证书，以及访客域 `*.apps.example.net` 的 DNS 授权通配证书。Cloud Run 原生域名映射不支持所需通配证书。负载均衡通过 serverless NEG 指向本服务，保留原始 Host；默认 `run.app` 地址不作为产品入口。
+- 已配置的 HTTPS 入口：Google 全局外部负载均衡及控制域/访客通配证书，或上文的 Cloudflare Worker、代理 DNS 与专用回源密钥。Cloud Run 原生域名映射不支持所需通配证书；默认 `run.app` 地址不作为产品入口。
 - 已启用的 Cloud Scheduler HTTP job，名称和区域见配置文件，目标为 `https://run.googleapis.com/v2/projects/PROJECT/locations/REGION/jobs/SERVICE-cleanup:run`，用具备 Cloud Run job 执行权限的身份调用。Cloud Run 会缩到零，服务内每分钟清理仅作补充；定时 job 是生产清理入口。
 
-复制 [非秘密配置示例](../infra/cloudrun.example.json) 到 `infra/cloudrun.json` 并填写实际资源名称、生产额度/保留期限及 Secret Manager `name:version` 引用；上线前按预算核定额度，生产缺少任一项会拒绝启动。该本地文件已从 Git、Docker 和 Cloud Build 上传上下文排除。Cloud Run 镜像内的 PostgREST 只监听 `127.0.0.1:3001`；`APP_DATA_JWT_SECRET` 与 `PGRST_JWT_SECRET` 必须引用同一 Secret 版本，且不得与平台 `SECRET` 相同。使用具备 Cloud Build、Artifact Registry、Cloud Run、Secret Manager、Cloud Scheduler 和相关资源读取/部署权限的 gcloud 身份，并使用支持 `gcloud run jobs deploy` 的新版 Google Cloud CLI。运行：
+复制 [非秘密配置示例](../infra/cloudrun.example.json) 到 `infra/cloudrun.json` 并填写实际资源名称、生产额度/保留期限及 Secret Manager `name:version` 引用；上线前按预算核定额度，生产缺少任一项会拒绝启动。该本地文件已从 Git、Docker 和 Cloud Build 上传上下文排除。当前环境还必须填入上文的 `cloudflare_edge`；脚本发现已有服务使用公开 ingress 但配置缺少此项时，会在构建前拒绝发布，防止旧本地配置将入口改回已删除的负载均衡。Cloud Run 镜像内的 PostgREST 只监听 `127.0.0.1:3001`；`APP_DATA_JWT_SECRET` 与 `PGRST_JWT_SECRET` 必须引用同一 Secret 版本，且不得与平台 `SECRET` 相同。使用具备 Cloud Build、Artifact Registry、Cloud Run、Secret Manager、Cloud Scheduler 和相关资源读取/部署权限的 gcloud 身份，并使用支持 `gcloud run jobs deploy` 的新版 Google Cloud CLI。运行：
 
 示例配置面向俄勒冈 `us-west1` 的验证/测试环境，未配置 Cloud SQL。自建 PostgreSQL 应部署在同一区域，通过私有地址供 Cloud Run 服务和迁移 job 访问；`DATABASE_URL` 在 Secret Manager 中保存，配置文件只引用秘密版本。示例使用 Direct VPC egress 的 `network` 与 `subnet`，无需持续计费的 VPC connector；若使用已有 connector，改为只填写 `vpc_connector`。`s3_region` 取决于实际对象存储区域，无须与 Cloud Run 区域相同。
 
@@ -91,7 +108,7 @@ Google Cloud Storage 可通过 XML API 与现有 S3 客户端兼容：`s3_endpoi
 python3 scripts/deploy-cloud-run.py --config infra/cloudrun.json
 ```
 
-脚本以提交 SHA 和时间标记镜像；未提交源码会提示，生产建议在干净 Git 检出上运行。构建完成后记录不可变 digest 作为实际交付标识。它先更新并执行 `SERVICE-migrate` job，成功后更新 `SERVICE-cleanup` job，再以不接流量方式部署服务 revision，检查就绪后切流量，并用 HTTPS 检查控制域 `/login` 和无效访客子域的路由。失败时脚本会标记部署未完成；查看对应 Cloud Build、Cloud Run job execution 和 revision，排除原因后重试。迁移成功但后续失败时数据库可能已升级，不应回滚数据库或删除对象；数据库变更必须保持与上一服务版本兼容。
+脚本以提交 SHA 和时间标记镜像；未提交源码会提示，生产建议在干净 Git 检出上运行。构建完成后记录不可变 digest 作为实际交付标识。它先更新并执行 `SERVICE-migrate` job，成功后更新 `SERVICE-cleanup` job，再以不接流量方式部署服务 revision。Cloudflare 模式会给候选修订版本加 0% 流量标签，确认公开 `/health` 和 Cloud Run 实际健康状态后切流量；两种模式都用 HTTPS 检查控制域 `/login` 和无效访客子域的路由。失败时脚本会标记部署未完成；查看对应 Cloud Build、Cloud Run job execution 和 revision，排除原因后重试。迁移成功但后续失败时数据库可能已升级，不应回滚数据库或删除对象；数据库变更必须保持与上一服务版本兼容。
 
 切流量前记下旧 revision。若新 revision 上线后验收失败，将服务流量切回旧 revision（替换示例值），保留数据库、对象和 Secret：
 
