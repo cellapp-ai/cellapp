@@ -128,6 +128,12 @@ func (s *Server) Handler() http.Handler {
 		defer func() {
 			s.Logger.Info("request", "request_id", requestID, "method", r.Method, "elapsed_ms", time.Since(start).Milliseconds())
 		}()
+		// Cloud Run probes use the container address as Host. Health contains no
+		// tenant data and must work before production traffic is switched.
+		if r.URL.Path == "/health" && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+			mux.ServeHTTP(w, r)
+			return
+		}
 		// Host is validated directly; forwarding headers are never trusted for authorization.
 		if r.Host == control.Host {
 			w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
