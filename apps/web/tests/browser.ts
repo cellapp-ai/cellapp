@@ -22,6 +22,7 @@ const credentialID = '3'.repeat(32);
 const key = '4'.repeat(64);
 let mode: 'normal' | 'empty' | 'error' | 'expired' | 'lost' = 'normal';
 let mutations = 0;
+let sessionRequests = 0;
 let deviceDecision = '';
 let browser;
 try {
@@ -42,7 +43,7 @@ try {
       if (path === '/device/decision') { deviceDecision = route.request().postDataJSON().decision; await route.fulfill({json: {status: deviceDecision}}); return; }
       await route.fulfill({json: {deleted: true, revoked: true, loggedOut: true}}); return;
     }
-    if (path === '/session') { await route.fulfill({json: {ownerId: ownerID, authMode: 'github'}}); return; }
+    if (path === '/session') { sessionRequests++; await route.fulfill({json: {ownerId: ownerID, authMode: 'github'}}); return; }
     if (mode === 'error') { await route.fulfill({status: 503, json: {message: 'Service temporarily unavailable.'}}); return; }
     const app = {id: appID, name: 'Shared notes', namespace: 'demo', slug: 'shared-notes', aliasUrl: 'https://control.localhost/a/demo/shared-notes', url: `https://${appID}.apps.localhost`, activeDeployment: null, suspended: false, visibility: 'restricted', dataState: 'ready'};
     const value = path === '/apps' ? mode === 'empty' ? [] : [app] : path === '/credentials' ? mode === 'empty' ? [] : [{id: credentialID, createdAt:'2026-09-01T00:00:00Z', expiresAt:'2026-10-01T00:00:00Z'}] : path.endsWith('/access') ? {requests: [], grants: []} : path.endsWith('/data') ? {state:'ready',version:1,digest:'f'.repeat(64)} : {...app, release: null};
@@ -62,6 +63,19 @@ try {
     if ([390,1440].includes(width)) await page.screenshot({path: `${artifacts}/${width}.png`,fullPage:true});
   }
   checks.push('Management layout, local fonts, responsive sizes and axe with explicit UI fixtures');
+  assert.equal(sessionRequests,1);
+  await page.getByRole('link',{name:'Deployment credentials',exact:true}).click();
+  await page.getByRole('heading',{name:'Deployment credentials'}).waitFor();
+  assert.equal(sessionRequests,1);
+  assert.equal(await page.locator('main').evaluate(e => e === document.activeElement),true);
+  await page.goBack();await page.getByRole('heading',{name:'Applications',exact:true}).waitFor();
+  assert.equal(sessionRequests,1);
+  await page.locator('a.application-row').click();await page.getByRole('heading',{name:'Shared notes',exact:true}).waitFor();
+  assert.equal(sessionRequests,1);
+  await page.getByRole('link',{name:'Applications',exact:false}).last().click();
+  await page.getByRole('heading',{name:'Applications',exact:true}).waitFor();
+  assert.equal(sessionRequests,1);
+  checks.push('Internal links and browser history keep the authenticated shell without another session check');
   await page.setViewportSize({width:390,height:844});
   await page.getByRole('button',{name:'Open menu'}).focus();await page.keyboard.press('Enter');
   assert.equal(await page.getByRole('button',{name:'Close menu'}).getAttribute('aria-expanded'),'true');
@@ -92,7 +106,10 @@ try {
   await page.getByRole('status').filter({hasText:'Copy unavailable'}).waitFor();
   assert(!page.url().includes(key));
   assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa']).analyze()).violations,[]);
-  await page.getByRole('button',{name:'Dismiss key'}).click();assert.equal(await page.getByText(key,{exact:true}).count(),0);
+  await page.locator('a.back').click();await page.getByRole('heading',{name:'Applications',exact:true}).waitFor();
+  assert.equal(await page.getByText(key,{exact:true}).count(),0);
+  await page.locator('a.application-row').click();await page.getByRole('heading',{name:'Shared notes',exact:true}).waitFor();
+  assert.equal(await page.getByRole('heading',{name:'New access key'}).count(),0);
   mode='lost';await page.getByRole('button',{name:'Rotate access key',exact:true}).click();const sent=mutations;await page.getByRole('button',{name:'Confirm',exact:true}).click();
   await page.getByRole('alert').filter({hasText:'may already have taken effect'}).waitFor();assert.equal(mutations,sent+1);
   checks.push('Details deep link, unpublished state, confirmation/cancel focus, transient key and uncertain write without retry');
