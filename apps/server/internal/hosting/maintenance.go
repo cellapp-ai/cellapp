@@ -1,13 +1,26 @@
 package hosting
 
 import (
+	"cellapp/apps/server/appdata"
 	"context"
 	"encoding/json"
+	"errors"
 	"github.com/jackc/pgx/v5"
 	"time"
 )
 
 func (s *Server) Cleanup(ctx context.Context) error {
+	var dataErrors []error
+	if s.AppDataDB != nil && s.AppDataProbe != nil {
+		if e := appdata.ReconcilePending(ctx, s.DB, s.AppDataDB, s.AppDataProbe); e != nil {
+			dataErrors = append(dataErrors, e)
+		}
+	}
+	if s.AppDataDB != nil {
+		if e := appdata.CleanupPending(ctx, s.DB, s.AppDataDB); e != nil {
+			dataErrors = append(dataErrors, e)
+		}
+	}
 	rows, e := s.DB.Query(ctx, `SELECT d.id,a.owner_id,a.id FROM deployments d JOIN apps a ON a.id=d.app_id WHERE d.status<>'cleaned' AND (a.deleted OR (d.status='uploading' AND d.created_at < $1) OR (d.status='published' AND d.id IS DISTINCT FROM a.active_deployment AND d.published_at < $2))`, time.Now().Add(-s.Config.UploadTTL), time.Now().Add(-s.Config.Retention))
 	if e != nil {
 		return e
@@ -69,8 +82,8 @@ func (s *Server) Cleanup(ctx context.Context) error {
 			return e
 		}
 	}
-	_, e = s.DB.Exec(ctx, `DELETE FROM rate_limits WHERE expires_at<now(); DELETE FROM access_sessions WHERE expires_at<now(); DELETE FROM browser_sessions WHERE expires_at<now(); DELETE FROM device_authorizations WHERE expires_at<now()`)
-	return e
+	_, e = s.DB.Exec(ctx, `DELETE FROM rate_limits WHERE expires_at<now(); DELETE FROM access_sessions WHERE expires_at<now(); DELETE FROM app_handoff_tickets WHERE expires_at<now(); DELETE FROM app_browser_sessions WHERE expires_at<now(); DELETE FROM browser_sessions WHERE expires_at<now(); DELETE FROM device_authorizations WHERE expires_at<now()`)
+	return errors.Join(append(dataErrors, e)...)
 }
 func (s *Server) Suspend(ctx context.Context, app string) error {
 	result, e := s.DB.Exec(ctx, `UPDATE apps SET suspended=true,generation=generation+1 WHERE id=$1 AND NOT deleted`, app)

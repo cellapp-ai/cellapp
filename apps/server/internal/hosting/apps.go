@@ -1,10 +1,12 @@
 package hosting
 
 import (
+	"cellapp/apps/server/appdata"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -23,6 +25,8 @@ func (s *Server) createApp(w http.ResponseWriter, r *http.Request) error {
 		Name      string `json:"name"`
 		Key       string `json:"key"`
 		RequestID string `json:"requestId"`
+		Namespace string `json:"namespace,omitempty"`
+		Slug      string `json:"slug,omitempty"`
 	}
 	if e = decode(w, r, &in); e != nil {
 		return e
@@ -55,13 +59,33 @@ func (s *Server) createApp(w http.ResponseWriter, r *http.Request) error {
 		if count >= s.Config.Limits.Apps {
 			return fail(429, "app_limit", "Delete an unused application before creating another")
 		}
-		app = App{ID: id(), Name: in.Name}
+		namespaceID, handle, err := ensureAppNamespace(r.Context(), tx, owner, in.Namespace)
+		if err != nil {
+			return err
+		}
+		slug, err := chooseAppSlug(r.Context(), tx, namespaceID, in.Slug, in.Name)
+		if err != nil {
+			return err
+		}
+		app = App{ID: id(), Name: in.Name, Namespace: handle, Slug: slug, Visibility: "restricted"}
 		app.URL = s.Config.AppURL(app.ID)
-		_, e = tx.Exec(r.Context(), `INSERT INTO apps(id,owner_id,name,key_hash,create_key,create_digest) VALUES($1,$2,$3,$4,$5,$6)`, app.ID, owner, in.Name, keyed(s.Config.Secret, in.Key), in.RequestID, fingerprint)
+		app.AliasURL = s.appAliasURL(handle, slug)
+		_, e = tx.Exec(r.Context(), `INSERT INTO apps(id,owner_id,namespace_id,slug,name,key_hash,create_key,create_digest) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, app.ID, owner, namespaceID, slug, in.Name, keyed(s.Config.Secret, in.Key), in.RequestID, fingerprint)
 		return e
 	})
 	if e != nil {
 		return e
+	}
+	if s.AppDataDB != nil {
+		e = appdata.Reconcile(r.Context(), s.DB, s.AppDataDB, app.ID, s.AppDataProbe)
+		if e != nil && !errors.Is(e, appdata.ErrAPIProbeRequired) {
+			return fail(503, "app_data_not_ready", "Application data is not ready; retry creation with the same request ID")
+		}
+		if e == nil {
+			app.DataState = "ready"
+		}
+	} else {
+		app.DataState = "pending"
 	}
 	jsonResponse(w, 201, app)
 	return nil
@@ -79,7 +103,8 @@ func (s *Server) listApps(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 func (s *Server) ownerApps(ctx context.Context, owner string) ([]App, error) {
-	rows, e := s.DB.Query(ctx, `SELECT id,name,active_deployment,suspended FROM apps WHERE owner_id=$1 AND NOT deleted ORDER BY id`, owner)
+	rows, e := s.DB.Query(ctx, `SELECT a.id,a.name,a.active_deployment,a.suspended,a.data_state,a.visibility,n.handle,a.slug
+    FROM apps a JOIN app_namespaces n ON n.id=a.namespace_id WHERE a.owner_id=$1 AND NOT a.deleted ORDER BY n.handle,a.slug`, owner)
 	if e != nil {
 		return nil, e
 	}
@@ -87,10 +112,11 @@ func (s *Server) ownerApps(ctx context.Context, owner string) ([]App, error) {
 	apps := []App{}
 	for rows.Next() {
 		var a App
-		if e = rows.Scan(&a.ID, &a.Name, &a.Active, &a.Suspended); e != nil {
+		if e = rows.Scan(&a.ID, &a.Name, &a.Active, &a.Suspended, &a.DataState, &a.Visibility, &a.Namespace, &a.Slug); e != nil {
 			return nil, e
 		}
 		a.URL = s.Config.AppURL(a.ID)
+		a.AliasURL = s.appAliasURL(a.Namespace, a.Slug)
 		apps = append(apps, a)
 	}
 	if e = rows.Err(); e != nil {
@@ -117,7 +143,7 @@ func (s *Server) deleteOwnerApp(ctx context.Context, owner, appID string) error 
 		if _, e := s.app(ctx, tx, appID, owner); e != nil {
 			return e
 		}
-		_, e := tx.Exec(ctx, `UPDATE apps SET deleted=true,generation=generation+1 WHERE id=$1`, appID)
+		_, e := tx.Exec(ctx, `UPDATE apps SET deleted=true,generation=generation+1,data_state='cleanup_pending',data_updated_at=now() WHERE id=$1`, appID)
 		return e
 	})
 }
@@ -280,6 +306,9 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) error {
 		}
 		if a.Suspended {
 			return fail(403, "app_suspended", "Application suspended")
+		}
+		if s.AppDataDB != nil && a.DataState != "ready" {
+			return fail(503, "app_data_not_ready", "Application data is not ready")
 		}
 		d, e := getDeployment(r, tx)
 		if e != nil {

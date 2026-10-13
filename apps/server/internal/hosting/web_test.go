@@ -69,8 +69,8 @@ func TestWebOwnerManagement(t *testing.T) {
 		t.Fatal("invalid key")
 	}
 	u, _ := url.Parse(a.URL)
-	if w := f.request(t, "HEAD", "/main.js", nil, "", u.Host, visitor); w.Code != 401 {
-		t.Fatal("visitor session survived reset")
+	if w := f.request(t, "HEAD", "/main.js", nil, "", u.Host, visitor); w.Code != 200 {
+		t.Fatal("visitor grant lost after rotation")
 	}
 	f.unlock(t, a, result["key"])
 	if strings.Contains(f.logs.String(), result["key"]) {

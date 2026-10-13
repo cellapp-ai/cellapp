@@ -6,6 +6,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"path"
 	"strings"
 	"time"
@@ -15,7 +16,24 @@ import (
 
 func (s *Server) serveApp(w http.ResponseWriter, r *http.Request, appID string) error {
 	w.Header().Set("Content-Security-Policy", "worker-src 'none'; frame-ancestors 'none'; base-uri 'self'")
-	if r.Method != "GET" && r.Method != "HEAD" && !(r.Method == "POST" && r.URL.Path == "/_hosting/unlock") {
+	for _, prefix := range []string{"/auth/v1", "/storage/v1", "/functions/v1", "/realtime/v1", "/rest/v1/rpc"} {
+		if r.URL.Path == prefix || strings.HasPrefix(r.URL.Path, prefix+"/") {
+			return fail(501, "unsupported_feature", "This Supabase feature is not supported")
+		}
+	}
+	if strings.HasPrefix(r.URL.Path, "/rest/v1") {
+		return s.serveData(w, r, appID)
+	}
+	if r.Method == http.MethodGet && r.URL.Path == "/_cellapp/handoff" {
+		return s.consumeAppHandoff(w, r, appID)
+	}
+	if r.Method == http.MethodGet && r.URL.Path == "/_cellapp/me" {
+		return s.appMe(w, r, appID)
+	}
+	if r.Method == http.MethodPost && r.URL.Path == "/_cellapp/request" {
+		return s.requestAppAccess(w, r, appID)
+	}
+	if r.Method != "GET" && r.Method != "HEAD" && !(r.Method == "POST" && r.URL.Path == "/_cellapp/redeem") {
 		return fail(405, "method_not_allowed", "Static apps only support reading files")
 	}
 	if r.Method == "POST" {
@@ -28,6 +46,7 @@ func (s *Server) serveApp(w http.ResponseWriter, r *http.Request, appID string) 
 	var content io.ReadCloser
 	var file Entry
 	var showPage bool
+	var requestState string
 	var redirect string
 	e := s.transaction(r.Context(), func(tx pgx.Tx) error {
 		var a App
@@ -42,37 +61,55 @@ func (s *Server) serveApp(w http.ResponseWriter, r *http.Request, appID string) 
 			if r.Header.Get("Origin") != s.Config.AppURL(appID) {
 				return fail(403, "origin_rejected", "Invalid form origin")
 			}
+			user, sessionError := s.appSession(r, appID)
+			if sessionError != nil {
+				return sessionError
+			}
 			r.Body = http.MaxBytesReader(w, r.Body, 4096)
 			if e = r.ParseForm(); e != nil {
 				return fail(400, "invalid_form", "Invalid form")
 			}
 			if !equal(a.KeyHash, keyed(s.Config.Secret, r.Form.Get("key"))) {
-				return fail(401, "invalid_key", "分享密钥不正确，请重新输入")
+				return fail(401, "invalid_key", "访问密钥不正确，请重新输入")
 			}
-			secret := token()
-			_, e = tx.Exec(r.Context(), `INSERT INTO access_sessions(hash,app_id,generation,expires_at) VALUES($1,$2,$3,now()+interval '7 days')`, keyed(s.Config.Secret, secret), appID, a.Generation)
+			var revoked bool
+			if e = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM app_grants WHERE app_id=$1 AND platform_user_id=$2 AND revoked_at IS NOT NULL)`, appID, user).Scan(&revoked); e != nil {
+				return e
+			}
+			if revoked {
+				return fail(403, "access_revoked", "访问已被所有者撤销，请申请访问")
+			}
+			_, e = tx.Exec(r.Context(), `INSERT INTO app_grants(app_id,platform_user_id,source) VALUES($1,$2,'key')
+				ON CONFLICT(app_id,platform_user_id) DO UPDATE SET revoked_at=NULL,source='key',granted_at=now()`, appID, user)
 			if e != nil {
 				return e
 			}
-			cookie(w, "__Host-access", secret, 7*86400)
-			redirect = safeReturn(r.Form.Get("return"))
+			redirect = appReturn(r.Form.Get("return"))
 			return nil
 		}
-		if strings.HasPrefix(r.URL.Path, "/_hosting/") {
+		if strings.HasPrefix(r.URL.Path, "/_hosting/") || strings.HasPrefix(r.URL.Path, "/_cellapp/") {
 			return fail(404, "not_found", "Unknown platform path")
 		}
-		var valid bool
-		e = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM access_sessions WHERE hash=$1 AND app_id=$2 AND generation=$3 AND expires_at>now())`, keyed(s.Config.Secret, cookieValue(r, "__Host-access")), appID, a.Generation).Scan(&valid)
-		if e != nil {
-			return e
-		}
 		navigation := strings.Contains(r.Header.Get("Accept"), "text/html") && (r.Header.Get("Sec-Fetch-Dest") == "" || r.Header.Get("Sec-Fetch-Dest") == "document")
-		if !valid {
+		user, sessionError := s.appSession(r, appID)
+		if sessionError != nil {
 			if r.Method == "GET" && navigation {
-				showPage = true
+				redirect = s.Config.ControlOrigin + "/auth/app?app=" + appID + "&return=" + url.QueryEscape(appReturn(r.URL.RequestURI()))
 				return nil
 			}
-			return fail(401, "key_required", "Enter the application share key")
+			return sessionError
+		}
+		access, accessError := appAccess(r, tx, appID, user)
+		if accessError != nil {
+			return accessError
+		}
+		if !access.allowed() {
+			if r.Method == "GET" && navigation {
+				showPage = true
+				requestState = access.Request
+				return nil
+			}
+			return fail(403, "access_required", "Request access or enter an access key")
 		}
 		if a.Active == nil {
 			return fail(404, "not_published", "Application has not been published")
@@ -147,7 +184,13 @@ func (s *Server) serveApp(w http.ResponseWriter, r *http.Request, appID string) 
 	}
 	if showPage {
 		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; worker-src 'none'")
-		page(w, "输入分享密钥", `<p>此应用由独立密钥保护。验证后可在当前浏览器访问。</p><form method="post" action="/_hosting/unlock"><input type="hidden" name="return" value="`+html.EscapeString(safeReturn(r.URL.RequestURI()))+`"><label>分享密钥<input type="password" name="key" autocomplete="current-password" required autofocus></label><button>打开应用</button></form>`)
+		title, explanation, requestButton := "申请访问", "此应用需要授权。你可以向应用所有者申请访问，或输入访问密钥。", "申请访问"
+		if requestState == "pending" {
+			title, explanation, requestButton = "申请审核中", "你的申请正在等待应用所有者审核。审核后重新打开此页面，也可以输入访问密钥。", "重新提交申请"
+		} else if requestState == "denied" {
+			title, explanation, requestButton = "申请未通过", "应用所有者未批准上次申请。你可以重新申请，或输入访问密钥。", "重新申请访问"
+		}
+		page(w, title, `<p>`+explanation+`</p><form method="post" action="/_cellapp/request"><button>`+requestButton+`</button></form><form method="post" action="/_cellapp/redeem"><input type="hidden" name="return" value="`+html.EscapeString(appReturn(r.URL.RequestURI()))+`"><label>访问密钥<input type="password" name="key" autocomplete="current-password" required autofocus></label><button>授权访问</button></form>`)
 		return nil
 	}
 	kind := mime.TypeByExtension(path.Ext(file.Path))

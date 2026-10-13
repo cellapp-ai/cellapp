@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/net/publicsuffix"
 )
 
@@ -21,14 +22,15 @@ type Limits struct {
 	Requests        int64 `json:"requests"`
 }
 type Config struct {
-	WebRoot                                                          string
-	Production                                                       bool
-	Address, ControlOrigin, AppsDomain, AppPort, Secret, DatabaseURL string
-	AuthMode                                                         string
-	GitHubClientID, GitHubClientSecret                               string
-	S3Endpoint, S3Region, S3Bucket, S3AccessKeyID, S3SecretAccessKey string
-	Limits                                                           Limits
-	UploadTTL, Retention                                             time.Duration
+	WebRoot                                                                              string
+	Production                                                                           bool
+	Address, ControlOrigin, AppsDomain, AppPort, Secret, DatabaseURL, AppDataDatabaseURL string
+	PostgRESTURL, AppDataJWTSecret                                                       string
+	AuthMode                                                                             string
+	GitHubClientID, GitHubClientSecret                                                   string
+	S3Endpoint, S3Region, S3Bucket, S3AccessKeyID, S3SecretAccessKey                     string
+	Limits                                                                               Limits
+	UploadTTL, Retention                                                                 time.Duration
 }
 
 func LoadConfig(get func(string) string) (c Config, err error) {
@@ -66,6 +68,9 @@ func LoadConfig(get func(string) string) (c Config, err error) {
 	}
 	c.Secret = value("SECRET", "local-development-secret-not-for-production")
 	c.DatabaseURL = value("DATABASE_URL", "postgres://cellapp:development@localhost:5432/cellapp")
+	c.AppDataDatabaseURL = value("APP_DATA_DATABASE_URL", "postgres://cellapp_appdata_provisioner:development@localhost:5432/cellapp_data")
+	c.PostgRESTURL = value("POSTGREST_URL", "http://127.0.0.1:3001")
+	c.AppDataJWTSecret = value("APP_DATA_JWT_SECRET", "local-development-postgrest-jwt-secret-32-bytes")
 	c.AuthMode = get("AUTH_MODE")
 	if c.AuthMode == "" {
 		if c.Production {
@@ -138,8 +143,26 @@ func LoadConfig(get func(string) string) (c Config, err error) {
 			return c, fmt.Errorf("invalid APP_PORT")
 		}
 	}
+	controlDB, e := pgxpool.ParseConfig(c.DatabaseURL)
+	if e != nil {
+		return c, fmt.Errorf("invalid DATABASE_URL: %w", e)
+	}
+	appDB, e := pgxpool.ParseConfig(c.AppDataDatabaseURL)
+	if e != nil {
+		return c, fmt.Errorf("invalid APP_DATA_DATABASE_URL: %w", e)
+	}
+	if controlDB.ConnConfig.Host == appDB.ConnConfig.Host && controlDB.ConnConfig.Port == appDB.ConnConfig.Port && controlDB.ConnConfig.Database == appDB.ConnConfig.Database {
+		return c, fmt.Errorf("APP_DATA_DATABASE_URL must name a database distinct from DATABASE_URL")
+	}
 	if len(c.Secret) < 32 {
 		return c, fmt.Errorf("SECRET must contain at least 32 bytes")
+	}
+	api, e := url.Parse(c.PostgRESTURL)
+	if e != nil || api.Scheme != "http" || api.Host == "" || api.User != nil || api.Path != "" || api.RawQuery != "" || api.Fragment != "" {
+		return c, fmt.Errorf("POSTGREST_URL must be an internal HTTP origin")
+	}
+	if len(c.AppDataJWTSecret) < 32 || c.AppDataJWTSecret == c.Secret {
+		return c, fmt.Errorf("APP_DATA_JWT_SECRET must be distinct and contain at least 32 bytes")
 	}
 	if c.Limits.FileBytes > c.Limits.DeploymentBytes || c.Limits.DeploymentBytes > c.Limits.StorageBytes {
 		return c, fmt.Errorf("file, deployment and storage limits must be ascending")

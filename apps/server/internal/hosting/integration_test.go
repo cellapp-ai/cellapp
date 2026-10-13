@@ -151,6 +151,12 @@ func (f *fixture) request(t *testing.T, method, path string, body any, credentia
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/html")
+	if strings.HasPrefix(path, "/rest/v1/") {
+		req.Header.Set("Accept", "application/json")
+		if method == http.MethodPost || method == http.MethodPatch || method == http.MethodDelete {
+			req.Header.Set("Origin", "https://"+host)
+		}
+	}
 	if _, ok := body.(string); ok {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		req.Header.Set("Origin", "https://"+host)
@@ -188,16 +194,23 @@ func (f *fixture) uploadAndPublish(t *testing.T, a App, d, content string) {
 	response[any](t, f.request(t, "POST", base+"/publish", map[string]any{}, f.token, "control.localhost:8443", ""), 200)
 }
 func (f *fixture) unlock(t *testing.T, a App, key string) string {
+	visitor := id()
+	platform := token()
+	_, e := f.db.Exec(context.Background(), `INSERT INTO owners(id,issuer,subject) VALUES($1,'test',$2)`, visitor, visitor)
+	if e != nil {
+		t.Fatal(e)
+	}
+	_, e = f.db.Exec(context.Background(), `INSERT INTO browser_sessions(hash,owner_id,expires_at) VALUES($1,$2,now()+interval '1 day')`, keyed(f.server.Config.Secret, platform), visitor)
+	if e != nil {
+		t.Fatal(e)
+	}
+	cookie := signedInApp(t, f, a, platform)
 	u, _ := url.Parse(a.URL)
-	w := f.request(t, "POST", "/_hosting/unlock", url.Values{"key": {key}, "return": {"/notes"}}.Encode(), "", u.Host, "")
+	w := f.request(t, "POST", "/_cellapp/redeem", url.Values{"key": {key}, "return": {"/notes"}}.Encode(), "", u.Host, cookie)
 	if w.Code != 303 {
 		t.Fatalf("unlock: %d %s", w.Code, w.Body.String())
 	}
-	cookies := w.Result().Cookies()
-	if len(cookies) != 1 || !cookies[0].Secure || !cookies[0].HttpOnly || cookies[0].Domain != "" {
-		t.Fatal("unsafe cookie")
-	}
-	return cookies[0].Name + "=" + cookies[0].Value
+	return cookie
 }
 
 func TestIntegrationLifecycleAndKeys(t *testing.T) {
@@ -206,8 +219,8 @@ func TestIntegrationLifecycleAndKeys(t *testing.T) {
 	host, _ := url.Parse(a.URL)
 	d, _ := f.stage(t, a, "<h1>one</h1>")
 	f.uploadAndPublish(t, a, d, "<h1>one</h1>")
-	if w := f.request(t, "GET", "/", "", "", host.Host, ""); !strings.Contains(w.Body.String(), "输入分享密钥") {
-		t.Fatal("missing key gate")
+	if w := f.request(t, "GET", "/", "", "", host.Host, ""); w.Code != 303 || !strings.HasPrefix(w.Header().Get("Location"), f.server.Config.ControlOrigin+"/auth/app?") {
+		t.Fatal("missing login gate")
 	}
 	for _, method := range []string{"GET", "HEAD"} {
 		w := f.request(t, method, "/main.js", nil, "", host.Host, "")
@@ -238,7 +251,7 @@ func TestIntegrationLifecycleAndKeys(t *testing.T) {
 	}
 	other, otherKey := f.create(t)
 	otherHost, _ := url.Parse(other.URL)
-	if w := f.request(t, "POST", "/_hosting/unlock", url.Values{"key": {key}}.Encode(), "", otherHost.Host, ""); w.Code != 401 {
+	if w := f.request(t, "POST", "/_cellapp/redeem", url.Values{"key": {key}}.Encode(), "", otherHost.Host, browser1); w.Code != 401 {
 		t.Fatal("cross-app key accepted")
 	}
 	_ = otherKey
@@ -246,11 +259,11 @@ func TestIntegrationLifecycleAndKeys(t *testing.T) {
 	response[any](t, f.request(t, "POST", "/apps/"+a.ID+"/key", map[string]string{"key": newKey}, f.token, "control.localhost:8443", ""), 200)
 	for _, cookie := range []string{browser1, browser2} {
 		w := f.request(t, "GET", "/", nil, "", host.Host, cookie)
-		if !strings.Contains(w.Body.String(), "输入分享密钥") {
-			t.Fatal("old session survived reset")
+		if w.Code != 200 {
+			t.Fatal("grant lost after key rotation")
 		}
 	}
-	if w := f.request(t, "POST", "/_hosting/unlock", url.Values{"key": {key}}.Encode(), "", host.Host, ""); w.Code != 401 {
+	if w := f.request(t, "POST", "/_cellapp/redeem", url.Values{"key": {key}}.Encode(), "", host.Host, browser1); w.Code != 401 {
 		t.Fatal("old key accepted")
 	}
 	fresh := f.unlock(t, a, newKey)
@@ -356,8 +369,8 @@ func TestIntegrationTrafficAndExpiry(t *testing.T) {
 	if w := f.request(t, "GET", "/", nil, "", host.Host, cookie); w.Code != 200 {
 		t.Fatal("new period did not reset")
 	}
-	_, _ = f.db.Exec(context.Background(), `UPDATE access_sessions SET expires_at=now()-interval '1 second'`)
-	if w := f.request(t, "GET", "/", nil, "", host.Host, cookie); !strings.Contains(w.Body.String(), "输入分享密钥") {
+	_, _ = f.db.Exec(context.Background(), `UPDATE app_browser_sessions SET expires_at=now()-interval '1 second'`)
+	if w := f.request(t, "GET", "/", nil, "", host.Host, cookie); w.Code != 303 {
 		t.Fatal("expired session accepted")
 	}
 }

@@ -38,7 +38,7 @@ func TestS3CredentialGroups(t *testing.T) {
 func TestProductionS3RequiresExplicitConfiguration(t *testing.T) {
 	vars := map[string]string{
 		"NODE_ENV": "production", "CONTROL_ORIGIN": "https://control.example.com", "APPS_DOMAIN": "apps.example.net",
-		"SECRET": strings.Repeat("s", 32), "DATABASE_URL": "postgres://test", "GITHUB_CLIENT_ID": "test", "GITHUB_CLIENT_SECRET": "test",
+		"SECRET": strings.Repeat("s", 32), "DATABASE_URL": "postgres://test/control", "APP_DATA_DATABASE_URL": "postgres://test/app_data", "POSTGREST_URL": "http://127.0.0.1:3001", "APP_DATA_JWT_SECRET": strings.Repeat("j", 32), "GITHUB_CLIENT_ID": "test", "GITHUB_CLIENT_SECRET": "test",
 		"S3_ENDPOINT": "https://storage.example.com", "S3_REGION": "us-east-1", "S3_BUCKET": "private-test",
 		"S3_ACCESS_KEY_ID": "test-ak", "S3_SECRET_ACCESS_KEY": "test-sk",
 		"MAX_APPS": "10", "MAX_FILES": "1000", "MAX_FILE_BYTES": "100", "MAX_DEPLOYMENT_BYTES": "1000", "MAX_STORAGE_BYTES": "10000",
@@ -65,5 +65,21 @@ func TestProductionS3RequiresExplicitConfiguration(t *testing.T) {
 	vars["QINIU_ACCESS_KEY"], vars["QINIU_SECRET_KEY"] = "legacy-ak", "legacy-sk"
 	if _, err := LoadConfig(func(k string) string { return vars[k] }); err != nil {
 		t.Fatal("complete legacy production configuration rejected", err)
+	}
+}
+
+func TestApplicationDatabaseConfiguration(t *testing.T) {
+	config := map[string]string{"DATABASE_URL": "postgres://cellapp:secret@localhost:5432/control", "APP_DATA_DATABASE_URL": "postgres://other:secret@localhost:5432/app_data"}
+	c, err := LoadConfig(func(k string) string { return config[k] })
+	if err != nil || c.AppDataDatabaseURL != config["APP_DATA_DATABASE_URL"] {
+		t.Fatalf("separate application database rejected: %v", err)
+	}
+	config["APP_DATA_DATABASE_URL"] = "postgres://other:secret@localhost:5432/control"
+	if _, err := LoadConfig(func(k string) string { return config[k] }); err == nil || !strings.Contains(err.Error(), "distinct") {
+		t.Fatalf("same database accepted: %v", err)
+	}
+	config["APP_DATA_DATABASE_URL"] = "invalid://"
+	if _, err := LoadConfig(func(k string) string { return config[k] }); err == nil {
+		t.Fatal("invalid application database URL accepted")
 	}
 }

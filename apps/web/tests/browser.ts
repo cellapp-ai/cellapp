@@ -44,13 +44,14 @@ try {
     }
     if (path === '/session') { await route.fulfill({json: {ownerId: ownerID, authMode: 'github'}}); return; }
     if (mode === 'error') { await route.fulfill({status: 503, json: {message: 'Service temporarily unavailable.'}}); return; }
-    const app = {id: appID, name: 'Shared notes', url: `https://${appID}.apps.localhost`, activeDeployment: null, suspended: false};
-    const value = path === '/apps' ? mode === 'empty' ? [] : [app] : path === '/credentials' ? mode === 'empty' ? [] : [{id: credentialID, createdAt:'2026-09-01T00:00:00Z', expiresAt:'2026-10-01T00:00:00Z'}] : {...app, release: null};
+    const app = {id: appID, name: 'Shared notes', namespace: 'demo', slug: 'shared-notes', aliasUrl: 'https://control.localhost/a/demo/shared-notes', url: `https://${appID}.apps.localhost`, activeDeployment: null, suspended: false, visibility: 'restricted', dataState: 'ready'};
+    const value = path === '/apps' ? mode === 'empty' ? [] : [app] : path === '/credentials' ? mode === 'empty' ? [] : [{id: credentialID, createdAt:'2026-09-01T00:00:00Z', expiresAt:'2026-10-01T00:00:00Z'}] : path.endsWith('/access') ? {requests: [], grants: []} : path.endsWith('/data') ? {state:'ready',version:1,digest:'f'.repeat(64)} : {...app, release: null};
     await route.fulfill({json: value});
   });
   await page.goto(origin + '/applications');
   await page.getByRole('heading', {name: 'Applications', exact: true}).waitFor();
   await page.getByRole('heading', {name: 'Shared notes'}).waitFor();
+  await page.getByText('@demo/shared-notes').waitFor();
   assert.equal(await page.title(), 'Cellapp');
   await page.evaluate(() => document.fonts.ready);
   assert(await page.evaluate(() => document.fonts.check('16px "Space Grotesk"')));
@@ -73,23 +74,26 @@ try {
   checks.push('Keyboard navigation, mobile menu Escape and skip focus');
   await page.getByRole('heading',{name:'Shared notes'}).click();
   await page.getByRole('heading',{name:'Shared notes',exact:true}).waitFor();
+  await page.getByText('@demo/shared-notes').waitFor();
+  await page.getByRole('button',{name:'Copy share link'}).waitFor();
   await page.getByText('No release has been published.',{exact:false}).waitFor();
+  await page.getByText('Table version').waitFor();
   await page.reload();await page.getByRole('heading',{name:'Shared notes',exact:true}).waitFor();
-  await page.getByRole('button',{name:'Reset share key',exact:true}).click();
+  await page.getByRole('button',{name:'Rotate access key',exact:true}).click();
   await page.getByRole('dialog').waitFor();
   const before = mutations;
   await page.getByRole('button',{name:'Cancel',exact:true}).click();assert.equal(mutations,before);
-  assert(await page.getByRole('button',{name:'Reset share key',exact:true}).evaluate(e => e === document.activeElement));
-  await page.getByRole('button',{name:'Reset share key',exact:true}).click();await page.getByRole('button',{name:'Confirm',exact:true}).click();
-  await page.getByRole('heading',{name:'New share key'}).waitFor();
+  assert(await page.getByRole('button',{name:'Rotate access key',exact:true}).evaluate(e => e === document.activeElement));
+  await page.getByRole('button',{name:'Rotate access key',exact:true}).click();await page.getByRole('button',{name:'Confirm',exact:true}).click();
+  await page.getByRole('heading',{name:'New access key'}).waitFor();
   assert.equal(await page.evaluate(() => localStorage.length + sessionStorage.length),0);
   await page.evaluate('Object.defineProperty(navigator, "clipboard", {configurable:true,value:{writeText: () => Promise.reject(new Error("blocked"))}})');
-  await page.getByRole('button',{name:'Copy share key'}).click();
+  await page.getByRole('button',{name:'Copy access key'}).click();
   await page.getByRole('status').filter({hasText:'Copy unavailable'}).waitFor();
   assert(!page.url().includes(key));
   assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa']).analyze()).violations,[]);
   await page.getByRole('button',{name:'Dismiss key'}).click();assert.equal(await page.getByText(key,{exact:true}).count(),0);
-  mode='lost';await page.getByRole('button',{name:'Reset share key',exact:true}).click();const sent=mutations;await page.getByRole('button',{name:'Confirm',exact:true}).click();
+  mode='lost';await page.getByRole('button',{name:'Rotate access key',exact:true}).click();const sent=mutations;await page.getByRole('button',{name:'Confirm',exact:true}).click();
   await page.getByRole('alert').filter({hasText:'may already have taken effect'}).waitFor();assert.equal(mutations,sent+1);
   checks.push('Details deep link, unpublished state, confirmation/cancel focus, transient key and uncertain write without retry');
   mode='normal';await page.goto(origin+'/credentials');await page.getByRole('button',{name:'Revoke',exact:true}).click();await page.getByRole('button',{name:'Confirm',exact:true}).click();await page.getByRole('status').filter({hasText:'credential revoked'}).waitFor();
