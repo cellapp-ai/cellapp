@@ -29,6 +29,12 @@ class ConfigTests(unittest.TestCase):
         flags = deploy.settings(config)
         self.assertIn("--set-secrets=", " ".join(flags))
         self.assertNotIn("replace-with-a-random-secret", " ".join(flags))
+        self.assertIn("POSTGREST_URL=http://127.0.0.1:3001", " ".join(flags))
+        self.assertIn("PGRST_SERVER_HOST=127.0.0.1", " ".join(flags))
+
+    def test_app_data_jwt_must_be_shared_with_postgrest(self):
+        with self.assertRaises(deploy.DeploymentError):
+            self.config(lambda c: c["secrets"].update(PGRST_JWT_SECRET="different-version:1"))
 
     def test_rejects_overlap_or_plaintext_secret(self):
         for edit in (
@@ -63,7 +69,7 @@ class ConfigTests(unittest.TestCase):
         self.assertIn("VPC subnet", calls)
         self.assertNotIn("VPC connector", calls)
         self.assertNotIn("Cloud SQL instance", calls)
-        self.assertEqual(sum(stage.startswith("secret reference") for stage in calls), 5)
+        self.assertEqual(sum(stage.startswith("secret reference") for stage in calls), len(deploy.SECRET_KEYS))
 
         with patch.object(deploy, "gcloud", return_value={"state": "ENABLED", "httpTarget": {"uri": "https://example.com/wrong"}}):
             with self.assertRaises(deploy.DeploymentError):

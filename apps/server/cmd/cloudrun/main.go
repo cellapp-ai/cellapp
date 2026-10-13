@@ -44,7 +44,9 @@ func run() error {
 	env := append(os.Environ(), "PORT="+port, "NODE_ENV=production", "WEB_ROOT="+webRoot, "LISTEN_ADDRESS=127.0.0.1:3000")
 	server := exec.Command("/usr/local/bin/cellapp-server")
 	caddy := exec.Command("/usr/bin/caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile")
-	for _, cmd := range []*exec.Cmd{server, caddy} {
+	postgrest := exec.Command("/usr/local/bin/postgrest")
+	processes := []*exec.Cmd{server, caddy, postgrest}
+	for _, cmd := range processes {
 		cmd.Env = env
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -57,9 +59,17 @@ func run() error {
 		_ = server.Wait()
 		return fmt.Errorf("Caddy start failed: %w", err)
 	}
-	finished := make(chan result, 2)
+	if err := postgrest.Start(); err != nil {
+		for _, cmd := range []*exec.Cmd{server, caddy} {
+			_ = cmd.Process.Signal(syscall.SIGTERM)
+			_ = cmd.Wait()
+		}
+		return fmt.Errorf("PostgREST start failed: %w", err)
+	}
+	finished := make(chan result, len(processes))
 	go func() { finished <- result{"server", server.Wait()} }()
 	go func() { finished <- result{"Caddy", caddy.Wait()} }()
+	go func() { finished <- result{"PostgREST", postgrest.Wait()} }()
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(signals)
@@ -70,10 +80,10 @@ func run() error {
 	case <-signals:
 		stopping = true
 	}
-	for _, cmd := range []*exec.Cmd{server, caddy} {
+	for _, cmd := range processes {
 		_ = cmd.Process.Signal(syscall.SIGTERM)
 	}
-	remaining := 2
+	remaining := len(processes)
 	if !stopping {
 		remaining = 1
 	}
@@ -84,8 +94,9 @@ func run() error {
 		case <-finished:
 			remaining--
 		case <-timer.C:
-			_ = server.Process.Kill()
-			_ = caddy.Process.Kill()
+			for _, cmd := range processes {
+				_ = cmd.Process.Kill()
+			}
 			for remaining > 0 {
 				<-finished
 				remaining--

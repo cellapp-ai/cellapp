@@ -28,6 +28,10 @@
   "secrets": {
     "SECRET": "cellapp-secret:1",
     "DATABASE_URL": "cellapp-database-url:1",
+    "APP_DATA_DATABASE_URL": "cellapp-app-data-database-url:1",
+    "APP_DATA_JWT_SECRET": "cellapp-app-data-jwt-secret:1",
+    "PGRST_DB_URI": "cellapp-app-data-authenticator-url:1",
+    "PGRST_JWT_SECRET": "cellapp-app-data-jwt-secret:1",
     "GITHUB_CLIENT_SECRET": "cellapp-github-secret:1",
     "S3_ACCESS_KEY_ID": "cellapp-s3-access-key:1",
     "S3_SECRET_ACCESS_KEY": "cellapp-s3-secret-key:1"
