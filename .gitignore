@@ -6,3 +6,4 @@ dist/
 .local/
 coverage/
 test-results/
+infra/cloudrun.json

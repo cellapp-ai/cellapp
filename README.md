@@ -67,6 +67,21 @@ npm test --workspace @cellapp/web
 
 完整仓库 `typecheck`、`test`、`build` 也包含 Web 检查，测试包含前端 lint 和浏览器验收；缺少客户端子模块时仍返回初始化提示。前端工程、代码与设计约定见 [前端规范入口](docs/standards/README.md)，与服务端及 CLI 规范分别维护。
 
+## Cloud Run 服务部署
+
+生产服务使用单一镜像交付 Go server、配套 Web console 和 Caddy。Caddy 接收 Cloud Run 的 HTTP 端口，公网 TLS 由预先配置的 HTTPS 负载均衡终止。控制域与 `*.apps` 访客域须位于不同注册域，负载均衡、通配 DNS 和 DNS 授权通配证书须在部署前就绪；Cloud Run 原生域名映射不能提供所需通配证书。
+
+先按 [Cloud Run 运维说明](docs/operations.md#cloud-run-部署) 配置 PostgreSQL、私有 S3、Secret Manager、GitHub OAuth、服务账号/VPC、Artifact Registry 和定时清理触发器。复制非秘密示例并填写实际资源名称和 Secret Manager **版本引用**；不要在 JSON 中填写秘密值：
+
+示例默认使用俄勒冈 `us-west1` 验证/测试环境和自建 PostgreSQL；数据库连接串通过 `DATABASE_URL` 的 Secret Manager 引用提供。
+
+```sh
+cp infra/cloudrun.example.json infra/cloudrun.json
+python3 scripts/deploy-cloud-run.py --config infra/cloudrun.json
+```
+
+脚本要求支持 `gcloud run jobs deploy` 的较新 Google Cloud CLI；生产发布建议使用干净的 Git 检出，未提交源码会明确提示并仍按镜像 digest 记录。它构建镜像、执行迁移、更新清理 job、发布 Cloud Run 修订版本，并检查两个现有域名入口；任一步失败返回非零。`infra/cloudrun.json` 不会提交或上传到构建上下文。公网授权、私有对象及回滚仍需按运维文档进行真实环境验收。本轮本地结果与未完成项见 [Cloud Run 部署验收记录](docs/cloud-run-deployment-verification.md)。
+
 ## 发布静态页面
 
 ```sh

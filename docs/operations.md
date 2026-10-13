@@ -66,3 +66,35 @@ docker compose -f infra/compose.yaml exec -T postgres psql -U cellapp_rename_adm
 控制域提供 `/login`、`/applications`、`/applications/<id>`、`/credentials` 和 `/device`，有效深链可刷新。`/api/console` 使用浏览器会话和严格 Origin，CLI `/apps` 等接口继续要求 Bearer。未知资源/API 返回 404，API 与 HTML 不缓存，带指纹资源可长期缓存。CSP 限制资源来自本站并禁止嵌入；不放宽访客网关边界。
 
 部署后检查登录、应用列表、深链与资源加载，并回归 CLI 与访客域。回滚恢复配套的前一版可执行文件和 Web 目录，不恢复已重置的密钥、已撤销凭证或已删除应用。浏览器接口字段及失败恢复见 [Web API](web-api.md)，本轮验收见 [Web 控制面验收](web-control-plane-verification.md)。
+
+## Cloud Run 部署
+
+根目录 `Dockerfile` 从同一提交构建 Go server 与 Web console，并把 Caddy 放在单一运行镜像中。容器内 Go 只监听 loopback，Caddy 监听 Cloud Run 的 `$PORT`；外部 HTTPS 由负载均衡终止，生产不使用本地 `tls internal`。Cloud Run service ingress 必须是 `internal-and-cloud-load-balancing`，控制域和访客域的 Host 原样转发给 Go。当前按直接连接地址限流，代理后的请求可能共享来源配额；上线前按实际流量评估，不因转发头而放宽授权。
+
+一次命令只发布应用和维护 job。提前准备并验证：
+
+- Google Cloud 项目、启用的 Cloud Build/Cloud Run/Artifact Registry/Secret Manager API、镜像仓库、可部署的服务账号，以及同区域的 Direct VPC 网络与子网，或 VPC connector。仅使用 Cloud SQL 时才配置 `cloudsql_instance`。
+- 已迁移或新建的 PostgreSQL、私有 S3 Bucket 和 HTTPS S3 Endpoint；运行身份能访问它们。Secret Manager 中保存稳定的 `SECRET`、`DATABASE_URL`、GitHub OAuth secret 和 S3 凭证，服务账号具有读取这些版本的权限。秘密值不写入配置 JSON、镜像或构建参数。
+- GitHub OAuth App 的 callback URL 精确等于 `${CONTROL_ORIGIN}/auth/callback`。`CONTROL_ORIGIN` 为 HTTPS 控制域，`APPS_DOMAIN` 为另一个注册域的访客基域，生产 `APP_PORT` 为空。
+- 已配置的全局外部 HTTPS 负载均衡、两个域名的 DNS、控制域证书，以及访客域 `*.apps.example.net` 的 DNS 授权通配证书。Cloud Run 原生域名映射不支持所需通配证书。负载均衡通过 serverless NEG 指向本服务，保留原始 Host；默认 `run.app` 地址不作为产品入口。
+- 已启用的 Cloud Scheduler HTTP job，名称和区域见配置文件，目标为 `https://run.googleapis.com/v2/projects/PROJECT/locations/REGION/jobs/SERVICE-cleanup:run`，用具备 Cloud Run job 执行权限的身份调用。Cloud Run 会缩到零，服务内每分钟清理仅作补充；定时 job 是生产清理入口。
+
+复制 [非秘密配置示例](../infra/cloudrun.example.json) 到 `infra/cloudrun.json` 并填写实际资源名称、生产额度/保留期限及 Secret Manager `name:version` 引用；上线前按预算核定额度，生产缺少任一项会拒绝启动。该本地文件已从 Git、Docker 和 Cloud Build 上传上下文排除。使用具备 Cloud Build、Artifact Registry、Cloud Run、Secret Manager、Cloud Scheduler 和相关资源读取/部署权限的 gcloud 身份，并使用支持 `gcloud run jobs deploy` 的新版 Google Cloud CLI。运行：
+
+示例配置面向俄勒冈 `us-west1` 的验证/测试环境，未配置 Cloud SQL。自建 PostgreSQL 应部署在同一区域，通过私有地址供 Cloud Run 服务和迁移 job 访问；`DATABASE_URL` 在 Secret Manager 中保存，配置文件只引用秘密版本。示例使用 Direct VPC egress 的 `network` 与 `subnet`，无需持续计费的 VPC connector；若使用已有 connector，改为只填写 `vpc_connector`。`s3_region` 取决于实际对象存储区域，无须与 Cloud Run 区域相同。
+
+Google Cloud Storage 可通过 XML API 与现有 S3 客户端兼容：`s3_endpoint` 使用 `https://storage.googleapis.com`，`s3_region` 使用 Bucket 的单区域位置（本环境为 `us-west1`）。为专用服务账号创建 HMAC 凭证，将访问 ID 和密钥分别存入 Secret Manager；该账号只授予目标私有 Bucket 的对象读写删除权限。Bucket 启用统一访问控制和公开访问防护。HMAC 密钥只在创建时可见，丢失后需重新生成；不要放进配置 JSON、镜像或日志。
+
+```sh
+python3 scripts/deploy-cloud-run.py --config infra/cloudrun.json
+```
+
+脚本以提交 SHA 和时间标记镜像；未提交源码会提示，生产建议在干净 Git 检出上运行。构建完成后记录不可变 digest 作为实际交付标识。它先更新并执行 `SERVICE-migrate` job，成功后更新 `SERVICE-cleanup` job，再以不接流量方式部署服务 revision，检查就绪后切流量，并用 HTTPS 检查控制域 `/login` 和无效访客子域的路由。失败时脚本会标记部署未完成；查看对应 Cloud Build、Cloud Run job execution 和 revision，排除原因后重试。迁移成功但后续失败时数据库可能已升级，不应回滚数据库或删除对象；数据库变更必须保持与上一服务版本兼容。
+
+切流量前记下旧 revision。若新 revision 上线后验收失败，将服务流量切回旧 revision（替换示例值），保留数据库、对象和 Secret：
+
+```sh
+gcloud run services update-traffic cellapp --to-revisions=OLD_REVISION=100 --project=PROJECT --region=REGION
+```
+
+发布后依照本文件“上线验收”执行真实 GitHub 登录、CLI 授权、应用发布、有效/无效访客域、未知 Host、未授权页面/资源和匿名 S3 读取拒绝检查；同时检查清理 job 的定时执行结果。仅 Docker 构建或脚本替身通过不代表已完成公网验收。
