@@ -10,6 +10,8 @@
 
 额度涵盖应用数、文件数、单文件/部署大小、全部暂存和保留版本占用、每应用 UTC 月流量。`UPLOAD_TTL_SECONDS` 和 `RETENTION_SECONDS` 控制回收期限。免费额度耗尽返回错误，不收费。具体数值必须在上线前结合预算配置。
 
+应用数据使用独立 PostgreSQL 数据库，角色与备份流程见 [应用数据数据库运维](app-data-operations.md)。
+
 ## 命名升级
 
 当前构建产物为配套的 `dist/cellapp-server` 和 `dist/web/`，新环境的数据库和角色均使用 `cellapp`。旧 CLI 别名、项目配置与凭证仍兼容；历史验收记录保留当时名称。
@@ -43,7 +45,7 @@ docker compose -f infra/compose.yaml exec -T postgres psql -U cellapp_rename_adm
 
 ## 备份和回滚
 
-定期使用 PostgreSQL 的备份工具导出控制数据库，并备份私有对象 bucket；两者必须覆盖同一个可恢复时间范围。秘密配置单独备份，不放仓库。恢复演练确认 active_deployment 指向的对象完整、密钥摘要仍能用原 SECRET 验证。
+定期使用 PostgreSQL 的备份工具分别导出控制数据库和应用数据数据库，并备份私有对象 bucket；三者必须覆盖同一个可恢复时间范围。秘密配置单独备份，不放仓库。恢复演练确认 active_deployment 指向的对象完整、密钥摘要仍能用原 SECRET 验证。
 
 升级前先备份并应用向后兼容迁移，再替换服务镜像/二进制。服务回滚使用上一版本，保留数据库和对象。不要用 `docker compose down -v` 作为回滚，这会删除持久数据。本期没有用户可操作的版本回滚界面。
 

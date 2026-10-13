@@ -1,6 +1,7 @@
 package hosting
 
 import (
+	"cellapp/apps/server/appdata"
 	"context"
 	"encoding/json"
 	"errors"
@@ -21,12 +22,14 @@ type Identity interface {
 	Exchange(context.Context, string, string) (string, string, error)
 }
 type Server struct {
-	Web      fs.FS
-	Config   Config
-	DB       *pgxpool.Pool
-	Storage  Storage
-	Identity Identity
-	Logger   *slog.Logger
+	Web          fs.FS
+	Config       Config
+	DB           *pgxpool.Pool
+	AppDataDB    *pgxpool.Pool
+	AppDataProbe appdata.Probe
+	Storage      Storage
+	Identity     Identity
+	Logger       *slog.Logger
 }
 type handler func(http.ResponseWriter, *http.Request) error
 
@@ -49,14 +52,21 @@ func (s *Server) Handler() http.Handler {
 		if e := s.DB.Ping(r.Context()); e != nil {
 			return fail(503, "database_unavailable", "Database unavailable")
 		}
+		if s.AppDataDB != nil {
+			if e := s.AppDataDB.Ping(r.Context()); e != nil {
+				return fail(503, "app_database_unavailable", "Application data database unavailable")
+			}
+		}
 		if e := s.Storage.Health(r.Context()); e != nil {
 			return fail(503, "storage_unavailable", "Storage unavailable")
 		}
 		jsonResponse(w, 200, map[string]bool{"ok": true})
 		return nil
 	}))
+	mux.HandleFunc("GET /a/{namespace}/{slug}", s.wrap(s.redirectAppAlias))
 	mux.HandleFunc("GET /auth/login", s.wrap(s.login))
 	mux.HandleFunc("GET /auth/callback", s.wrap(s.callback))
+	mux.HandleFunc("GET /auth/app", s.wrap(s.startAppHandoff))
 	mux.HandleFunc("POST /auth/logout", s.wrap(s.logoutBrowser))
 	mux.HandleFunc("GET /", s.wrap(s.webPage))
 	mux.HandleFunc("GET /device", s.wrap(s.webPage))
@@ -69,6 +79,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/console/apps/{app}", s.webAPI(s.webApp))
 	mux.HandleFunc("DELETE /api/console/apps/{app}", s.webAPI(s.webDeleteApp))
 	mux.HandleFunc("POST /api/console/apps/{app}/key", s.webAPI(s.webResetKey))
+	mux.HandleFunc("GET /api/console/apps/{app}/access", s.webAPI(s.webAccess))
+	mux.HandleFunc("GET /api/console/apps/{app}/data", s.webAPI(s.webDataStatus))
+	mux.HandleFunc("POST /api/console/apps/{app}/visibility/{visibility}", s.webAPI(s.webVisibility))
+	mux.HandleFunc("POST /api/console/apps/{app}/requests/{user}/{decision}", s.webAPI(s.webAccessDecision))
+	mux.HandleFunc("POST /api/console/apps/{app}/grants/{user}/revoke", s.webAPI(s.webGrantRevoke))
 	mux.HandleFunc("GET /api/console/credentials", s.webAPI(s.webCredentials))
 	mux.HandleFunc("POST /api/console/credentials/{credential}/revoke", s.webAPI(s.webRevoke))
 	mux.HandleFunc("POST /api/console/device/decision", s.webAPI(s.webDevice))
@@ -88,6 +103,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /apps", s.wrap(s.createApp))
 	mux.HandleFunc("DELETE /apps/{app}", s.wrap(s.deleteApp))
 	mux.HandleFunc("POST /apps/{app}/key", s.wrap(s.resetKey))
+	mux.HandleFunc("GET /apps/{app}/data", s.wrap(s.dataStatus))
+	mux.HandleFunc("POST /apps/{app}/data/plan", s.wrap(s.dataPlan))
+	mux.HandleFunc("POST /apps/{app}/data/apply", s.wrap(s.dataApply))
+	mux.HandleFunc("POST /apps/{app}/data/verify", s.wrap(s.dataVerify))
 	mux.HandleFunc("POST /apps/{app}/deployments", s.wrap(s.createDeployment))
 	mux.HandleFunc("GET /apps/{app}/deployments/{deployment}", s.wrap(s.deploymentStatus))
 	mux.HandleFunc("PUT /apps/{app}/deployments/{deployment}/files/{index}", s.wrap(s.upload))
@@ -184,20 +203,27 @@ func lockOwner(ctx context.Context, tx pgx.Tx, owner string) error {
 type App struct {
 	ID         string  `json:"id"`
 	Name       string  `json:"name"`
+	Namespace  string  `json:"namespace"`
+	Slug       string  `json:"slug"`
+	AliasURL   string  `json:"aliasUrl"`
 	Active     *string `json:"activeDeployment"`
 	KeyHash    string  `json:"-"`
 	Generation int     `json:"-"`
 	Deleted    bool    `json:"-"`
 	Suspended  bool    `json:"suspended"`
+	DataState  string  `json:"dataState"`
+	Visibility string  `json:"visibility"`
 	URL        string  `json:"url"`
 }
 
 func (s *Server) app(ctx context.Context, tx pgx.Tx, app, owner string) (a App, err error) {
-	err = tx.QueryRow(ctx, `SELECT id,name,active_deployment,key_hash,generation,deleted,suspended FROM apps WHERE id=$1 AND owner_id=$2 FOR UPDATE`, app, owner).Scan(&a.ID, &a.Name, &a.Active, &a.KeyHash, &a.Generation, &a.Deleted, &a.Suspended)
+	err = tx.QueryRow(ctx, `SELECT a.id,a.name,a.active_deployment,a.key_hash,a.generation,a.deleted,a.suspended,a.data_state,a.visibility,n.handle,a.slug
+    FROM apps a JOIN app_namespaces n ON n.id=a.namespace_id WHERE a.id=$1 AND a.owner_id=$2 FOR UPDATE OF a`, app, owner).Scan(&a.ID, &a.Name, &a.Active, &a.KeyHash, &a.Generation, &a.Deleted, &a.Suspended, &a.DataState, &a.Visibility, &a.Namespace, &a.Slug)
 	if err != nil || a.Deleted {
 		return a, fail(404, "app_not_found", "App not found")
 	}
 	a.URL = s.Config.AppURL(a.ID)
+	a.AliasURL = s.appAliasURL(a.Namespace, a.Slug)
 	return
 }
 func keyValid(k string) bool { return len(k) == 64 && digestPattern.MatchString(k) }

@@ -40,6 +40,8 @@ main:focus { outline:none; }
 .panel,.empty { background:var(--color-panel); padding:24px; border:1px solid var(--color-line); border-radius:8px; margin-bottom:24px; display:grid; gap:16px; }
 .empty { max-width:720px; padding:32px; }
 .actions { display:flex; flex-wrap:wrap; gap:12px; }
+.access-row { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:16px; min-width:0; padding:16px 0; border-top:1px solid var(--color-line); }
+.access-row > div { min-width:0; }
 .copy { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px; align-items:center; }
 .copy .feedback { grid-column:1/-1; }
 .feedback { margin:12px 0; min-height:0; }

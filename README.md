@@ -1,6 +1,6 @@
 # Cellapp
 
-免费静态应用托管：在本机通过 Skill / CLI 构建发布，使用固定 HTTPS 地址和应用独立分享密钥访问。服务端为 Go，CLI 为 TypeScript；PostgreSQL 保存控制元数据，私有 S3 兼容存储保存发布产物，本地开发默认使用 MinIO。
+免费静态应用托管：在本机通过 Skill / CLI 构建发布，使用固定 HTTPS 地址。应用可用 `@命名空间/别名` 分享，原有应用 ID 地址保持稳定。访客先登录 Cellapp；公开应用允许已登录用户直接访问，受限应用通过申请审批或访问密钥授权。平台提供独立应用数据库与受控的 Supabase 表级 CRUD。服务端为 Go，CLI 为 TypeScript；PostgreSQL 保存控制元数据和独立的应用表数据，私有 S3 兼容存储保存发布产物，本地开发默认使用 MinIO。
 
 ## 开发
 
@@ -12,7 +12,7 @@ cd cellapp
 npm ci
 npm --prefix skills ci
 go mod download
-docker compose -f infra/compose.yaml up -d postgres proxy minio
+docker compose -f infra/compose.yaml up -d postgres postgrest proxy minio
 docker compose -f infra/compose.yaml run --rm minio-init
 cp .env.example .env
 ```
@@ -44,13 +44,13 @@ docker compose -f infra/compose.yaml cp proxy:/data/caddy/pki/authorities/local/
 export NODE_EXTRA_CA_CERTS="$PWD/.local/root.crt"
 ```
 
-已有数据库卷的配置升级见 [命名升级说明](docs/operations.md#命名升级)。
+已有数据库卷的配置升级见 [命名升级说明](docs/operations.md#命名升级)。独立应用数据数据库的初始化与现有卷补建见 [应用数据数据库运维](docs/app-data-operations.md)。
 
 根据操作系统将此证书加入本地测试浏览器的受信任证书，或使用隔离测试浏览器配置。若系统不解析 `*.localhost`，为本次应用 host 配置本地 DNS。
 
 ## Web 控制面
 
-`apps/web` 是主仓库的私有 npm workspace，根 `npm ci` 安装依赖。它提供真实应用列表/详情、分享密钥重置、删除、部署凭证撤销与设备授权。Go 在控制域同源提供页面及 `/api/console`，登录沿用现有浏览器会话。独立开发和界面检查不需要客户端子模块；未连接 Go 时显示服务不可达状态：
+`apps/web` 是主仓库的私有 npm workspace，根 `npm ci` 安装依赖。它提供真实应用列表/详情、访问审批、密钥轮换、数据表版本、删除、部署凭证撤销与设备授权。Go 在控制域同源提供页面及 `/api/console`，登录沿用现有浏览器会话。独立开发和界面检查不需要客户端子模块；未连接 Go 时显示服务不可达状态：
 
 ```sh
 npm run dev:web
@@ -134,10 +134,20 @@ npm run typecheck
 npm test
 npm run build
 go vet ./apps/server/...
-TEST_DATABASE_URL=postgres://cellapp:development@127.0.0.1:5432/cellapp go test -race -count=1 -v ./apps/server/internal/hosting
-RUN_BROWSER_TESTS=1 TEST_DATABASE_URL=postgres://cellapp:development@127.0.0.1:5432/cellapp go test -race -count=1 -run TestBrowserEndToEnd -v ./apps/server/internal/hosting
+export TEST_DATABASE_URL='<isolated-control-test-dsn>'
+export TEST_APP_DATA_DATABASE_URL='<isolated-app-data-admin-dsn>'
+export TEST_APP_DATA_PROVISIONER_URL='<isolated-app-data-provisioner-dsn>'
+export TEST_POSTGREST_URL='<isolated-postgrest-url>'
+go test -race -count=1 ./apps/server/...
+export S3_ACCESS_KEY_ID='<isolated-minio-key>'
+export S3_SECRET_ACCESS_KEY='<isolated-minio-secret>'
+RUN_BROWSER_TESTS=1 go test -race -count=1 -run TestBrowserEndToEnd -v ./apps/server/internal/hosting
 ```
 
-未提供 `TEST_DATABASE_URL` 时，真实数据库集成测试会明确跳过。集成测试创建随机独立 schema，结束后清理，不操作其他 schema。浏览器测试默认使用本机 macOS Chrome，可用 `CHROME_PATH` 指定其他平台 Chrome 可执行文件。macOS 跨服务浏览器测试为本轮临时 CA 建立临时钥匙串信任，并在结束时恢复搜索列表、移除信任与临时钥匙串，不关闭 TLS 校验；已有受信任的隔离测试 CA 时，可通过 `TEST_BROWSER_CA_CERT` 和 `TEST_BROWSER_CA_KEY` 指定证书及私钥，测试只用它签发临时 localhost 证书，不修改系统信任。macOS 禁止自动信任时也使用此方式。测试身份提供方和存储替身仅编译在测试中；生产服务没有认证绕过入口。内存对象存储测试替身不能代替真实 MinIO / S3 与匿名读取验收。
+未提供对应的 `TEST_*` 变量时，真实数据库或 PostgREST 集成测试会明确跳过；浏览器验收显式要求全部服务配置。实际执行结果见 [应用数据验收记录](docs/app-data-verification.md)。集成测试创建随机独立 schema，结束后清理，不操作其他 schema。浏览器测试默认使用本机 macOS Chrome，可用 `CHROME_PATH` 指定其他平台 Chrome 可执行文件。跨服务浏览器测试生成临时 HTTPS 证书，通过 Chrome 的 SPKI 白名单只信任本次测试证书，浏览器请求仍启用证书检查；Node 使用同一临时 CA。也可用 `TEST_BROWSER_CA_CERT` 和 `TEST_BROWSER_CA_KEY` 指定隔离测试 CA。测试身份提供方和存储替身仅编译在测试中；生产服务没有认证绕过入口。内存对象存储测试替身不能代替真实 MinIO / S3 与匿名读取验收。
 
-范围：在线 HTML/JS/CSS 与静态资源；不提供后端运行、数据库同步、公开免密、自定义域名或离线 PWA。更多运维配置见 [operations.md](docs/operations.md)。本次目录与子模块迁移验收见 [仓库协作规范验收](docs/repository-workflow-verification.md)。
+范围：在线 HTML/JS/CSS 与静态资源、平台用户身份、独立应用表及表级 CRUD；不提供自定义应用服务端、Supabase Auth、Realtime、Storage、RPC、自定义域名或离线 PWA。表创建和策略通过 [CLI 与 Skill](skills/README.md) 的 `cellapp data` 工作流完成；[笔记 Demo](skills/skills/cellapp-deploy/examples/notes/README.md) 可验证建表及数据读写。更多运维配置见 [operations.md](docs/operations.md)。本次目录与子模块迁移验收见 [仓库协作规范验收](docs/repository-workflow-verification.md)。
+
+## 许可证
+
+主仓库中的原创代码和文档采用 [Apache License 2.0](LICENSE)，版权声明见 [NOTICE](NOTICE)。`skills` 是独立 Git 子模块，其 CLI、Skill 和文档继续遵循自身的 [MIT License](skills/LICENSE)。第三方依赖及资源遵循各自的许可证。

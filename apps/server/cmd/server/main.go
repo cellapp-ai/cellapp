@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cellapp/apps/server/appdata"
 	"cellapp/apps/server/internal/hosting"
 	"cellapp/apps/server/migrations"
 	"context"
@@ -41,11 +42,20 @@ func run() error {
 	if *migrate {
 		return migrations.Run(ctx, db)
 	}
+	applicationDB, e := pgxpool.New(ctx, c.AppDataDatabaseURL)
+	if e != nil {
+		return e
+	}
+	defer applicationDB.Close()
+	if e = appdata.EnsureSeparate(ctx, db, applicationDB); e != nil {
+		return e
+	}
 	storage, e := hosting.NewStorage(c)
 	if e != nil {
 		return e
 	}
-	server := &hosting.Server{Config: c, DB: db, Storage: storage, Logger: slog.New(slog.NewJSONHandler(os.Stdout, nil))}
+	server := &hosting.Server{Config: c, DB: db, AppDataDB: applicationDB, Storage: storage, Logger: slog.New(slog.NewJSONHandler(os.Stdout, nil))}
+	server.AppDataProbe = server.DataProbe
 	if *cleanup {
 		return server.Cleanup(ctx)
 	}

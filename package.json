@@ -17,7 +17,9 @@
     "lint:web": "npm run lint --workspace @cellapp/web"
   },
   "devDependencies": {
+    "@supabase/supabase-js": "2.117.3",
     "@types/node": "22.20.4",
+    "esbuild": "0.28.2",
     "playwright-core": "1.63.0",
     "tsx": "4.23.15",
     "typescript": "5.9.3"

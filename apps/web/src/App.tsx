@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { application, credential, decisionResult, detail, keyResult, list, message, request, RequestError, session, success } from '@/api';
+import { access, application, credential, dataStatus, decisionResult, detail, keyResult, list, message, request, RequestError, session, success } from '@/api';
 import type { Session } from '@/api';
 
 type Load<T> = { kind: 'loading' } | { kind: 'ready'; value: T } | { kind: 'error'; message: string };
@@ -56,12 +56,15 @@ function Applications() {
   const { state, reload } = useResource('/apps', applications);
   return <><div className="page-heading"><p className="eyebrow">YOUR WORKSPACE</p><h1>Applications</h1><p>Manage access to your hosted applications.</p></div>
     <LoadingError state={state} retry={reload} />
-    {state.kind === 'ready' && (state.value.length === 0 ? <section className="empty"><h2>No applications yet</h2><p>Use the Cellapp deployment Skill in your AI conversation, or run <code>cellapp deploy</code> from your local project. Your applications will appear here after deployment.</p><button onClick={reload}>Refresh applications</button></section> : <div className="application-list">{state.value.map(app => <a className="application-row" href={`/applications/${app.id}`} key={app.id}><div><h2>{app.name}</h2><p>{app.url}</p></div><span className="badge">{app.suspended ? 'Suspended' : app.activeDeployment ? 'Published' : 'Not published'}</span><span aria-hidden="true">↗</span></a>)}</div>)}
+    {state.kind === 'ready' && (state.value.length === 0 ? <section className="empty"><h2>No applications yet</h2><p>Use the Cellapp deployment Skill in your AI conversation, or run <code>cellapp deploy</code> from your local project. Your applications will appear here after deployment.</p><button onClick={reload}>Refresh applications</button></section> : <div className="application-list">{state.value.map(app => <a className="application-row" href={`/applications/${app.id}`} key={app.id}><div><h2>{app.name}</h2><p>@{app.namespace}/{app.slug}</p><p>{app.url}</p></div><span className="badge">{app.suspended ? 'Suspended' : app.activeDeployment ? 'Published' : 'Not published'}</span><span aria-hidden="true">↗</span></a>)}</div>)}
   </>;
 }
 function ApplicationPage({ id }: { id: string }) {
   const { state, reload } = useResource(`/apps/${id}`, detail);
+  const accessState = useResource(`/apps/${id}/access`, access);
+  const dataState = useResource(`/apps/${id}/data`, dataStatus);
   const [operation, setOperation] = useState<'key' | 'delete' | null>(null);
+  const [accessAction, setAccessAction] = useState<{ path: string; title: string; explanation: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [newKey, setNewKey] = useState('');
   const [feedback, setFeedback] = useState('');
@@ -72,7 +75,7 @@ function ApplicationPage({ id }: { id: string }) {
     try {
       if (operation === 'key') {
         const key = await request(`/apps/${id}/key`, keyResult, { method: 'POST' });
-        setNewKey(key); setFeedback('Share key reset. Previous keys and visitor sessions no longer work.');
+        setNewKey(key); setFeedback('Access key rotated. Existing user grants remain active.');
         setOperation(null); reload();
       } else {
         await request(`/apps/${id}`, success('deleted'), { method: 'DELETE' });
@@ -83,15 +86,29 @@ function ApplicationPage({ id }: { id: string }) {
       setError(`${message(caught)} The result may already have taken effect. Refresh to check, or reset the key again when ready.`);
     } finally { setBusy(false); }
   };
+  const performAccess = async () => {
+    if (!accessAction || busy) return;
+    setBusy(true); setError(''); setFeedback('');
+    try {
+      await request(accessAction.path, value => value, { method: 'POST' });
+      setFeedback('Access updated.'); reload(); accessState.reload();
+    } catch (caught) {
+      setError(`${message(caught)} Refresh access to check the current state.`);
+    } finally { setBusy(false); setAccessAction(null); }
+  };
   return <><a className="back" href="/applications">← Applications</a><LoadingError state={state} retry={reload} />
     {state.kind === 'ready' && <><div className="page-heading"><p className="eyebrow">APPLICATION</p><h1>{state.value.name}</h1><span className="badge">{state.value.suspended ? 'Suspended' : state.value.release ? 'Published' : 'Not published'}</span></div>
-      <section className="panel"><h2>Application address</h2><Copy value={state.value.url} label="Copy address" /><a className="text-link" href={state.value.url} target="_blank" rel="noopener noreferrer">Open application ↗</a><p>Visitors need the current share key to open this application.</p></section>
+      <section className="panel"><h2>Application address</h2><p><code>@{state.value.namespace}/{state.value.slug}</code></p><Copy value={state.value.aliasUrl} label="Copy share link" /><p>The app ID address remains stable.</p><Copy value={state.value.url} label="Copy address" /><a className="text-link" href={state.value.url} target="_blank" rel="noopener noreferrer">Open application ↗</a><p>Visitors sign in with Cellapp. {state.value.visibility === 'public' ? 'Any signed-in user can access this application.' : 'Restricted access requires approval or an access key.'}</p></section>
       <section className="panel"><h2>Current release</h2>{state.value.release ? <dl><dt>Release</dt><dd><code>{state.value.release.id}</code></dd><dt>Published</dt><dd>{state.value.release.publishedAt ? date(state.value.release.publishedAt) : 'Not published'}</dd><dt>Files</dt><dd>{state.value.release.fileCount}</dd><dt>Size</dt><dd>{state.value.release.bytes.toLocaleString('en-GB')} bytes</dd><dt>Navigation</dt><dd>{state.value.release.spa ? 'Single page application' : 'Static pages'}</dd></dl> : <p>No release has been published. Deploy from your local project using the Skill or CLI.</p>}</section>
-      <section className="panel"><h2>Access and lifecycle</h2><p>Reset access for visitors, or permanently delete this application.</p><div className="actions"><button disabled={busy} onClick={() => setOperation('key')}>Reset share key</button><button className="danger" disabled={busy} onClick={() => setOperation('delete')}>Delete application</button><button disabled={busy} onClick={() => { setNewKey(''); reload(); }}>Refresh details</button></div></section>
+      <section className="panel"><h2>Access and lifecycle</h2><dl><dt>Visibility</dt><dd>{state.value.visibility === 'public' ? 'Public to signed-in users' : 'Restricted'}</dd></dl><div className="actions"><button disabled={busy} onClick={() => setAccessAction({ path: `/apps/${id}/visibility/${state.value.visibility === 'public' ? 'restricted' : 'public'}`, title: state.value.visibility === 'public' ? 'Restrict access?' : 'Make public?', explanation: state.value.visibility === 'public' ? 'Users without an explicit grant will lose access immediately.' : 'Every signed-in Cellapp user will be able to open this application.' })}>{state.value.visibility === 'public' ? 'Restrict access' : 'Make public'}</button><button disabled={busy} onClick={() => setOperation('key')}>Rotate access key</button><button className="danger" disabled={busy} onClick={() => setOperation('delete')}>Delete application</button><button disabled={busy} onClick={() => { setNewKey(''); reload(); accessState.reload(); dataState.reload(); }}>Refresh details</button></div></section>
     </>}
+    <section className="panel"><h2>Application tables</h2><LoadingError state={dataState.state} retry={dataState.reload} />{dataState.state.kind === 'ready' && <dl><dt>Provisioning</dt><dd>{dataState.state.value.state}</dd><dt>Table version</dt><dd>{dataState.state.value.version}</dd></dl>}</section>
+    <section className="panel"><h2>Access requests</h2><LoadingError state={accessState.state} retry={accessState.reload} />{accessState.state.kind === 'ready' && (accessState.state.value.requests.filter(item => item.status === 'pending').length === 0 ? <p>No pending requests.</p> : accessState.state.value.requests.filter(item => item.status === 'pending').map(item => <div className="access-row" key={item.userId}><div><code>{item.userId}</code><p>Requested {date(item.requestedAt)}</p></div><div className="actions"><button disabled={busy} onClick={() => setAccessAction({ path: `/apps/${id}/requests/${item.userId}/approve`, title: 'Approve access?', explanation: 'This user will be able to open the application until you revoke their grant.' })}>Approve</button><button disabled={busy} onClick={() => setAccessAction({ path: `/apps/${id}/requests/${item.userId}/deny`, title: 'Deny request?', explanation: 'This request will be marked denied.' })}>Deny</button></div></div>))}</section>
+    <section className="panel"><h2>Granted users</h2>{accessState.state.kind === 'ready' && (accessState.state.value.grants.length === 0 ? <p>No user grants.</p> : accessState.state.value.grants.map(item => <div className="access-row" key={item.userId}><div><code>{item.userId}</code><p>{item.source} · {date(item.grantedAt)}</p></div><button className="danger" disabled={busy} onClick={() => setAccessAction({ path: `/apps/${id}/grants/${item.userId}/revoke`, title: 'Revoke access?', explanation: 'This user will lose access immediately unless the application is public.' })}>Revoke</button></div>))}</section>
     {feedback && <Feedback>{feedback}</Feedback>}{error && <Feedback error>{error}</Feedback>}
-    {newKey && <section className="panel"><h2>New share key</h2><p>Copy this key now. It will be cleared when you leave this page and cannot be retrieved later.</p><Copy value={newKey} label="Copy share key" /><button onClick={() => setNewKey('')}>Dismiss key</button></section>}
-    {operation && <Confirm title={operation === 'key' ? 'Reset share key?' : 'Delete application?'} busy={busy} onClose={() => setOperation(null)} onConfirm={() => { void perform(); }}>{operation === 'key' ? 'The previous key and all existing visitor sessions will stop working. Share the new key with people who still need access.' : 'This permanently removes the application. Its address will stop working and it cannot receive more deployments.'}</Confirm>}
+    {newKey && <section className="panel"><h2>New access key</h2><p>Copy this key now. It will be cleared when you leave this page and cannot be retrieved later.</p><Copy value={newKey} label="Copy access key" /><button onClick={() => setNewKey('')}>Dismiss key</button></section>}
+    {operation && <Confirm title={operation === 'key' ? 'Rotate access key?' : 'Delete application?'} busy={busy} onClose={() => setOperation(null)} onConfirm={() => { void perform(); }}>{operation === 'key' ? 'The previous key will stop granting new access. Existing user grants remain active.' : 'This permanently removes the application. Its address will stop working and it cannot receive more deployments.'}</Confirm>}
+    {accessAction && <Confirm title={accessAction.title} busy={busy} onClose={() => setAccessAction(null)} onConfirm={() => { void performAccess(); }}>{accessAction.explanation}</Confirm>}
   </>;
 }
 function Credentials() {

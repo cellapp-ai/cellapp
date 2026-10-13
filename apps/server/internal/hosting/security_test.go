@@ -100,9 +100,9 @@ func TestIntegrationCreationReplayRateLimitAndSuspension(t *testing.T) {
 	session := f.unlock(t, a, key)
 	host, _ := url.Parse(a.URL)
 	for i := 0; i < 9; i++ {
-		response[any](t, f.request(t, "POST", "/_hosting/unlock", url.Values{"key": {"bad"}}.Encode(), "", host.Host, ""), 401)
+		response[any](t, f.request(t, "POST", "/_cellapp/redeem", url.Values{"key": {"bad"}}.Encode(), "", host.Host, session), 401)
 	}
-	response[any](t, f.request(t, "POST", "/_hosting/unlock", url.Values{"key": {"bad"}}.Encode(), "", host.Host, ""), 429)
+	response[any](t, f.request(t, "POST", "/_cellapp/redeem", url.Values{"key": {"bad"}}.Encode(), "", host.Host, session), 429)
 	if e := f.server.Suspend(context.Background(), a.ID); e != nil {
 		t.Fatal(e)
 	}

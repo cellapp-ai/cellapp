@@ -5,9 +5,11 @@ import (
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/pem"
 	"math/big"
 	"net"
@@ -17,10 +19,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
-	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type browserIdentity struct {
@@ -37,6 +39,19 @@ func TestBrowserEndToEnd(t *testing.T) {
 		t.Skip("RUN_BROWSER_TESTS=1 and a local Chrome executable are required")
 	}
 	f := setup(t)
+	appDSN := os.Getenv("TEST_APP_DATA_PROVISIONER_URL")
+	if appDSN == "" || os.Getenv("TEST_POSTGREST_URL") == "" {
+		t.Fatal("TEST_APP_DATA_PROVISIONER_URL and TEST_POSTGREST_URL are required for browser acceptance")
+	}
+	appDB, e := pgxpool.New(context.Background(), appDSN)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer appDB.Close()
+	f.server.AppDataDB = appDB
+	f.server.Config.PostgRESTURL = os.Getenv("TEST_POSTGREST_URL")
+	f.server.Config.AppDataJWTSecret = "local-development-postgrest-jwt-secret-32-bytes"
+	f.server.AppDataProbe = f.server.DataProbe
 	// Browser acceptance uses real S3 so a storage substitute cannot mask release failures.
 	storageConfig, e := LoadConfig(os.Getenv)
 	if e != nil {
@@ -68,6 +83,24 @@ func TestBrowserEndToEnd(t *testing.T) {
 	handler := f.server.Handler()
 	server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Only this test fixture exposes a simulated identity provider; production has no bypass.
+		if r.URL.Path == "/_test/visitor" {
+			visitor := id()
+			secret := token()
+			if _, err := f.db.Exec(r.Context(), `INSERT INTO owners(id,issuer,subject) VALUES($1,'test','browser-visitor-`+visitor+`')`, visitor); err != nil {
+				t.Error(err)
+				http.Error(w, "fixture failed", 500)
+				return
+			}
+			if _, err := f.db.Exec(r.Context(), `INSERT INTO browser_sessions(hash,owner_id,expires_at) VALUES($1,$2,now()+interval '1 day')`, keyed(f.server.Config.Secret, secret), visitor); err != nil {
+				t.Error(err)
+				http.Error(w, "fixture failed", 500)
+				return
+			}
+			cookie(w, "__Host-owner", secret, 86400)
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write([]byte("<!doctype html><title>Visitor ready</title>"))
+			return
+		}
 		if r.URL.Path == "/_test/identity" {
 			http.Redirect(w, r, "/auth/callback?code=valid&state="+url.QueryEscape(r.URL.Query().Get("state")), 302)
 			return
@@ -132,59 +165,18 @@ func TestBrowserEndToEnd(t *testing.T) {
 	if e = os.WriteFile(ca, caPEM, 0600); e != nil {
 		t.Fatal(e)
 	}
-	if providedCA == "" {
-		trustBrowserCertificate(t, ca)
+	spki, e := x509.MarshalPKIXPublicKey(&key.PublicKey)
+	if e != nil {
+		t.Fatal(e)
 	}
+	spkiDigest := sha256.Sum256(spki)
 	command := exec.Command("node", "--import", "tsx", "tests/browser.e2e.ts")
 	command.Dir = root
-	command.Env = append(os.Environ(), "TEST_CONTROL_ORIGIN="+f.server.Config.ControlOrigin, "NODE_EXTRA_CA_CERTS="+ca)
+	command.Env = append(os.Environ(), "TEST_CONTROL_ORIGIN="+f.server.Config.ControlOrigin, "NODE_EXTRA_CA_CERTS="+ca,
+		"TEST_BROWSER_SPKI="+base64.StdEncoding.EncodeToString(spkiDigest[:]))
 	output, e := command.CombinedOutput()
 	if e != nil {
 		t.Fatalf("browser test failed: %v\n%s", e, output)
 	}
 	t.Log(string(output))
-}
-
-// Chromium on macOS uses the OS trust store. Trust only this disposable CA,
-// and restore the keychain search list and trust settings after the test.
-func trustBrowserCertificate(t *testing.T, ca string) {
-	t.Helper()
-	if runtime.GOOS != "darwin" {
-		t.Fatal("Browser CA trust setup currently requires macOS; TLS verification is never disabled")
-	}
-	run := func(args ...string) []byte {
-		out, e := exec.Command("security", args...).CombinedOutput()
-		if e != nil {
-			t.Fatalf("temporary browser CA trust failed: %v: %s", e, out)
-		}
-		return out
-	}
-	out := string(run("list-keychains", "-d", "user"))
-	var original []string
-	for _, line := range strings.Split(out, "\n") {
-		if value := strings.Trim(strings.TrimSpace(line), `"`); value != "" {
-			original = append(original, value)
-		}
-	}
-	keychain := filepath.Join(t.TempDir(), "browser.keychain-db")
-	run("create-keychain", "-p", "isolated-browser-test", keychain)
-	trusted := false
-	t.Cleanup(func() {
-		if trusted {
-			if out, e := exec.Command("security", "remove-trusted-cert", ca).CombinedOutput(); e != nil {
-				t.Errorf("remove temporary CA: %v: %s", e, out)
-			}
-		}
-		args := append([]string{"list-keychains", "-d", "user", "-s"}, original...)
-		if out, e := exec.Command("security", args...).CombinedOutput(); e != nil {
-			t.Errorf("restore keychains: %v: %s", e, out)
-		}
-		if out, e := exec.Command("security", "delete-keychain", keychain).CombinedOutput(); e != nil {
-			t.Errorf("delete temporary keychain: %v: %s", e, out)
-		}
-	})
-	run("unlock-keychain", "-p", "isolated-browser-test", keychain)
-	run(append([]string{"list-keychains", "-d", "user", "-s", keychain}, original...)...)
-	run("add-trusted-cert", "-r", "trustRoot", "-k", keychain, ca)
-	trusted = true
 }

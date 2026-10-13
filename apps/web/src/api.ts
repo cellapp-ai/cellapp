@@ -1,8 +1,10 @@
 export type Session = { ownerId: string; authMode: 'dev' | 'github' };
-export type Application = { id: string; name: string; activeDeployment: string | null; suspended: boolean; url: string };
+export type Application = { id: string; name: string; namespace: string; slug: string; aliasUrl: string; activeDeployment: string | null; suspended: boolean; url: string; visibility: 'public' | 'restricted'; dataState: string };
 export type Release = { id: string; status: string; createdAt: string; publishedAt: string | null; spa: boolean; fileCount: number; bytes: number };
 export type ApplicationDetail = Application & { release: Release | null };
 export type Credential = { id: string; createdAt: string; expiresAt: string };
+export type Access = { requests: { userId: string; status: 'pending' | 'approved' | 'denied'; requestedAt: string }[]; grants: { userId: string; source: string; grantedAt: string }[] };
+export type DataStatus = { state: string; version: number; digest: string };
 
 export class RequestError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -42,7 +44,33 @@ export function application(value: unknown): Application {
   const data = record(value);
   const url = new URL(text(data.url));
   if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) throw new Error('Unexpected application address.');
-  return { id: identifier(data.id), name: text(data.name), activeDeployment: data.activeDeployment === null ? null : identifier(data.activeDeployment), suspended: boolean(data.suspended), url: url.href };
+  const visibility = data.visibility;
+  if (visibility !== 'public' && visibility !== 'restricted') throw new Error('Unexpected access setting.');
+  const namespace = text(data.namespace);
+  const slug = text(data.slug);
+  const aliasUrl = new URL(text(data.aliasUrl));
+  if (!/^[a-z][a-z0-9-]{0,62}$/.test(namespace) || !/^[a-z][a-z0-9-]{0,62}$/.test(slug) ||
+      aliasUrl.protocol !== 'https:' || aliasUrl.username || aliasUrl.password || aliasUrl.search || aliasUrl.hash) throw new Error('Unexpected application alias.');
+  return { id: identifier(data.id), name: text(data.name), namespace, slug, aliasUrl: aliasUrl.href, activeDeployment: data.activeDeployment === null ? null : identifier(data.activeDeployment), suspended: boolean(data.suspended), url: url.href, visibility, dataState: text(data.dataState) };
+}
+export function access(value: unknown): Access {
+  const data = record(value);
+  if (!Array.isArray(data.requests) || !Array.isArray(data.grants)) throw new Error('Unexpected access list.');
+  return {
+    requests: data.requests.map(value => {
+      const item = record(value);
+      if (item.status !== 'pending' && item.status !== 'approved' && item.status !== 'denied') throw new Error('Unexpected request status.');
+      return { userId: identifier(item.userId), status: item.status, requestedAt: date(item.requestedAt) };
+    }),
+    grants: data.grants.map(value => {
+      const item = record(value);
+      return { userId: identifier(item.userId), source: text(item.source), grantedAt: date(item.grantedAt) };
+    }),
+  };
+}
+export function dataStatus(value: unknown): DataStatus {
+  const data = record(value);
+  return { state: text(data.state), version: number(data.version), digest: text(data.digest) };
 }
 export function detail(value: unknown): ApplicationDetail {
   const data = record(value);
