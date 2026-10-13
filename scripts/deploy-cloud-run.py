@@ -217,8 +217,12 @@ def release(c):
                       f"--project={c['project']}", f"--region={c['region']}", json_output=True)
     if not isinstance(services, list):
         raise DeploymentError("service inventory returned invalid JSON")
-    exists = any(isinstance(service, dict) and service.get("metadata", {}).get("name") == c["service"]
-                 for service in services)
+    current = next((service for service in services if isinstance(service, dict)
+                    and service.get("metadata", {}).get("name") == c["service"]), None)
+    exists = current is not None
+    previous_traffic = [f"{item['revisionName']}={item['percent']}" for item in
+                        (current or {}).get("status", {}).get("traffic", [])
+                        if item.get("revisionName") and item.get("percent", 0) > 0]
     deployed = gcloud("service deploy", "run", "deploy", c["service"], f"--image={image}",
                       "--ingress=internal-and-cloud-load-balancing", "--port=8080", "--allow-unauthenticated",
                       "--startup-probe=httpGet.path=/health,httpGet.port=8080,periodSeconds=5,timeoutSeconds=5,failureThreshold=24",
@@ -233,7 +237,18 @@ def release(c):
     conditions = ready.get("status", {}).get("conditions", [])
     if not any(item.get("type") == "Ready" and item.get("status") == "True" for item in conditions):
         raise DeploymentError(f"revision {revision} is not ready; previous traffic remains active")
-    gcloud("traffic switch", "run", "services", "update-traffic", c["service"], f"--to-revisions={revision}=100", f"--project={c['project']}", f"--region={c['region']}")
+    try:
+        gcloud("traffic switch", "run", "services", "update-traffic", c["service"], f"--to-revisions={revision}=100", f"--project={c['project']}", f"--region={c['region']}")
+    except DeploymentError as exc:
+        if previous_traffic:
+            try:
+                gcloud("traffic rollback", "run", "services", "update-traffic", c["service"],
+                       "--to-revisions=" + ",".join(previous_traffic),
+                       f"--project={c['project']}", f"--region={c['region']}")
+            except DeploymentError as rollback_error:
+                raise DeploymentError("traffic switch and automatic rollback failed; inspect the service's desired traffic") from rollback_error
+        raise DeploymentError("traffic switch failed; previous traffic restored" if previous_traffic else
+                              "traffic switch failed; previous traffic could not be determined") from exc
     print(f"Revision serving traffic: {revision}")
     verify_routes(c)
     print(f"Control: {c['control_origin']}")
