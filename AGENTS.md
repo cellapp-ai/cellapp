@@ -64,9 +64,9 @@ cellapp/
 3. **开发**：按任务实施，保持改动聚焦。发现设计假设失效时先修正设计，不混入无关重构。
 4. **测试**：执行与改动有关的成功、失败、权限和并发检查。通过、失败、跳过和未执行分别记录；测试替身不代表真实服务验收。
 5. **归档**：必要验收满足、任务状态准确后同步主规格并归档。更新相关文档，检查路径、命令、名称和归档状态；不将历史验证当成本轮结果。
-6. **commit**：审查并仅暂存本次文件，使用 feat/fix/refactor/test/docs/chore 等明确提交类型。跨仓库先提交子仓库，再提交主仓库最终 gitlink、归档和配套改动；本地合并可保留未推送提交，推送主仓前须核实子模块远端可获取性。服务、Skill 与 npm 的发布顺序见 [.agents/rules/deploy.md](.agents/rules/deploy.md)。未满足相应交付条件时报告未完成项，不宣称已发布。
+6. **commit 与推送**：审查并仅暂存本次文件，使用 feat/fix/refactor/test/docs/chore 等明确提交类型。跨仓库先提交子仓库，再提交主仓库最终 gitlink、归档和配套改动；推送主仓前须核实子模块提交已能从远端获取。完成并验证后按 [Gitflow 规则](.agents/rules/gitflow.md) 默认推送，服务、Skill 与 npm 的发布顺序见 [.agents/rules/deploy.md](.agents/rules/deploy.md)。未满足相应交付条件时报告未完成项，不宣称已发布。
 
-- **归档后自动提交**：每次成功执行 `openspec-archive-change` 后，Agent 必须自动审查、暂存并 commit 该变更涉及的代码、规格、文档和归档文件，无需再次请求 commit 确认。跨仓库变更沿用上述提交顺序；远程可获取性按推送主仓和发布阶段的规则分别核实。不夹带无关工作；没有可提交差异时说明已是干净状态，提交受阻时保留工作并报告原因。此规则授权自动 commit，不授权推送或发布。
+- **归档后自动提交**：每次成功执行 `openspec-archive-change` 后，Agent 必须自动审查、暂存并 commit 该变更涉及的代码、规格、文档和归档文件，无需再次请求 commit 确认。跨仓库变更沿用上述提交顺序；远程可获取性按推送主仓和发布阶段的规则分别核实。不夹带无关工作；没有可提交差异时说明已是干净状态，提交受阻时保留工作并报告原因。提交后的 Git 推送遵循默认推送规则；这不授权 Cloud Run 或 npm 发布。
 
 ## 代码规范
 
@@ -101,7 +101,7 @@ RUN_BROWSER_TESTS=1 TEST_DATABASE_URL=<isolated-test-dsn> go test -race -count=1
 
 ## 默认使用 Worktree 开发
 
-- 分支来源、合入 `main` 与暂不推送的规则见 [Gitflow 规则](.agents/rules/gitflow.md)；服务、Skill 和 npm 的发布顺序与验收见 [发布规则](.agents/rules/deploy.md)，执行时以此为准。
+- 分支来源、合入 `main` 与默认推送的规则见 [Gitflow 规则](.agents/rules/gitflow.md)；服务、Skill 和 npm 的发布顺序与验收见 [发布规则](.agents/rules/deploy.md)，执行时以此为准。
 - 涉及文件修改的任务默认在独立 Git worktree 中执行；只读调查可在当前检出中进行。
 - 开始前检查主仓库、skills 子仓库及已有 worktree 状态，优先复用适合当前任务且没有其他工作占用的 worktree。
 - 没有合适 worktree 时，自动创建，无需再次确认。Codex 桌面端优先使用内置 worktree 工具。

@@ -1,6 +1,6 @@
 # 发布规则：服务、Skill、npm
 
-本规则在用户明确要求发布时执行；编写、合并代码或更新本文件都不触发发布。发布分支和 worktree 的来源遵循 [Gitflow 规则](gitflow.md)。顺序固定为：**发布前判定 → Cloud Run 服务 → GitHub Skill → npm 包**。前一阶段失败或验收未通过时停止后续阶段，并报告已发生的外部变更。
+本规则在用户明确要求发布服务或 npm 包时执行；默认 Git 推送不触发 Cloud Run 或 npm 发布。发布分支和 worktree 的来源与远端映射遵循 [Gitflow 规则](gitflow.md)。需要同步客户端时顺序为：**发布前判定 → Cloud Run 服务 → GitHub Skill → npm 包**。前一阶段失败或验收未通过时停止后续阶段，并报告已发生的外部变更。
 
 ## 1. 发布前判定与准备
 
@@ -16,7 +16,7 @@
 
 ## 3. 再发布 GitHub Skill
 
-若 Skill 或 npm 包需要更新，从与主仓 gitlink 一致的 skills `main` 提交推送到 `cellapp-ai/skills` 的 `main`，核对远端 HEAD 是目标提交。Skill 内容变化时，还要从公开仓库检查 `cellapp-deploy` 的安装路径和内容；仅 npm 内容变化时，本阶段同步公开源码，但不把未变化的 Skill 记作新发布。不得推送未审查的 skills 工作区修改，不强推有分歧的远端。GitHub 发布失败时停止 npm 发布，保留已上线服务并报告部分发布状态。
+若 Skill 或 npm 包需要更新，从与主仓 gitlink 一致的 skills `main` 提交直接推送到 `cellapp-ai/skills` 的 `main`，不使用 skills 的 `deploy/*` 分支，核对远端 HEAD 是目标提交。若该提交已在先前的兼容开发交付中推送，核对后跳过重复推送。Skill 内容变化时，还要从公开仓库检查 `cellapp-deploy` 的安装路径和内容；仅 npm 内容变化时，本阶段同步公开源码，但不把未变化的 Skill 记作新发布。不得推送未审查的 skills 工作区修改，不强推有分歧的远端。GitHub 发布失败时停止 npm 发布，保留已上线服务并报告部分发布状态。
 
 ## 4. 最后发布 npm
 
@@ -24,4 +24,4 @@
 
 ## 5. 结果记录
 
-记录每阶段的目标与实际提交、是否跳过及理由、Cloud Run 镜像/revision、Skill 远端提交、npm 版本、验证结果和未完成事项。只有所有计划中的阶段及真实环境验收通过，才报告完整发布成功。推送主仓前核对其 gitlink 已能从 skills 远端获取；当前仍不自动推送主仓或 `deploy/*`。
+记录每阶段的目标与实际提交、是否跳过及理由、Cloud Run 镜像/revision、Skill 远端提交、npm 版本、验证结果和未完成事项。只有所有计划中的阶段及真实环境验收通过，才报告完整发布成功。推送主仓前核对其 gitlink 已能从 skills 远端获取；服务验收且 gitlink 可获取后，将 `deploy/*` 默认推送到独立的 `cellapp-deploy` 仓库，同名分支不推送至公开主仓库。
