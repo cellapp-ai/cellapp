@@ -15,3 +15,7 @@
 | 自动审批 | 自动审批最初拒绝将两个 Zone 的全站安全级别改为 `medium`；收到用户明确授权后已执行。自动审批还拒绝将标记 `Retired` 的正式服务修订版本切到 100% 流量，该切换未执行。 |
 
 本轮本地验证：Go hosting 测试、Worker 的 4 项测试、部署脚本的 21 项测试、`openspec validate --strict`、`git diff --check` 均通过。没有提供已发布访客应用链接，访客授权与资源未做真实应用验收。负载均衡固定资源已删除；Cloud Run、Cloudflare Worker、数据库、对象存储及流量费用仍会产生。
+
+## 2026-10-14 访客应用授权回归
+
+用户提供已发布应用 `lean-trainer-wyx.ce11.app` 的访问记录：访客请求经 Worker 到 Cloud Run 后，`/auth/app` 的 `host` 参数变成内部 `run.app` 主机，返回 `app_not_found`。修复让授权跳转及访客写入同源检查读取已经认证的浏览器主机名。隔离 PostgreSQL 中的边缘入口、应用发布、登录票据、页面加载、同源/跨域写入和伪造边缘请求回归通过；`go test -race -count=1 -p 1 ./apps/server/...`、`go vet ./apps/server/...` 及 Worker 4 项测试通过。该修复尚未发布到生产，用户报告中的真实应用地址需在发布后重新验收。

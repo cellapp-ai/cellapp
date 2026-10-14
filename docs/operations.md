@@ -53,6 +53,7 @@ docker compose -f infra/compose.yaml exec -T postgres psql -U cellapp_rename_adm
 
 - 使用真实 GitHub OAuth 在浏览器授权 CLI，确认账号绑定使用 GitHub 数字用户 ID，拒绝和过期请求不能领取 token。
 - 发布 HTML 和 SPA，分别用两个浏览器输入密钥；深层页面可访问，缺失资源为 404。
+- Cloudflare 边缘入口下，访问一个已发布的真实访客域名，确认 `/auth/app` 的 `host` 为该应用标签，登录后回到原域名，页面与同源数据写入可用；不同访客域的写入仍被拒绝。
 - 未授权访问 HTML、JS、图片、HEAD、条件请求和对象地址均不能读取内容。
 - 更新失败仍返回旧版本；重置后旧密钥/旧 cookie 不可读取；删除后立即拒绝分发。
 - 检查跨账号管理拒绝、跨应用存储隔离、Service Worker 注册被拒绝。
