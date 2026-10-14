@@ -4,11 +4,11 @@
 
 ## 远端与默认推送
 
-- 主仓库 `main` 和已完成的 `codex/*` 默认推送到 `https://github.com/cellapp-ai/cellapp.git`，使用 Git HTTPS 和 GitHub CLI 凭证。任务分支完成验证后推送，合入后再推送 `main`；不推送未完成工作。
+- 主仓库 `codex/*` 仅作为本地开发分支，不推送到 GitHub。完成验证并合入后，只将 `main` 默认推送到 `https://github.com/cellapp-ai/cellapp.git`，使用 Git HTTPS 和 GitHub CLI 凭证。
 - 主仓库 `deploy/*` 只推送到独立的私有仓库 `https://github.com/cellapp-ai/cellapp-deploy.git`，保留同名分支，例如本地 `deploy/main` 对应远端 `deploy/main`。不得将新的 `deploy/*` 提交推送到公开主仓库；既有公开分支另行清理，不以强推或删除代替迁移。
 - skills 仓库使用 `https://github.com/cellapp-ai/skills.git`，完成客户端改动后直接推送其 `main`；不建立 skills 的 `deploy/*` 分支。推送主仓中更新的 gitlink 前，先验证 skills 目标提交可从 GitHub 获取。
 - 推送前核对远端地址、分支、提交、工作区状态和快进关系；遇到分歧、权限或网络错误时保留本地提交并报告，不强推。服务兼容性要求延后公开 Skill 时，遵循 [发布规则](deploy.md) 的顺序。
-- 首次使用某个检出时，将主仓 `origin` 配为上述 HTTPS 地址，增加名为 `deployment` 的独立远端；skills 的 `origin` 配为其 HTTPS 地址。首次推送新分支时设置对应远端的同名上游，后续普通 `git push` 必须仍指向本节规定的仓库。
+- 首次使用某个检出时，将主仓 `origin` 配为上述 HTTPS 地址，增加名为 `deployment` 的独立远端；skills 的 `origin` 配为其 HTTPS 地址。首次推送 `main` 或 `deploy/*` 时设置对应远端的同名上游，后续普通 `git push` 必须仍指向本节规定的仓库。`codex/*` 不设置远端上游。
 
 ## 开发分支与 worktree
 
@@ -24,6 +24,6 @@
 ## 发布分支与 Cloud Run
 
 1. `deploy/*` 只承接发布，不承担日常开发。新的发布分支从 `main` 创建；准备发布时，检查待发布的 `main` 提交及本地子模块完整性，再把本地 `main` 合入目标 `deploy/*`。不得反向用 `deploy/*` 作为功能开发基线。发布分支若有独有修复，先将该修复整理回 `main`，再继续发布。
-2. 按上述远端映射默认推送已完成的 `main`、所需的 `codex/*`、skills `main` 和已验收的 `deploy/*`。`deploy/*` 推送前核对 gitlink 已能从 skills 远端获取；推送 Git 分支不触发 Cloud Run 流量切换或 npm 发布，后两项仍须用户明确要求。
+2. 按上述远端映射默认推送已完成的主仓 `main`、skills `main` 和已验收的 `deploy/*`；`codex/*` 留在本地。`deploy/*` 推送前核对 gitlink 已能从 skills 远端获取；推送 Git 分支不触发 Cloud Run 流量切换或 npm 发布，后两项仍须用户明确要求。
 3. 发布按 [发布规则](deploy.md) 先判定客户端发布需求、再部署服务，最后按需发布 Skill 和 npm。服务使用 Google Cloud CLI，仓库入口是 `python3 scripts/deploy-cloud-run.py --config infra/cloudrun.json`；具体配置、验收与回滚按 [运维说明](../../docs/operations.md) 执行。不要从任务 worktree 或未合入的开发分支直接发布。
 4. 发布后记录 `main`、`deploy/*` 和 skills 的提交、推送状态、Cloud Run 修订版本及真实环境验收结果；失败时按运维说明恢复上一可用修订版本，不把本地测试等同于线上验收。
