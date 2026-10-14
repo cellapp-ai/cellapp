@@ -44,3 +44,10 @@ R2 对象沿用 `releases/<deployment>/<SHA-256(path)>` 布局；同版本新增
 - **失败**：首次在受限沙箱运行 `npm test` 时，Go 的 `httptest` 无权监听本机端口；在允许本机测试端口的环境中重跑后全部通过，无尚未解决的检查失败。
 - **未运行**：实际 Go 授权端点与真实 R2 Worker 绑定组成的同一远程候选链路，以及生产 Cloud Run、对象复制、DNS/路由切换和用量观察。浏览器端到端验收使用私有 R2 绑定替身，真实 R2 的独立 Worker 绑定和 Go S3 适配器已分别通过；生产操作仍需要单独的发布请求及候选环境验收。
 - **兼容性检查**：`monthlyVisitors` 替换公开限额里的 `trafficBytes`；历史 `usage.bytes` 数据保留但不再用于限流。新 Go 服务仍提供直接静态回源路径。回滚到旧 Go 修订版时，保持新版 Worker 的 `origin` 模式和 `PUBLICATION_PAUSED` 开关，防止旧版向 GCS 单边发布。
+
+## 线上发布记录（2026-10-14）
+
+- 在 `cellapp-511002/us-west1` 部署 Cloud Run 修订版 `cellapp-00016-c7k`（镜像摘要 `sha256:303e7ab9a4719378c98996f5226df45a2ae691064c5497622ec2e63f7a2e9009`），100% 流量；正式 Worker `cellapp-edge` 版本 `8617764f-d7c2-4c6d-bea4-c33c15336bd2` 使用 R2 模式。签名 key ID 为 `key-20261014`；发布暂停已解除。
+- 私有 Bucket `cellapp-uswest-prod` 位于 WNAM、Standard。其专用凭证通过 Secret Manager 注入服务，不写入仓库。迁移作业 `cellapp-copy-releases-pzw7t` 复制并校验 1 个活跃发布版本；独立 `--verify-only` 执行 `cellapp-copy-releases-vqr8t` 再次通过，私有清单包含 2 个文件。旧 GCS 对象保留作回滚源。
+- 先用独立 Worker 的单应用路由验收，再切正式通配路由并删除临时 Worker。已登录浏览器打开 `lean-trainer-wyx.ce11.app`，页面、`app.js` 和数据 API 正常；超过 60 秒后刷新仍正常。Cloud Run 记录到成功签发授权，浏览器的静态 `app.js` 请求未进入 Cloud Run。
+- 真实公网检查：控制台登录页 `200`、未知访客 Host `404`、匿名静态资源 `401`、公开请求内部授权路径 `404`、无回源密钥的直连伪造 Host `404`、匿名 R2 对象请求未返回文件内容。暂停期间，发布写入被 Worker 拒绝为 `503`；解除暂停后只做了只读验收。
