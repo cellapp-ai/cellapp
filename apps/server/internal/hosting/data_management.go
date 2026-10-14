@@ -4,9 +4,11 @@ import (
 	"cellapp/apps/server/appdata"
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func (s *Server) dataOwner(r *http.Request) (App, error) {
@@ -39,8 +41,41 @@ func (s *Server) dataStatus(w http.ResponseWriter, r *http.Request) error {
 	if manifest != nil {
 		version = manifest.Version
 	}
-	jsonResponse(w, 200, map[string]any{"state": app.DataState, "version": version, "digest": digest})
+	var errorCode *string
+	if err := s.DB.QueryRow(r.Context(), `SELECT data_error_code FROM apps WHERE id=$1`, app.ID).Scan(&errorCode); err != nil {
+		return err
+	}
+	jsonResponse(w, 200, map[string]any{"state": app.DataState, "errorCode": errorCode, "version": version, "digest": digest})
 	return nil
+}
+
+func (s *Server) dataReconcile(w http.ResponseWriter, r *http.Request) error {
+	app, err := s.dataOwner(r)
+	if err != nil {
+		return err
+	}
+	if s.AppDataDB == nil || s.AppDataProbe == nil {
+		return fail(503, "app_data_not_ready", "Application data service unavailable")
+	}
+	if err := appdata.Reconcile(r.Context(), s.DB, s.AppDataDB, app.ID, s.AppDataProbe); err != nil {
+		s.logDataReconcileFailure(r.Context(), app.ID, err)
+		return fail(503, "app_data_not_ready", "Application data is not ready; inspect data status and server logs")
+	}
+	jsonResponse(w, 200, map[string]any{"ready": true})
+	return nil
+}
+
+func (s *Server) logDataReconcileFailure(ctx context.Context, appID string, err error) {
+	attrs := []slog.Attr{slog.String("app_id", appID)}
+	var pg *pgconn.PgError
+	if errors.As(err, &pg) {
+		attrs = append(attrs, slog.String("sqlstate", pg.Code), slog.String("database_error", pg.Message))
+	} else if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		attrs = append(attrs, slog.String("cause", "request_cancelled_or_timed_out"))
+	} else {
+		attrs = append(attrs, slog.String("cause", "data_service_unavailable_or_api_probe_failed"))
+	}
+	s.Logger.LogAttrs(ctx, slog.LevelError, "app_data_reconcile_failed", attrs...)
 }
 
 func (s *Server) dataPlan(w http.ResponseWriter, r *http.Request) error {

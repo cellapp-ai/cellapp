@@ -178,3 +178,59 @@ Web SHALL 为所有者展示自有应用真实的公开/受限状态、待审申
 #### Scenario: Revoke or change visibility
 - **WHEN** 所有者撤销用户访问权或将公开应用改为受限
 - **THEN** 页面反映服务端状态，受影响用户的后续页面和数据请求按新状态判断
+
+### Requirement: Personal profile settings
+
+Web SHALL 提供当前登录账户的个人 Profile 页面，显示完整账户 ID 和当前登录模式，并允许设置或清除显示名称。资料读取与更新 MUST 以浏览器会话确定账户，不接受客户端指定账户 ID；显示名称更新 MUST 不改变账户身份、应用地址或访问权。
+
+#### Scenario: Open profile and save a name
+- **WHEN** 已登录用户打开 `/profile` 并提交合法显示名称
+- **THEN** 页面显示真实账户信息，服务端只更新当前账户的名称，刷新页面后仍显示保存值
+
+#### Scenario: Clear or reject a name
+- **WHEN** 用户提交空字符串，或提交超过 80 个字符、首尾空白、控制字符或无效 JSON
+- **THEN** 空字符串清除显示名称；无效输入返回明确错误且不修改已保存名称
+
+#### Scenario: Authentication and origin boundaries
+- **WHEN** 无会话或跨站来源请求资料更新
+- **THEN** 请求被拒绝且不改变任何账户资料；现有 CLI Bearer 凭证不能替代浏览器会话
+
+#### Scenario: Refresh and uncertain result
+- **WHEN** 用户刷新 `/profile` 深链，或更新请求失败且结果不确定
+- **THEN** 有效深链加载页面；失败不报告成功或自动重试写入，并提供重新读取当前资料的操作
+
+### Requirement: Navigation within an authenticated console session
+
+Web SHALL 在已经确认的所有者会话内切换管理页面时保留当前页面框架，不因每次普通内部链接点击重新加载文档或重新检查会话。内部目的地 MUST 保持真实链接和可直接访问的 URL；会话过期时仍按现有授权规则清除私有状态并进入登录。
+
+#### Scenario: Move between management pages
+- **WHEN** 已登录用户点击侧栏、应用列表或详情返回链接
+- **THEN** 地址栏和当前页面更新，但现有会话检查不重复，且焦点进入新页面正文
+
+#### Scenario: Browser history and direct entry
+- **WHEN** 用户使用前进后退、刷新或直接打开有效管理深链
+- **THEN** 显示与 URL 对应的页面，刷新和直接进入只执行一次初始会话检查；新标签页及修饰键点击保留浏览器原生行为
+
+#### Scenario: Temporary state and session expiry
+- **WHEN** 用户离开应用详情、切换到其他应用，或业务请求确认会话失效
+- **THEN** 本次临时访问密钥及确认状态不带到另一页面；会话失效仍返回登录入口
+
+#### Scenario: Initial session check
+- **WHEN** 浏览器首次加载管理页面，尚未确认会话状态
+- **THEN** 页面显示中性加载提示；只有确认无有效会话时才显示登录入口
+
+### Requirement: Owner slug settings
+
+The authenticated console SHALL show the current user slug in Profile settings and the current app slug and URL in each owned application's details. It SHALL let the owner edit either slug, show validation and conflict errors, and refresh the server state after an uncertain write. A user-slug change SHALL update current addresses of all owned apps atomically.
+
+#### Scenario: Edit an application slug
+- **WHEN** an owner saves a valid available app slug
+- **THEN** the details show the new readable URL and prior addresses remain assigned to the same app
+
+#### Scenario: Edit a user slug
+- **WHEN** an owner saves a valid available user slug
+- **THEN** all owned apps get current URLs ending with that slug, or the whole change fails without partial updates
+
+#### Scenario: Unauthorized or uncertain write
+- **WHEN** a non-owner, cross-origin request or disconnected browser attempts a slug edit
+- **THEN** the server rejects unauthorized writes, and the console does not report uncertain writes as successful

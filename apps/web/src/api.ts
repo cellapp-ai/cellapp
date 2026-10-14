@@ -1,4 +1,5 @@
 export type Session = { ownerId: string; authMode: 'dev' | 'github' };
+export type Profile = { displayName: string; userSlug: string };
 export type Application = { id: string; name: string; namespace: string; slug: string; aliasUrl: string; activeDeployment: string | null; suspended: boolean; url: string; visibility: 'public' | 'restricted'; dataState: string };
 export type Release = { id: string; status: string; createdAt: string; publishedAt: string | null; spa: boolean; fileCount: number; bytes: number };
 export type ApplicationDetail = Application & { release: Release | null };
@@ -39,6 +40,14 @@ export function session(value: unknown): Session {
   const data = record(value);
   if (data.authMode !== 'dev' && data.authMode !== 'github') throw new Error('Unexpected response. Try again.');
   return { ownerId: identifier(data.ownerId), authMode: data.authMode };
+}
+export function profile(value: unknown): Profile {
+  const data = record(value);
+  const displayName = text(data.displayName);
+  if (Array.from(displayName).length > 80 || displayName !== displayName.trim()) throw new Error('Unexpected profile response.');
+  const userSlug = text(data.userSlug);
+  if (userSlug !== '' && !/^[a-z][a-z0-9-]{0,62}$/.test(userSlug)) throw new Error('Unexpected user slug.');
+  return { displayName, userSlug };
 }
 export function application(value: unknown): Application {
   const data = record(value);

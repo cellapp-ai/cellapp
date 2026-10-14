@@ -22,7 +22,11 @@ const credentialID = '3'.repeat(32);
 const key = '4'.repeat(64);
 let mode: 'normal' | 'empty' | 'error' | 'expired' | 'lost' = 'normal';
 let mutations = 0;
+let sessionRequests = 0;
 let deviceDecision = '';
+let displayName = '';
+let userSlug = 'demo';
+let appSlug = 'shared-notes';
 let browser;
 try {
   browser = await chromium.launch({ executablePath, headless: true });
@@ -40,12 +44,15 @@ try {
       if (mode === 'lost') { await route.abort('failed'); return; }
       if (path.endsWith('/key')) { await route.fulfill({json: {key}}); return; }
       if (path === '/device/decision') { deviceDecision = route.request().postDataJSON().decision; await route.fulfill({json: {status: deviceDecision}}); return; }
+      if (path === '/profile' && method === 'PUT') { displayName = route.request().postDataJSON().displayName; await route.fulfill({json: {displayName,userSlug}}); return; }
+      if (path === '/profile/slug' && method === 'PUT') { userSlug = route.request().postDataJSON().userSlug; await route.fulfill({json: {displayName,userSlug}}); return; }
+      if (path.endsWith('/slug') && method === 'PUT') { appSlug = route.request().postDataJSON().slug; await route.fulfill({json: {id:appID,name:'Shared notes',namespace:userSlug,slug:appSlug,aliasUrl:`https://control.localhost/a/${userSlug}/${appSlug}`,url:`https://${appSlug}-${userSlug}.apps.localhost`,activeDeployment:null,suspended:false,visibility:'restricted',dataState:'ready'}}); return; }
       await route.fulfill({json: {deleted: true, revoked: true, loggedOut: true}}); return;
     }
-    if (path === '/session') { await route.fulfill({json: {ownerId: ownerID, authMode: 'github'}}); return; }
+    if (path === '/session') { sessionRequests++; await route.fulfill({json: {ownerId: ownerID, authMode: 'github'}}); return; }
     if (mode === 'error') { await route.fulfill({status: 503, json: {message: 'Service temporarily unavailable.'}}); return; }
-    const app = {id: appID, name: 'Shared notes', namespace: 'demo', slug: 'shared-notes', aliasUrl: 'https://control.localhost/a/demo/shared-notes', url: `https://${appID}.apps.localhost`, activeDeployment: null, suspended: false, visibility: 'restricted', dataState: 'ready'};
-    const value = path === '/apps' ? mode === 'empty' ? [] : [app] : path === '/credentials' ? mode === 'empty' ? [] : [{id: credentialID, createdAt:'2026-09-01T00:00:00Z', expiresAt:'2026-10-01T00:00:00Z'}] : path.endsWith('/access') ? {requests: [], grants: []} : path.endsWith('/data') ? {state:'ready',version:1,digest:'f'.repeat(64)} : {...app, release: null};
+    const app = {id: appID, name: 'Shared notes', namespace: userSlug, slug: appSlug, aliasUrl: `https://control.localhost/a/${userSlug}/${appSlug}`, url: `https://${appSlug}-${userSlug}.apps.localhost`, activeDeployment: null, suspended: false, visibility: 'restricted', dataState: 'ready'};
+    const value = path === '/apps' ? mode === 'empty' ? [] : [app] : path === '/credentials' ? mode === 'empty' ? [] : [{id: credentialID, createdAt:'2026-09-01T00:00:00Z', expiresAt:'2026-10-01T00:00:00Z'}] : path === '/profile' ? {displayName,userSlug} : path.endsWith('/access') ? {requests: [], grants: []} : path.endsWith('/data') ? {state:'ready',version:1,digest:'f'.repeat(64)} : {...app, release: null};
     await route.fulfill({json: value});
   });
   await page.goto(origin + '/applications');
@@ -62,6 +69,25 @@ try {
     if ([390,1440].includes(width)) await page.screenshot({path: `${artifacts}/${width}.png`,fullPage:true});
   }
   checks.push('Management layout, local fonts, responsive sizes and axe with explicit UI fixtures');
+  assert.equal(sessionRequests,1);
+  await page.getByRole('link',{name:'Deployment credentials',exact:true}).click();
+  await page.getByRole('heading',{name:'Deployment credentials'}).waitFor();
+  assert.equal(sessionRequests,1);
+  assert.equal(await page.locator('main').evaluate(e => e === document.activeElement),true);
+  await page.goBack();await page.getByRole('heading',{name:'Applications',exact:true}).waitFor();
+  assert.equal(sessionRequests,1);
+  await page.locator('a.application-row').click();await page.getByRole('heading',{name:'Shared notes',exact:true}).waitFor();
+  assert.equal(sessionRequests,1);
+  await page.getByRole('link',{name:'Applications',exact:false}).last().click();
+  await page.getByRole('heading',{name:'Applications',exact:true}).waitFor();
+  assert.equal(sessionRequests,1);
+  await page.getByRole('link',{name:'Profile settings'}).click();
+  await page.getByRole('heading',{name:'Profile settings'}).waitFor();
+  assert.equal(new URL(page.url()).pathname,'/profile');
+  assert.equal(sessionRequests,1);
+  await page.goBack();await page.getByRole('heading',{name:'Applications',exact:true}).waitFor();
+  assert.equal(sessionRequests,1);
+  checks.push('Internal links and browser history keep the authenticated shell without another session check');
   await page.setViewportSize({width:390,height:844});
   await page.getByRole('button',{name:'Open menu'}).focus();await page.keyboard.press('Enter');
   assert.equal(await page.getByRole('button',{name:'Close menu'}).getAttribute('aria-expanded'),'true');
@@ -76,6 +102,10 @@ try {
   await page.getByRole('heading',{name:'Shared notes',exact:true}).waitFor();
   await page.getByText('@demo/shared-notes').waitFor();
   await page.getByRole('button',{name:'Copy share link'}).waitFor();
+  await page.getByLabel('Application slug').fill('notes');
+  await page.getByRole('button',{name:'Save application slug'}).click();
+  await page.getByRole('status').filter({hasText:'Application slug saved'}).waitFor();
+  await page.getByText('https://notes-demo.apps.localhost').waitFor();
   await page.getByText('No release has been published.',{exact:false}).waitFor();
   await page.getByText('Table version').waitFor();
   await page.reload();await page.getByRole('heading',{name:'Shared notes',exact:true}).waitFor();
@@ -92,7 +122,10 @@ try {
   await page.getByRole('status').filter({hasText:'Copy unavailable'}).waitFor();
   assert(!page.url().includes(key));
   assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa']).analyze()).violations,[]);
-  await page.getByRole('button',{name:'Dismiss key'}).click();assert.equal(await page.getByText(key,{exact:true}).count(),0);
+  await page.locator('a.back').click();await page.getByRole('heading',{name:'Applications',exact:true}).waitFor();
+  assert.equal(await page.getByText(key,{exact:true}).count(),0);
+  await page.locator('a.application-row').click();await page.getByRole('heading',{name:'Shared notes',exact:true}).waitFor();
+  assert.equal(await page.getByRole('heading',{name:'New access key'}).count(),0);
   mode='lost';await page.getByRole('button',{name:'Rotate access key',exact:true}).click();const sent=mutations;await page.getByRole('button',{name:'Confirm',exact:true}).click();
   await page.getByRole('alert').filter({hasText:'may already have taken effect'}).waitFor();assert.equal(mutations,sent+1);
   checks.push('Details deep link, unpublished state, confirmation/cancel focus, transient key and uncertain write without retry');
@@ -100,6 +133,27 @@ try {
   await page.goto(origin+'/device?code=ABC123');await page.getByLabel('Authorization code').waitFor();assert.equal(await page.getByLabel('Authorization code').inputValue(),'ABC123');assert.equal(deviceDecision,'');
   await page.getByRole('button',{name:'Deny access'}).click();await page.getByRole('status').filter({hasText:'Authorization denied'}).waitFor();assert.equal(deviceDecision,'denied');
   checks.push('Credential confirmation and explicit device decision with prefilled code');
+  await page.goto(origin+'/profile');await page.getByRole('heading',{name:'Profile settings'}).waitFor();
+  await page.getByLabel('Name',{exact:true}).fill('Alice');
+  await page.getByRole('button',{name:'Save name'}).click();
+  await page.getByRole('status').filter({hasText:'Display name saved'}).waitFor();
+  assert.equal(displayName,'Alice');
+  await page.reload();assert.equal(await page.getByLabel('Name',{exact:true}).inputValue(),'Alice');
+  await page.getByLabel('Name',{exact:true}).fill(' changed ');
+  assert(await page.getByRole('button',{name:'Save name'}).isDisabled());
+  await page.getByRole('button',{name:'Discard changes'}).click();
+  assert.equal(await page.getByLabel('Name',{exact:true}).inputValue(),'Alice');
+  await page.getByLabel('User slug').fill('alice');
+  await page.getByRole('button',{name:'Save user slug'}).click();
+  await page.getByRole('status').filter({hasText:'User slug saved'}).waitFor();
+  assert.equal(userSlug,'alice');
+  for (const width of [320,390,768,800,801,1440]) {
+    await page.setViewportSize({width,height:900});
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `Profile overflow at ${width}`);
+    assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa']).analyze()).violations, []);
+    if ([390,1440].includes(width)) await page.screenshot({path: `${artifacts}/profile-${width}.png`,fullPage:true});
+  }
+  checks.push('Profile deep link, save, reload, validation, discard and responsive layout');
   mode='empty';await page.goto(origin+'/applications');await page.getByRole('heading',{name:'No applications yet'}).waitFor();
   mode='error';await page.getByRole('button',{name:'Refresh applications'}).click();await page.getByRole('alert').filter({hasText:'Service temporarily unavailable'}).waitFor();
   assert.equal(await page.getByRole('heading',{name:'No applications yet'}).count(),0);

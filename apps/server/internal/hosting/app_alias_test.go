@@ -64,9 +64,9 @@ func TestApplicationNamespaceAliasAndTombstone(t *testing.T) {
 	if _, err := f.db.Exec(context.Background(), `INSERT INTO credentials(id,hash,owner_id,expires_at) VALUES($1,$2,$3,now()+interval '1 day')`, id(), keyed(f.server.Config.Secret, shortCredential), shortOwner); err != nil {
 		t.Fatal(err)
 	}
-	short := response[App](t, f.request(t, "POST", "/apps", map[string]any{"name": "One", "namespace": "x", "slug": "y", "key": token(), "requestId": id()}, shortCredential, host, ""), 201)
-	if short.Namespace != "x" || short.Slug != "y" {
-		t.Fatalf("single-letter alias failed: %+v", short)
+	short := response[App](t, f.request(t, "POST", "/apps", map[string]any{"name": "One", "namespace": "xyz", "slug": "y", "key": token(), "requestId": id()}, shortCredential, host, ""), 201)
+	if short.Namespace != "xyz" || short.Slug != "y" || short.URL != "https://y-xyz.apps.localhost:8443" {
+		t.Fatalf("composite application host failed: %+v", short)
 	}
 	invalid := map[string]any{"name": "Invalid", "slug": "Bad_Alias", "key": token(), "requestId": id()}
 	if response[map[string]any](t, f.request(t, "POST", "/apps", invalid, f.token, host, ""), 400)["error"] != "invalid_slug" {

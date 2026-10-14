@@ -23,6 +23,12 @@ var appSessions string
 //go:embed 004_app_namespaces.sql
 var appNamespaces string
 
+//go:embed 006_owner_profile.sql
+var ownerProfile string
+
+//go:embed 007_app_slug_hosts.sql
+var appSlugHosts string
+
 type migration struct {
 	version int
 	sql     string
@@ -33,6 +39,8 @@ var controlMigrations = []migration{
 	{version: 2, sql: appAccess},
 	{version: 3, sql: appSessions},
 	{version: 4, sql: appNamespaces},
+	{version: 6, sql: ownerProfile},
+	{version: 7, sql: appSlugHosts},
 }
 
 // Run applies each control migration once, including the initial schema on

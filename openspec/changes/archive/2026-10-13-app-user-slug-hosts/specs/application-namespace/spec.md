@@ -1,0 +1,37 @@
+## MODIFIED Requirements
+
+### Requirement: Owner namespace and application alias
+
+The system SHALL give each owner one public user slug and each application one app slug unique within that user's namespace. Display names MAY repeat. New owners MAY choose a user slug on first creation and MAY choose an app slug; otherwise the system assigns values. The user slug MUST have at least three lowercase ASCII characters, digits or hyphens and begin with a letter. Both slug types MUST reject reserved platform names. The complete `{app-slug}-{user-slug}` host label MUST fit 63 characters and be globally unique. The owner console SHALL permit editing both slugs after creation.
+
+#### Scenario: Same name or alias in different namespaces
+- **WHEN** two owners create applications with the same display name or app slug
+- **THEN** each gets a distinct readable host and retains its own immutable app ID
+
+#### Scenario: Alias conflict in one namespace
+- **WHEN** a slug is too short, reserved, invalid, too long in combination, or its complete host label is occupied
+- **THEN** creation or editing fails with a recognizable error and changes no existing address
+
+### Requirement: Stable share link and identity boundary
+
+The system SHALL use `{app-slug}-{user-slug}.<APPS_DOMAIN>` as the current public app URL, resolving it to the immutable app ID. A control-origin share link SHALL redirect to the current app URL. App authorization, sessions, data and deployments SHALL continue to use the immutable app ID. Legacy ID hosts and previously assigned readable hosts SHALL remain bound to their original apps, and no assigned name SHALL be recycled.
+
+#### Scenario: Open an alias
+- **WHEN** a visitor opens a current or prior address of an active app
+- **THEN** normal login and app admission apply for the same internal app ID; after deletion the address stops serving content
+
+#### Scenario: Delete an application
+- **WHEN** an application is deleted
+- **THEN** its aliases and hosts stop serving content and remain occupied so stale links cannot point to another app
+
+#### Scenario: Same-origin write and login return
+- **WHEN** a visitor uses a readable or legacy app host
+- **THEN** login returns to that validated host, and writes accept only its exact Origin
+
+### Requirement: Existing application migration
+
+The system SHALL backfill readable hosts for existing valid, unambiguous slug pairs without changing their app IDs, aliases, deployment associations or data schemas. Existing pairs that cannot form an available 63-character host label SHALL retain their ID host until edited.
+
+#### Scenario: Upgrade a control database
+- **WHEN** an existing database runs the additive host migration
+- **THEN** eligible apps receive readable current URLs, ineligible apps keep working ID URLs, and prior links remain assigned to their original apps

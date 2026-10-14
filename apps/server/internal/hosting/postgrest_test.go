@@ -3,6 +3,7 @@ package hosting
 import (
 	"cellapp/apps/server/appdata"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -32,14 +33,21 @@ func TestRealPostgRESTProvisioning(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.server.AppDataDB = provisioner
-	f.server.AppDataProbe = f.server.DataProbe
+	f.server.AppDataProbe = func(context.Context, appdata.Names) error { return errors.New("simulated API outage") }
 	f.server.Config.PostgRESTURL = apiURL
 	requestID := id()
 	accessKey := token()
 	created := f.request(t, "POST", "/apps", map[string]string{"name": "PostgREST probe", "key": accessKey, "requestId": requestID}, f.token, "control.localhost:8443", "")
+	failed := response[map[string]any](t, created, 503)
+	if failed["error"] != "app_data_not_ready" {
+		t.Fatalf("unexpected create failure: %v", failed)
+	}
 	var appID string
 	if err := f.db.QueryRow(ctx, `SELECT id FROM apps WHERE create_key=$1`, requestID).Scan(&appID); err != nil {
 		t.Fatalf("app creation failed before provisioning: %d %s: %v", created.Code, created.Body.String(), err)
+	}
+	if failed["details"].(map[string]any)["appId"] != appID {
+		t.Fatalf("create failure omitted committed app ID: %v", failed)
 	}
 	names, err := appdata.AppNames(appID)
 	if err != nil {
@@ -55,10 +63,12 @@ func TestRealPostgRESTProvisioning(t *testing.T) {
 		_, _ = admin.Exec(ctx, `NOTIFY pgrst, 'reload config'`)
 		_, _ = admin.Exec(ctx, `NOTIFY pgrst, 'reload schema'`)
 	})
-	if created.Code != 201 {
-		retry := appdata.Reconcile(ctx, f.db, provisioner, appID, f.server.DataProbe)
-		t.Fatalf("provisioning failed: %d %s; retry: %v", created.Code, created.Body.String(), retry)
+	status := response[map[string]any](t, f.request(t, "GET", "/apps/"+appID+"/data", nil, f.token, "control.localhost:8443", ""), 200)
+	if status["state"] != "error" || status["errorCode"] != "api_not_ready" {
+		t.Fatalf("wrong failed provisioning status: %v", status)
 	}
+	f.server.AppDataProbe = f.server.DataProbe
+	response[map[string]any](t, f.request(t, "POST", "/apps/"+appID+"/data/reconcile", map[string]any{}, f.token, "control.localhost:8443", ""), 200)
 	if err := f.server.DataProbe(ctx, names); err != nil {
 		t.Fatalf("real PostgREST probe failed: %v", err)
 	}

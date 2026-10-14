@@ -186,7 +186,11 @@ func LoadConfig(get func(string) string) (c Config, err error) {
 	return c, nil
 }
 func (c Config) AppURL(id string) string {
-	host := id + "." + c.AppsDomain
+	return c.AppHostURL(id)
+}
+
+func (c Config) AppHostURL(label string) string {
+	host := label + "." + c.AppsDomain
 	if c.AppPort != "" {
 		host += ":" + c.AppPort
 	}

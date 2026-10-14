@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
-import { access, application, credential, dataStatus, decisionResult, detail, keyResult, list, message, request, RequestError, session, success } from '@/api';
+import type { ComponentProps, MouseEvent, ReactNode } from 'react';
+import { access, application, credential, dataStatus, decisionResult, detail, keyResult, list, message, profile, request, RequestError, session, success } from '@/api';
 import type { Session } from '@/api';
 
 type Load<T> = { kind: 'loading' } | { kind: 'ready'; value: T } | { kind: 'error'; message: string };
@@ -15,7 +15,7 @@ function useResource<T>(path: string, parse: (value: unknown) => T) {
     );
     return () => controller.abort();
   }, [path, parse, version]);
-  return { state, reload: () => { setState({ kind: 'loading' }); setVersion(value => value + 1); } };
+  return { state, reload: (preserve = false) => { if (!preserve) setState({ kind: 'loading' }); setVersion(value => value + 1); } };
 }
 const applications = list(application);
 const credentials = list(credential);
@@ -23,11 +23,24 @@ function date(value: string) { return new Date(value).toLocaleString('en-GB', { 
 function loginReturn(): string {
   const value = new URLSearchParams(window.location.search).get('return') ?? '/applications';
   const path = value.split('?')[0] ?? '';
-  return ['/applications', '/credentials', '/device'].includes(path) || /^\/applications\/[a-f0-9]{32}$/.test(path) ? value : '/applications';
+  return ['/applications', '/credentials', '/device', '/profile'].includes(path) || /^\/applications\/[a-f0-9]{32}$/.test(path) ? value : '/applications';
 }
 function Feedback({ children, error = false }: { children: ReactNode; error?: boolean }) {
   return <p className={error ? 'feedback error' : 'feedback'} role={error ? 'alert' : 'status'}>{children}</p>;
 }
+type Navigate = (path: string) => void;
+function ConsoleLink({ href, navigate, onClick, ...props }: ComponentProps<'a'> & { href: string; navigate: Navigate }) {
+  const follow = (event: MouseEvent<HTMLAnchorElement>) => {
+    onClick?.(event);
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey ||
+      (event.currentTarget.target !== '' && event.currentTarget.target !== '_self') || event.currentTarget.hasAttribute('download') ||
+      !href.startsWith('/') || href.startsWith('//')) return;
+    event.preventDefault();
+    navigate(href);
+  };
+  return <a href={href} onClick={follow} {...props} />;
+}
+function focusContent() { requestAnimationFrame(() => document.getElementById('content')?.focus()); }
 function LoadingError<T>({ state, retry }: { state: Load<T>; retry: () => void }) {
   if (state.kind === 'loading') return <Feedback>Loading…</Feedback>;
   if (state.kind === 'error') return <div className="empty"><Feedback error>{state.message}</Feedback><button onClick={retry}>Try again</button></div>;
@@ -52,14 +65,32 @@ function Confirm({ title, children, onClose, onConfirm, busy }: { title: string;
     <h2 id="confirm-title">{title}</h2><p>{children}</p><div className="actions"><button disabled={busy} onClick={onClose}>Cancel</button><button className="danger" disabled={busy} onClick={onConfirm}>{busy ? 'Working…' : 'Confirm'}</button></div>
   </dialog>;
 }
-function Applications() {
+function Applications({ navigate }: { navigate: Navigate }) {
   const { state, reload } = useResource('/apps', applications);
   return <><div className="page-heading"><p className="eyebrow">YOUR WORKSPACE</p><h1>Applications</h1><p>Manage access to your hosted applications.</p></div>
     <LoadingError state={state} retry={reload} />
-    {state.kind === 'ready' && (state.value.length === 0 ? <section className="empty"><h2>No applications yet</h2><p>Use the Cellapp deployment Skill in your AI conversation, or run <code>cellapp deploy</code> from your local project. Your applications will appear here after deployment.</p><button onClick={reload}>Refresh applications</button></section> : <div className="application-list">{state.value.map(app => <a className="application-row" href={`/applications/${app.id}`} key={app.id}><div><h2>{app.name}</h2><p>@{app.namespace}/{app.slug}</p><p>{app.url}</p></div><span className="badge">{app.suspended ? 'Suspended' : app.activeDeployment ? 'Published' : 'Not published'}</span><span aria-hidden="true">↗</span></a>)}</div>)}
+    {state.kind === 'ready' && (state.value.length === 0 ? <section className="empty"><h2>No applications yet</h2><p>Use the Cellapp deployment Skill in your AI conversation, or run <code>cellapp deploy</code> from your local project. Your applications will appear here after deployment.</p><button onClick={() => reload()}>Refresh applications</button></section> : <div className="application-list">{state.value.map(app => <ConsoleLink className="application-row" href={`/applications/${app.id}`} navigate={navigate} key={app.id}><div><h2>{app.name}</h2><p>@{app.namespace}/{app.slug}</p><p>{app.url}</p></div><span className="badge">{app.suspended ? 'Suspended' : app.activeDeployment ? 'Published' : 'Not published'}</span><span aria-hidden="true">↗</span></ConsoleLink>)}</div>)}
   </>;
 }
-function ApplicationPage({ id }: { id: string }) {
+function SlugEditor({ label, value, maxLength, save }: { label: string; value: string; maxLength: number; save: (next: string) => Promise<void> }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState('');
+  const [error, setError] = useState('');
+  const next = draft ?? value;
+  const valid = /^[a-z](?:[a-z0-9-]*[a-z0-9])?$/.test(next) && next.length >= (label === 'User slug' ? 3 : 1) && next.length <= maxLength;
+  return <form className="profile-form" onSubmit={event => { event.preventDefault(); if (!valid || busy || next === value) return; setBusy(true); setError(''); setFeedback(''); void save(next).then(() => { setDraft(null); setFeedback(`${label} saved.`); }, caught => { setError(`${message(caught)} Refresh to check the current address.`); }).finally(() => setBusy(false)); }}>
+    <label htmlFor={label === 'User slug' ? 'user-slug' : 'app-slug'}>{label}</label>
+    <input id={label === 'User slug' ? 'user-slug' : 'app-slug'} value={next} disabled={busy} onChange={event => { setDraft(event.target.value); setFeedback(''); setError(''); }} autoComplete="off" spellCheck={false} />
+    <p>Use lowercase letters, digits and hyphens. Reserved names are unavailable. {label === 'User slug' ? 'At least 3 characters.' : `At most ${maxLength} characters with your current user slug.`}</p>
+    <div className="actions"><button className="primary" type="submit" disabled={busy || !valid || next === value}>{busy ? 'Saving…' : `Save ${label.toLowerCase()}`}</button><button type="button" disabled={busy || next === value} onClick={() => setDraft(null)}>{`Discard ${label.toLowerCase()} changes`}</button></div>
+    {feedback && <Feedback>{feedback}</Feedback>}{error && <Feedback error>{error}</Feedback>}
+  </form>;
+}
+function AppSlugSettings({ id, slug, userSlug, reload }: { id: string; slug: string; userSlug: string; reload: (preserve?: boolean) => void }) {
+  return <SlugEditor label="Application slug" value={slug} maxLength={62 - userSlug.length} save={async next => { await request(`/apps/${id}/slug`, application, { method: 'PUT', body: { slug: next } }); reload(true); }} />;
+}
+function ApplicationPage({ id, navigate }: { id: string; navigate: Navigate }) {
   const { state, reload } = useResource(`/apps/${id}`, detail);
   const accessState = useResource(`/apps/${id}/access`, access);
   const dataState = useResource(`/apps/${id}/data`, dataStatus);
@@ -79,7 +110,7 @@ function ApplicationPage({ id }: { id: string }) {
         setOperation(null); reload();
       } else {
         await request(`/apps/${id}`, success('deleted'), { method: 'DELETE' });
-        window.location.assign('/applications');
+        navigate('/applications');
       }
     } catch (caught) {
       setOperation(null);
@@ -96,9 +127,9 @@ function ApplicationPage({ id }: { id: string }) {
       setError(`${message(caught)} Refresh access to check the current state.`);
     } finally { setBusy(false); setAccessAction(null); }
   };
-  return <><a className="back" href="/applications">← Applications</a><LoadingError state={state} retry={reload} />
+  return <><ConsoleLink className="back" href="/applications" navigate={navigate}>← Applications</ConsoleLink><LoadingError state={state} retry={reload} />
     {state.kind === 'ready' && <><div className="page-heading"><p className="eyebrow">APPLICATION</p><h1>{state.value.name}</h1><span className="badge">{state.value.suspended ? 'Suspended' : state.value.release ? 'Published' : 'Not published'}</span></div>
-      <section className="panel"><h2>Application address</h2><p><code>@{state.value.namespace}/{state.value.slug}</code></p><Copy value={state.value.aliasUrl} label="Copy share link" /><p>The app ID address remains stable.</p><Copy value={state.value.url} label="Copy address" /><a className="text-link" href={state.value.url} target="_blank" rel="noopener noreferrer">Open application ↗</a><p>Visitors sign in with Cellapp. {state.value.visibility === 'public' ? 'Any signed-in user can access this application.' : 'Restricted access requires approval or an access key.'}</p></section>
+      <section className="panel"><h2>Application address</h2><p><code>@{state.value.namespace}/{state.value.slug}</code></p><Copy value={state.value.aliasUrl} label="Copy share link" /><Copy value={state.value.url} label="Copy address" /><a className="text-link" href={state.value.url} target="_blank" rel="noopener noreferrer">Open application ↗</a><p>Address format: <code>app-slug-user-slug</code>. Existing addresses stay assigned to this application.</p><AppSlugSettings id={id} slug={state.value.slug} userSlug={state.value.namespace} reload={reload} /><p>Visitors sign in with Cellapp. {state.value.visibility === 'public' ? 'Any signed-in user can access this application.' : 'Restricted access requires approval or an access key.'}</p></section>
       <section className="panel"><h2>Current release</h2>{state.value.release ? <dl><dt>Release</dt><dd><code>{state.value.release.id}</code></dd><dt>Published</dt><dd>{state.value.release.publishedAt ? date(state.value.release.publishedAt) : 'Not published'}</dd><dt>Files</dt><dd>{state.value.release.fileCount}</dd><dt>Size</dt><dd>{state.value.release.bytes.toLocaleString('en-GB')} bytes</dd><dt>Navigation</dt><dd>{state.value.release.spa ? 'Single page application' : 'Static pages'}</dd></dl> : <p>No release has been published. Deploy from your local project using the Skill or CLI.</p>}</section>
       <section className="panel"><h2>Access and lifecycle</h2><dl><dt>Visibility</dt><dd>{state.value.visibility === 'public' ? 'Public to signed-in users' : 'Restricted'}</dd></dl><div className="actions"><button disabled={busy} onClick={() => setAccessAction({ path: `/apps/${id}/visibility/${state.value.visibility === 'public' ? 'restricted' : 'public'}`, title: state.value.visibility === 'public' ? 'Restrict access?' : 'Make public?', explanation: state.value.visibility === 'public' ? 'Users without an explicit grant will lose access immediately.' : 'Every signed-in Cellapp user will be able to open this application.' })}>{state.value.visibility === 'public' ? 'Restrict access' : 'Make public'}</button><button disabled={busy} onClick={() => setOperation('key')}>Rotate access key</button><button className="danger" disabled={busy} onClick={() => setOperation('delete')}>Delete application</button><button disabled={busy} onClick={() => { setNewKey(''); reload(); accessState.reload(); dataState.reload(); }}>Refresh details</button></div></section>
     </>}
@@ -126,8 +157,35 @@ function Credentials() {
   };
   return <><div className="page-heading"><p className="eyebrow">ACCOUNT ACCESS</p><h1>Deployment credentials</h1><p>Review active access granted to local deployment tools.</p></div><LoadingError state={state} retry={reload} />
     {state.kind === 'ready' && (state.value.length === 0 ? <section className="empty"><h2>No active credentials</h2><p>Authorize your local deployment tool when you next deploy.</p></section> : <div className="credential-list">{state.value.map(item => <section className="panel" key={item.id}><h2 className="credential-id">{item.id}</h2><dl><dt>Created</dt><dd>{date(item.createdAt)}</dd><dt>Expires</dt><dd>{date(item.expiresAt)}</dd></dl><button className="danger" disabled={busy} onClick={() => setSelected(item.id)}>Revoke</button></section>)}</div>)}
-    <button disabled={busy} onClick={reload}>Refresh credentials</button>{feedback && <Feedback>{feedback}</Feedback>}{error && <Feedback error>{error}</Feedback>}
+    <button disabled={busy} onClick={() => reload()}>Refresh credentials</button>{feedback && <Feedback>{feedback}</Feedback>}{error && <Feedback error>{error}</Feedback>}
     {selected && <Confirm title="Revoke deployment access?" onClose={() => setSelected(null)} busy={busy} onConfirm={() => { void revoke(); }}>The tool using this credential will need to authorize again. Published applications remain available.</Confirm>}
+  </>;
+}
+function ProfilePage({ owner }: { owner: Session }) {
+  const { state, reload } = useResource('/profile', profile);
+  const [draft, setDraft] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState('');
+  const [error, setError] = useState('');
+  const saved = state.kind === 'ready' ? state.value.displayName : '';
+  const name = draft ?? saved;
+  const valid = name === name.trim() && Array.from(name).length <= 80 && !Array.from(name).some(character => { const code = character.codePointAt(0) ?? 0; return code < 32 || code === 127; });
+  const save = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!valid || busy || state.kind !== 'ready') return;
+    setBusy(true); setFeedback(''); setError('');
+    try {
+      await request('/profile', profile, { method: 'PUT', body: { displayName: name } });
+      setDraft(null); reload(); setFeedback('Display name saved.');
+    } catch (caught) {
+      setError(`${message(caught)} Refresh the profile to check whether the change was saved.`);
+    } finally { setBusy(false); }
+  };
+  return <><div className="page-heading"><p className="eyebrow">YOUR ACCOUNT</p><h1>Profile settings</h1><p>Manage the name shown in your Cellapp account.</p></div>
+    <LoadingError state={state} retry={reload} />
+    {state.kind === 'ready' && <><section className="panel"><h2>Display name</h2><form className="profile-form" onSubmit={event => { void save(event); }}><label htmlFor="display-name">Name</label><input id="display-name" value={name} disabled={busy} onChange={event => { setDraft(event.target.value); setFeedback(''); setError(''); }} aria-describedby="display-name-help" /><p id="display-name-help">Optional, up to 80 characters. Leave blank to clear it.</p><div className="actions"><button className="primary" type="submit" disabled={busy || !valid || name === saved}>{busy ? 'Saving…' : 'Save name'}</button><button type="button" disabled={busy || name === saved} onClick={() => { setDraft(null); setError(''); }}>Discard changes</button><button type="button" disabled={busy} onClick={() => { setDraft(null); setFeedback(''); setError(''); reload(); }}>Refresh profile</button></div>{!valid && <Feedback error>Remove leading or trailing spaces, control characters, and use no more than 80 characters.</Feedback>}{feedback && <Feedback>{feedback}</Feedback>}{error && <Feedback error>{error}</Feedback>}</form></section>
+      <section className="panel"><h2>User slug</h2><p>Your application addresses end with this slug. Changing it updates their current addresses; previous addresses remain assigned to the same applications.</p><SlugEditor label="User slug" value={state.value.userSlug} maxLength={61} save={async next => { await request('/profile/slug', profile, { method: 'PUT', body: { userSlug: next } }); reload(true); }} /></section>
+      <section className="panel"><h2>Account details</h2><dl><dt>Account ID</dt><dd><code>{owner.ownerId}</code></dd><dt>Sign-in mode</dt><dd>{owner.authMode === 'dev' ? 'Local development' : 'GitHub'}</dd></dl><p>Your account ID is fixed. Changing your display name does not change application addresses.</p></section></>}
   </>;
 }
 function Device() {
@@ -148,20 +206,45 @@ function Workspace({ owner }: { owner: Session }) {
   const [menu, setMenu] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [route, setRoute] = useState(window.location.pathname + window.location.search);
   const toggle = useRef<HTMLButtonElement>(null);
-  const path = window.location.pathname;
+  const path = route.split('?')[0] ?? '';
+  const navigate: Navigate = target => {
+    if (target === window.location.pathname + window.location.search) { setMenu(false); return; }
+    window.history.pushState(null, '', target);
+    setRoute(target);
+    setMenu(false);
+    focusContent();
+  };
   const logout = async () => {
     setBusy(true); setError('');
     try { await request('/logout', success('loggedOut'), { method: 'POST' }); window.location.replace('/login'); }
     catch (caught) { setError(`${message(caught)} Sign out may already have completed. Reload to check.`); setBusy(false); }
   };
   useEffect(() => {
+    const back = () => { setRoute(window.location.pathname + window.location.search); setMenu(false); focusContent(); };
+    window.addEventListener('popstate', back);
+    return () => window.removeEventListener('popstate', back);
+  }, []);
+  useEffect(() => {
     const escape = (event: KeyboardEvent) => { if (event.key === 'Escape' && menu) { setMenu(false); toggle.current?.focus(); } };
     window.addEventListener('keydown', escape);
     return () => window.removeEventListener('keydown', escape);
   }, [menu]);
   const id = path.startsWith('/applications/') ? path.slice('/applications/'.length) : '';
-  return <div className="workspace min-w-0"><header className="sidebar"><a className="brand" href="/applications" aria-label="Cellapp applications"><img src="/logos/cellapp-landscape.svg" alt="Cellapp" /></a><button className="menu-toggle" ref={toggle} aria-label={menu ? 'Close menu' : 'Open menu'} aria-expanded={menu} aria-controls="navigation" onClick={() => setMenu(value => !value)}>Menu</button><nav id="navigation" aria-label="Workspace" className={menu ? 'navigation is-open' : 'navigation'}><a href="/applications" aria-current={path.startsWith('/applications') ? 'page' : undefined}>Applications</a><a href="/credentials" aria-current={path === '/credentials' ? 'page' : undefined}>Deployment credentials</a><a href="/device" aria-current={path === '/device' ? 'page' : undefined}>Authorize tool</a></nav><div className="account"><p className="eyebrow">{owner.authMode === 'dev' ? 'LOCAL DEVELOPMENT' : 'SIGNED IN'}</p><code title={owner.ownerId}>{owner.ownerId.slice(0, 8)}…</code><button disabled={busy} onClick={() => { void logout(); }}>{busy ? 'Signing out…' : 'Sign out'}</button></div></header><main id="content" tabIndex={-1} className="content">{error && <Feedback error>{error}</Feedback>}{path === '/credentials' ? <Credentials /> : path === '/device' ? <Device /> : /^[a-f0-9]{32}$/.test(id) ? <ApplicationPage id={id} /> : path === '/applications' ? <Applications /> : <><h1>Page not found</h1><a href="/applications">Return to applications</a></>}</main></div>;
+  return <div className="workspace min-w-0"><header className="sidebar">
+    <ConsoleLink className="brand" href="/applications" navigate={navigate} aria-label="Cellapp applications"><img src="/logos/cellapp-landscape.svg" alt="Cellapp" /></ConsoleLink>
+    <button className="menu-toggle" ref={toggle} aria-label={menu ? 'Close menu' : 'Open menu'} aria-expanded={menu} aria-controls="navigation" onClick={() => setMenu(value => !value)}>Menu</button>
+    <nav id="navigation" aria-label="Workspace" className={menu ? 'navigation is-open' : 'navigation'}>
+      <ConsoleLink href="/applications" navigate={navigate} aria-current={path.startsWith('/applications') ? 'page' : undefined}>Applications</ConsoleLink>
+      <ConsoleLink href="/credentials" navigate={navigate} aria-current={path === '/credentials' ? 'page' : undefined}>Deployment credentials</ConsoleLink>
+      <ConsoleLink href="/device" navigate={navigate} aria-current={path === '/device' ? 'page' : undefined}>Authorize tool</ConsoleLink>
+      <ConsoleLink href="/profile" navigate={navigate} aria-current={path === '/profile' ? 'page' : undefined}>Profile settings</ConsoleLink>
+    </nav>
+    <div className="account"><p className="eyebrow">{owner.authMode === 'dev' ? 'LOCAL DEVELOPMENT' : 'SIGNED IN'}</p><code title={owner.ownerId}>{owner.ownerId.slice(0, 8)}…</code><button disabled={busy} onClick={() => { void logout(); }}>{busy ? 'Signing out…' : 'Sign out'}</button></div>
+  </header><main id="content" tabIndex={-1} className="content">{error && <Feedback error>{error}</Feedback>}
+    {path === '/credentials' ? <Credentials /> : path === '/device' ? <Device key={route} /> : path === '/profile' ? <ProfilePage owner={owner} /> : /^[a-f0-9]{32}$/.test(id) ? <ApplicationPage key={id} id={id} navigate={navigate} /> : path === '/applications' ? <Applications navigate={navigate} /> : <><h1>Page not found</h1><ConsoleLink href="/applications" navigate={navigate}>Return to applications</ConsoleLink></>}
+  </main></div>;
 }
 export function App() {
   const [state, setState] = useState<Load<Session> | { kind: 'signed-out' }>({ kind: 'loading' });
@@ -170,16 +253,16 @@ export function App() {
     const controller = new AbortController();
     request('/session', session, { signal: controller.signal }).then(owner => {
       if (controller.signal.aborted) return;
-      if (window.location.pathname === '/' || window.location.pathname === '/login') window.location.replace(window.location.pathname === '/login' ? loginReturn() : '/applications');
-      else setState({ kind: 'ready', value: owner });
+      if (window.location.pathname === '/' || window.location.pathname === '/login') window.history.replaceState(null, '', window.location.pathname === '/login' ? loginReturn() : '/applications');
+      setState({ kind: 'ready', value: owner });
     }, error => {
       if (controller.signal.aborted) return;
       if (error instanceof RequestError && error.status === 401) {
-        if (window.location.pathname !== '/login') window.location.replace(`/login?return=${encodeURIComponent(window.location.pathname === '/' ? '/applications' : window.location.pathname + window.location.search)}`);
-        else setState({ kind: 'signed-out' });
+        if (window.location.pathname !== '/login') window.history.replaceState(null, '', `/login?return=${encodeURIComponent(window.location.pathname === '/' ? '/applications' : window.location.pathname + window.location.search)}`);
+        setState({ kind: 'signed-out' });
       } else setState({ kind: 'error', message: 'Unable to connect. Try again when the service is available.' });
     });
     return () => controller.abort();
   }, [version]);
-  return <><a className="skip-link" href="#content" onClick={() => document.getElementById('content')?.focus()}>Skip to content</a>{state.kind === 'ready' ? <Workspace owner={state.value} /> : <main id="content" tabIndex={-1} className="login"><img className="login-logo" src="/logos/cellapp-landscape.svg" alt="Cellapp" /><h1>Sign in to Cellapp</h1><p>Manage your applications and deployment access.</p>{state.kind === 'signed-out' ? <a className="primary button" href={`/auth/login?return=${encodeURIComponent(loginReturn())}`}>Continue to sign in</a> : state.kind === 'error' ? <><Feedback error>{state.message}</Feedback><button onClick={() => setVersion(value => value + 1)}>Try again</button></> : <Feedback>Checking your session…</Feedback>}</main>}</>;
+  return <><a className="skip-link" href="#content" onClick={() => document.getElementById('content')?.focus()}>Skip to content</a>{state.kind === 'ready' ? <Workspace owner={state.value} /> : <main id="content" tabIndex={-1} className="login"><img className="login-logo" src="/logos/cellapp-landscape.svg" alt="Cellapp" /><h1>{state.kind === 'signed-out' ? 'Sign in to Cellapp' : state.kind === 'error' ? 'Cellapp is unavailable' : 'Opening Cellapp…'}</h1>{state.kind === 'signed-out' && <p>Manage your applications and deployment access.</p>}{state.kind === 'signed-out' ? <a className="primary button" href={`/auth/login?return=${encodeURIComponent(loginReturn())}`}>Continue to sign in</a> : state.kind === 'error' ? <><Feedback error>{state.message}</Feedback><button onClick={() => setVersion(value => value + 1)}>Try again</button></> : <Feedback>Checking your session…</Feedback>}</main>}</>;
 }

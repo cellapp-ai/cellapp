@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func (s *Server) createApp(w http.ResponseWriter, r *http.Request) error {
@@ -63,14 +64,21 @@ func (s *Server) createApp(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		slug, err := chooseAppSlug(r.Context(), tx, namespaceID, in.Slug, in.Name)
+		slug, err := chooseAppSlug(r.Context(), tx, namespaceID, handle, in.Slug, in.Name)
 		if err != nil {
 			return err
 		}
-		app = App{ID: id(), Name: in.Name, Namespace: handle, Slug: slug, Visibility: "restricted"}
-		app.URL = s.Config.AppURL(app.ID)
+		app = App{ID: id(), Name: in.Name, Namespace: handle, Slug: slug, HostLabel: slug + "-" + handle, Visibility: "restricted"}
+		app.URL = s.appURL(app.ID, app.HostLabel)
 		app.AliasURL = s.appAliasURL(handle, slug)
-		_, e = tx.Exec(r.Context(), `INSERT INTO apps(id,owner_id,namespace_id,slug,name,key_hash,create_key,create_digest) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, app.ID, owner, namespaceID, slug, in.Name, keyed(s.Config.Secret, in.Key), in.RequestID, fingerprint)
+		_, e = tx.Exec(r.Context(), `INSERT INTO apps(id,owner_id,namespace_id,slug,host_label,name,key_hash,create_key,create_digest) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, app.ID, owner, namespaceID, slug, app.HostLabel, in.Name, keyed(s.Config.Secret, in.Key), in.RequestID, fingerprint)
+		if e == nil {
+			_, e = tx.Exec(r.Context(), `INSERT INTO app_hostnames(label,app_id) VALUES($1,$2)`, app.HostLabel, app.ID)
+		}
+		var pg *pgconn.PgError
+		if errors.As(e, &pg) && pg.Code == "23505" {
+			return fail(409, "slug_taken", "Application address is already in use")
+		}
 		return e
 	})
 	if e != nil {
@@ -79,7 +87,8 @@ func (s *Server) createApp(w http.ResponseWriter, r *http.Request) error {
 	if s.AppDataDB != nil {
 		e = appdata.Reconcile(r.Context(), s.DB, s.AppDataDB, app.ID, s.AppDataProbe)
 		if e != nil && !errors.Is(e, appdata.ErrAPIProbeRequired) {
-			return fail(503, "app_data_not_ready", "Application data is not ready; retry creation with the same request ID")
+			s.logDataReconcileFailure(r.Context(), app.ID, e)
+			return &APIError{Status: 503, Code: "app_data_not_ready", Message: "Application data is not ready; retry with the same application", Details: map[string]string{"appId": app.ID}}
 		}
 		if e == nil {
 			app.DataState = "ready"
@@ -103,7 +112,7 @@ func (s *Server) listApps(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 func (s *Server) ownerApps(ctx context.Context, owner string) ([]App, error) {
-	rows, e := s.DB.Query(ctx, `SELECT a.id,a.name,a.active_deployment,a.suspended,a.data_state,a.visibility,n.handle,a.slug
+	rows, e := s.DB.Query(ctx, `SELECT a.id,a.name,a.active_deployment,a.suspended,a.data_state,a.visibility,n.handle,a.slug,COALESCE(a.host_label,'')
     FROM apps a JOIN app_namespaces n ON n.id=a.namespace_id WHERE a.owner_id=$1 AND NOT a.deleted ORDER BY n.handle,a.slug`, owner)
 	if e != nil {
 		return nil, e
@@ -112,10 +121,10 @@ func (s *Server) ownerApps(ctx context.Context, owner string) ([]App, error) {
 	apps := []App{}
 	for rows.Next() {
 		var a App
-		if e = rows.Scan(&a.ID, &a.Name, &a.Active, &a.Suspended, &a.DataState, &a.Visibility, &a.Namespace, &a.Slug); e != nil {
+		if e = rows.Scan(&a.ID, &a.Name, &a.Active, &a.Suspended, &a.DataState, &a.Visibility, &a.Namespace, &a.Slug, &a.HostLabel); e != nil {
 			return nil, e
 		}
-		a.URL = s.Config.AppURL(a.ID)
+		a.URL = s.appURL(a.ID, a.HostLabel)
 		a.AliasURL = s.appAliasURL(a.Namespace, a.Slug)
 		apps = append(apps, a)
 	}

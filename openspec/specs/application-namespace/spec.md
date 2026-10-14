@@ -1,35 +1,50 @@
 # application-namespace Specification
 
 ## Purpose
-Give applications a human-readable, owner-scoped reference while preserving immutable app-ID hosts and their authorization boundary.
+Give applications readable, owner-scoped hosts while keeping the internal app ID and authorization boundary stable.
 
 ## Requirements
 
 ### Requirement: Owner namespace and application alias
-The system SHALL give each owner one public namespace handle and each application one alias unique within that namespace. Display names MAY repeat. New owners MAY choose a valid namespace on their first application and MAY choose an application alias; otherwise the system assigns stable values. It SHALL return the reference and share URL in owner APIs and show them in the console and CLI guidance.
+
+The system SHALL give each owner one public user slug and each application one app slug unique within that user's namespace. Display names MAY repeat. New owners MAY choose both slugs on first creation; otherwise the system assigns values. The owner console SHALL permit editing both slugs after creation.
 
 #### Scenario: Same name or alias in different namespaces
-- **WHEN** two owners create applications with the same display name or alias
-- **THEN** each application receives a distinct `@namespace/alias` reference and retains its own immutable app ID
+- **WHEN** two owners create applications with the same display name or app slug
+- **THEN** each gets a distinct readable host and retains its own immutable app ID
 
 #### Scenario: Alias conflict in one namespace
-- **WHEN** an owner requests an alias already assigned to an application in that namespace
-- **THEN** creation fails with a recognizable conflict; an omitted alias gets a unique suffix
+- **WHEN** a slug is too short, reserved, invalid, too long in combination, or its complete host label is occupied
+- **THEN** creation or editing fails with a recognizable error and changes no existing address
+
+### Requirement: Slug format and reservation
+
+The user slug MUST contain 3–61 lowercase ASCII letters, digits or hyphens and begin with a letter. Both slug types MUST reject reserved platform names and trailing hyphens. The complete `{app-slug}-{user-slug}` host label MUST fit 63 characters and be globally unique, including historical assignments.
+
+#### Scenario: Invalid or previously assigned host label
+- **WHEN** an owner submits invalid or reserved slugs, or a combination previously assigned to another app
+- **THEN** no slug changes and the response identifies the invalid or occupied address
 
 ### Requirement: Stable share link and identity boundary
-The system SHALL resolve a share URL on the control origin to the existing ID-based app host. Authorization, app sessions, table access and app database schemas SHALL continue to use the immutable app ID.
+
+The system SHALL use `{app-slug}-{user-slug}.<APPS_DOMAIN>` as the current public app URL, resolving it to the immutable app ID. A control-origin share link SHALL redirect to the current app URL. App authorization, sessions, data and deployments SHALL continue to use the immutable app ID. Legacy ID hosts and previously assigned readable hosts SHALL remain bound to their original apps, and no assigned name SHALL be recycled.
 
 #### Scenario: Open an alias
-- **WHEN** a visitor opens an active application's share URL
-- **THEN** the control service redirects to its ID host, where normal login and admission apply
+- **WHEN** a visitor opens a current or prior address of an active app
+- **THEN** normal login and app admission apply for the same internal app ID; after deletion the address stops serving content
 
 #### Scenario: Delete an application
 - **WHEN** an application is deleted
-- **THEN** its alias stops resolving and remains occupied so a stale link cannot point to another application
+- **THEN** its aliases and hosts stop serving content and remain occupied so stale links cannot point to another app
+
+#### Scenario: Same-origin write and login return
+- **WHEN** a visitor uses a readable or legacy app host
+- **THEN** login returns to that validated host, and writes accept only its exact Origin
 
 ### Requirement: Existing application migration
-The system SHALL backfill a namespace and unique alias for existing owners and applications without changing their app IDs, hosts, deployment associations or data schemas.
+
+The system SHALL backfill readable hosts for existing valid, unambiguous slug pairs without changing their app IDs, aliases, deployment associations or data schemas. Existing pairs that cannot form an available 63-character host label SHALL retain their ID host until edited.
 
 #### Scenario: Upgrade a control database
-- **WHEN** an existing database with owners and apps runs the additive namespace migration
-- **THEN** each existing app receives a unique reference, and its prior app URL continues to work
+- **WHEN** an existing database runs the additive host migration
+- **THEN** eligible apps receive readable current URLs, ineligible apps keep working ID URLs, and prior links remain assigned to their original apps
