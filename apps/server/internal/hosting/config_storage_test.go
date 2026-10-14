@@ -42,7 +42,7 @@ func TestProductionS3RequiresExplicitConfiguration(t *testing.T) {
 		"S3_ENDPOINT": "https://storage.example.com", "S3_REGION": "us-east-1", "S3_BUCKET": "private-test",
 		"S3_ACCESS_KEY_ID": "test-ak", "S3_SECRET_ACCESS_KEY": "test-sk",
 		"MAX_APPS": "10", "MAX_FILES": "1000", "MAX_FILE_BYTES": "100", "MAX_DEPLOYMENT_BYTES": "1000", "MAX_STORAGE_BYTES": "10000",
-		"MAX_MONTHLY_TRAFFIC_BYTES": "10000", "MAX_REQUESTS_PER_MINUTE": "120", "UPLOAD_TTL_SECONDS": "3600", "RETENTION_SECONDS": "86400",
+		"MAX_MONTHLY_VISITORS": "1000", "MAX_REQUESTS_PER_MINUTE": "120", "UPLOAD_TTL_SECONDS": "3600", "RETENTION_SECONDS": "86400",
 	}
 	for _, missing := range []string{"S3_ENDPOINT", "S3_REGION", "S3_BUCKET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"} {
 		t.Run(missing, func(t *testing.T) {

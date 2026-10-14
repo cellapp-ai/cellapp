@@ -75,6 +75,9 @@ func (s *Server) Cleanup(ctx context.Context) error {
 					return e
 				}
 			}
+			if e := s.Storage.Delete(ctx, releaseManifestKey(v.id)); e != nil {
+				return e
+			}
 			_, e := tx.Exec(ctx, `UPDATE deployments SET status='cleaned',bytes=0,uploaded='[]' WHERE id=$1`, v.id)
 			return e
 		})

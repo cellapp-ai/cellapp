@@ -1,6 +1,6 @@
 # S3 存储配置
 
-服务使用私有 S3 兼容 Bucket 保存发布产物，开发默认使用本地 MinIO。访客仅通过应用网关读取文件，不获得对象读取签名直链。适配器使用 path-style 和 Signature V4，支持指定 Bucket 的 HEAD 及对象 PUT/GET/HEAD/DELETE；生产 Endpoint 必须为 HTTPS。
+服务使用私有 S3 兼容 Bucket 保存发布产物，开发默认使用本地 MinIO。访客仅通过应用网关读取文件，不获得对象读取签名直链。启用边缘静态分发后，Worker 在验证短期授权后通过私有 R2 绑定读取已发布版本；访客仍不获得对象地址或凭证。适配器使用 path-style 和 Signature V4，支持指定 Bucket 的 HEAD 及对象 PUT/GET/HEAD/DELETE；R2 使用 `S3_REGION=auto`，生产 Endpoint 必须为 HTTPS。已有产物的完整性校验和回滚流程见[边缘静态分发与回滚](edge-delivery.md)。
 
 ## 本地 MinIO
 

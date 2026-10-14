@@ -30,6 +30,9 @@ func (s *Server) serveApp(w http.ResponseWriter, r *http.Request, appID string) 
 	if r.Method == http.MethodGet && r.URL.Path == "/_cellapp/me" {
 		return s.appMe(w, r, appID)
 	}
+	if r.Method == http.MethodGet && r.URL.Path == "/_cellapp/edge-grant" {
+		return s.issueEdgeGrant(w, r, appID)
+	}
 	if r.Method == http.MethodPost && r.URL.Path == "/_cellapp/request" {
 		return s.requestAppAccess(w, r, appID)
 	}
@@ -151,24 +154,11 @@ func (s *Server) serveApp(w http.ResponseWriter, r *http.Request, appID string) 
 		if !found {
 			return fail(404, "not_found", "File not found")
 		}
+		if e = admitVisitor(r.Context(), tx, appID, user, access.Owner, s.Config.Limits.MonthlyVisitors, time.Now()); e != nil {
+			return e
+		}
 		if r.Method != "HEAD" {
-			now := time.Now().UTC()
-			period := now.Format("2006-01")
-			var used int64
-			if _, e = tx.Exec(r.Context(), `INSERT INTO usage(app_id,period,bytes) VALUES($1,$2,0) ON CONFLICT DO NOTHING`, appID, period); e != nil {
-				return e
-			}
-			if e = tx.QueryRow(r.Context(), `SELECT bytes FROM usage WHERE app_id=$1 AND period=$2 FOR UPDATE`, appID, period).Scan(&used); e != nil {
-				return e
-			}
-			if file.Size > s.Config.Limits.TrafficBytes-used {
-				return &APIError{429, "traffic_limit", "Monthly traffic exhausted; try after reset", map[string]string{"resetAt": time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, time.UTC).Format(time.RFC3339)}}
-			}
 			content, e = s.Storage.Get(r.Context(), objectKey(*a.Active, file.Path))
-			if e != nil {
-				return e
-			}
-			_, e = tx.Exec(r.Context(), `UPDATE usage SET bytes=bytes+$3 WHERE app_id=$1 AND period=$2`, appID, period, file.Size)
 			return e
 		}
 		return nil

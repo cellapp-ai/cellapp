@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto"
 	"crypto/rand"
+	"crypto/ed25519"
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/tls"
@@ -68,6 +69,7 @@ func TestBrowserEndToEnd(t *testing.T) {
 	}
 	f.server.Storage = storage
 	server := httptest.NewUnstartedServer(nil)
+	edgeAppID := ""
 	_, port, _ := net.SplitHostPort(server.Listener.Addr().String())
 	f.server.Config.ControlOrigin = "https://control.localhost:" + port
 	f.server.Config.AppPort = port
@@ -83,6 +85,20 @@ func TestBrowserEndToEnd(t *testing.T) {
 	handler := f.server.Handler()
 	server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Only this test fixture exposes a simulated identity provider; production has no bypass.
+		if r.Method == http.MethodPost && edgeAppID != "" && (r.URL.Path == "/_test/suspend-edge" || r.URL.Path == "/_test/restrict-edge" || r.URL.Path == "/_test/public-edge") {
+			statement := map[string]string{
+				"/_test/suspend-edge":  `UPDATE apps SET suspended=true WHERE id=$1`,
+				"/_test/restrict-edge": `UPDATE apps SET visibility='restricted' WHERE id=$1`,
+				"/_test/public-edge":   `UPDATE apps SET visibility='public' WHERE id=$1`,
+			}[r.URL.Path]
+			if _, err := f.db.Exec(r.Context(), statement, edgeAppID); err != nil {
+				t.Error(err)
+				http.Error(w, "fixture failed", 500)
+				return
+			}
+			w.WriteHeader(204)
+			return
+		}
 		if r.URL.Path == "/_test/visitor" {
 			visitor := id()
 			secret := token()
@@ -179,4 +195,34 @@ func TestBrowserEndToEnd(t *testing.T) {
 		t.Fatalf("browser test failed: %v\n%s", e, output)
 	}
 	t.Log(string(output))
+	if os.Getenv("RUN_EDGE_BROWSER_TESTS") == "1" {
+		public, private, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.server.Config.EdgeOriginHost = "control.localhost:" + port
+		f.server.Config.EdgeOriginSecret = "isolated-browser-edge-origin-secret-32-bytes"
+		f.server.Config.EdgeGrantKeyID = "browser-key"
+		f.server.Config.EdgeGrantSigningKey = private
+		app, _ := f.create(t)
+		edgeAppID = app.ID
+		html := "<html><h1>Edge app</h1></html>"
+		deployment, _ := f.stage(t, app, html)
+		f.uploadAndPublish(t, app, deployment, html)
+		if _, err := f.db.Exec(context.Background(), `UPDATE apps SET visibility='public' WHERE id=$1`, app.ID); err != nil {
+			t.Fatal(err)
+		}
+		edgeCommand := exec.Command("node", "tests/browser.edge.e2e.mjs")
+		edgeCommand.Dir = root
+		edgeCommand.Env = append(os.Environ(), "TEST_CONTROL_ORIGIN="+f.server.Config.ControlOrigin, "NODE_EXTRA_CA_CERTS="+ca,
+			"TEST_BROWSER_SPKI="+base64.StdEncoding.EncodeToString(spkiDigest[:]), "TEST_EDGE_APP_URL="+app.URL,
+			"TEST_EDGE_DEPLOYMENT="+deployment, "TEST_EDGE_HTML="+html,
+			"TEST_EDGE_ORIGIN_SECRET="+f.server.Config.EdgeOriginSecret,
+			"TEST_EDGE_PUBLIC_KEY="+base64.RawURLEncoding.EncodeToString(public))
+		edgeOutput, err := edgeCommand.CombinedOutput()
+		if err != nil {
+			t.Fatalf("edge browser test failed: %v\n%s", err, edgeOutput)
+		}
+		t.Log(string(edgeOutput))
+	}
 }

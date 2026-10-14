@@ -1,6 +1,7 @@
 package hosting
 
 import (
+	"bytes"
 	"cellapp/apps/server/appdata"
 	"context"
 	"crypto/sha256"
@@ -209,6 +210,9 @@ func getDeployment(r *http.Request, tx pgx.Tx) (d Deployment, e error) {
 	return
 }
 func (s *Server) createDeployment(w http.ResponseWriter, r *http.Request) error {
+	if s.Config.PublicationPaused {
+		return fail(503, "publication_paused", "Application publication is temporarily paused")
+	}
 	owner, e := s.owner(r)
 	if e != nil {
 		return e
@@ -300,6 +304,9 @@ func (s *Server) deploymentStatus(w http.ResponseWriter, r *http.Request) error 
 	return nil
 }
 func (s *Server) upload(w http.ResponseWriter, r *http.Request) error {
+	if s.Config.PublicationPaused {
+		return fail(503, "publication_paused", "Application publication is temporarily paused")
+	}
 	owner, e := s.owner(r)
 	if e != nil {
 		return e
@@ -370,6 +377,9 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 func (s *Server) publish(w http.ResponseWriter, r *http.Request) error {
+	if s.Config.PublicationPaused {
+		return fail(503, "publication_paused", "Application publication is temporarily paused")
+	}
 	owner, e := s.owner(r)
 	if e != nil {
 		return e
@@ -399,6 +409,15 @@ func (s *Server) publish(w http.ResponseWriter, r *http.Request) error {
 		}
 		if len(d.Uploaded) != len(d.Manifest) {
 			return fail(409, "incomplete_upload", "Upload all manifest files before publishing")
+		}
+		manifest, e := json.Marshal(struct {
+			Files []Entry `json:"files"`
+		}{Files: d.Manifest})
+		if e != nil {
+			return e
+		}
+		if e = s.Storage.Put(r.Context(), releaseManifestKey(d.ID), bytes.NewReader(manifest), int64(len(manifest))); e != nil {
+			return e
 		}
 		if _, e = tx.Exec(r.Context(), `UPDATE deployments SET status='published',published_at=now() WHERE id=$1`, d.ID); e != nil {
 			return e

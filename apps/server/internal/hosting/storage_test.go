@@ -48,6 +48,30 @@ func TestS3ConfigAndBucketHealth(t *testing.T) {
 	}
 }
 
+func TestS3RegionAutoSignsR2CompatibleScope(t *testing.T) {
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "HEAD" || r.URL.Path != "/private-bucket/" || !strings.Contains(r.Header.Get("Authorization"), "/auto/s3/aws4_request") {
+			t.Errorf("unexpected R2-style bucket probe: %s %s %s", r.Method, r.URL.Path, r.Header.Get("Authorization"))
+			w.WriteHeader(403)
+			return
+		}
+		w.WriteHeader(200)
+	}))
+	defer endpoint.Close()
+	c, err := LoadConfig(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.S3Endpoint, c.S3Region, c.S3Bucket = endpoint.URL, "auto", "private-bucket"
+	storage, err := NewStorage(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := storage.Health(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestS3SignedObjectRoundTrip(t *testing.T) {
 	var stored []byte
 	endpoint := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

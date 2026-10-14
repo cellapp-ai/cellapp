@@ -14,7 +14,6 @@ import (
 	"sync"
 	"testing"
 	"testing/fstest"
-	"time"
 
 	"cellapp/apps/server/migrations"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -350,25 +349,25 @@ func TestIntegrationDeviceAuthorization(t *testing.T) {
 	response[any](t, f.request(t, "GET", "/apps", nil, credential, "control.localhost:8443", ""), 401)
 }
 
-func TestIntegrationTrafficAndExpiry(t *testing.T) {
+func TestIntegrationVisitorsAndExpiry(t *testing.T) {
 	f := setup(t)
 	a, key := f.create(t)
 	d, _ := f.stage(t, a, "ok")
 	f.uploadAndPublish(t, a, d, "ok")
 	cookie := f.unlock(t, a, key)
 	host, _ := url.Parse(a.URL)
-	f.server.Config.Limits.TrafficBytes = 2
+	f.server.Config.Limits.MonthlyVisitors = 1
 	if w := f.request(t, "GET", "/", nil, "", host.Host, cookie); w.Code != 200 {
 		t.Fatal(w.Body.String())
 	}
-	response[any](t, f.request(t, "GET", "/", nil, "", host.Host, cookie), 429)
-	if w := f.request(t, "HEAD", "/", nil, "", host.Host, cookie); w.Code != 200 {
-		t.Fatal("HEAD charged body bytes")
-	}
-	_, _ = f.db.Exec(context.Background(), `UPDATE usage SET period=$1`, time.Now().UTC().AddDate(0, -1, 0).Format("2006-01"))
 	if w := f.request(t, "GET", "/", nil, "", host.Host, cookie); w.Code != 200 {
-		t.Fatal("new period did not reset")
+		t.Fatal(w.Body.String())
 	}
+	if w := f.request(t, "HEAD", "/", nil, "", host.Host, cookie); w.Code != 200 {
+		t.Fatal("existing visitor was rejected")
+	}
+	second := f.unlock(t, a, key)
+	response[any](t, f.request(t, "GET", "/", nil, "", host.Host, second), 429)
 	_, _ = f.db.Exec(context.Background(), `UPDATE app_browser_sessions SET expires_at=now()-interval '1 second'`)
 	if w := f.request(t, "GET", "/", nil, "", host.Host, cookie); w.Code != 303 {
 		t.Fatal("expired session accepted")

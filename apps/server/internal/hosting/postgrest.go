@@ -172,6 +172,9 @@ func (s *Server) serveData(w http.ResponseWriter, r *http.Request, appID string)
 		if !access.allowed() {
 			return fail(403, "access_required", "Application access required")
 		}
+		if err := admitVisitor(r.Context(), tx, appID, platformUser, access.Owner, s.Config.Limits.MonthlyVisitors, time.Now()); err != nil {
+			return err
+		}
 		appUserID, err := s.appUser(r, tx, appID, platformUser)
 		if err != nil {
 			return err

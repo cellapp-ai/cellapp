@@ -69,11 +69,56 @@ func TestRunFreshAndRepeat(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&count); err != nil || count != len(controlMigrations) {
 		t.Fatalf("migration count=%d, err=%v", count, err)
 	}
-	for _, table := range []string{"owners", "apps", "deployments", "access_sessions"} {
+	for _, table := range []string{"owners", "apps", "deployments", "access_sessions", "app_monthly_visitors", "app_visitor_admissions"} {
 		var exists bool
 		if err := pool.QueryRow(ctx, `SELECT to_regclass($1) IS NOT NULL`, table).Scan(&exists); err != nil || !exists {
 			t.Fatalf("missing %s: %v", table, err)
 		}
+	}
+}
+
+func TestRunAddsMonthlyVisitorsToExistingDatabase(t *testing.T) {
+	pool, _ := migrationDatabase(t)
+	ctx := context.Background()
+	if _, err := pool.Exec(ctx, `CREATE TABLE schema_migrations(version integer PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range controlMigrations[:len(controlMigrations)-1] {
+		if _, err := pool.Exec(ctx, item.sql); err != nil {
+			t.Fatal(err)
+		}
+		sum := sha256.Sum256([]byte(item.sql))
+		if _, err := pool.Exec(ctx, `INSERT INTO schema_migrations(version,checksum) VALUES($1,$2)`, item.version, hex.EncodeToString(sum[:])); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := Run(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	if err := Run(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	var exists bool
+	if err := pool.QueryRow(ctx, `SELECT to_regclass('app_visitor_admissions') IS NOT NULL`).Scan(&exists); err != nil || !exists {
+		t.Fatalf("monthly visitor migration missing: %v", err)
+	}
+}
+
+func TestRunRollsBackOnMigrationError(t *testing.T) {
+	pool, _ := migrationDatabase(t)
+	ctx := context.Background()
+	if _, err := pool.Exec(ctx, `CREATE TABLE app_monthly_visitors (conflict text)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := Run(ctx, pool); err == nil {
+		t.Fatal("expected migration conflict")
+	}
+	var exists bool
+	if err := pool.QueryRow(ctx, `SELECT to_regclass('schema_migrations') IS NOT NULL`).Scan(&exists); err != nil || exists {
+		t.Fatalf("failed run left migration tracking behind: exists=%t err=%v", exists, err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT to_regclass('apps') IS NOT NULL`).Scan(&exists); err != nil || exists {
+		t.Fatalf("failed run committed earlier migrations: exists=%t err=%v", exists, err)
 	}
 }
 
@@ -208,7 +253,7 @@ func TestAppAccessConstraints(t *testing.T) {
 func TestReadableHostBackfillKeepsLongLegacyAliases(t *testing.T) {
 	pool, _ := migrationDatabase(t)
 	ctx := context.Background()
-	for _, item := range controlMigrations[:len(controlMigrations)-1] {
+	for _, item := range controlMigrations[:len(controlMigrations)-2] {
 		if _, err := pool.Exec(ctx, item.sql); err != nil {
 			t.Fatal(err)
 		}

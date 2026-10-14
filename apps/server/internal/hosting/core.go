@@ -138,3 +138,7 @@ func safeControlReturn(value string) string {
 func objectKey(deployment, path string) string {
 	return fmt.Sprintf("releases/%s/%s", deployment, digest([]byte(path)))
 }
+
+func releaseManifestKey(deployment string) string {
+	return fmt.Sprintf("releases/%s/_cellapp_manifest.json", deployment)
+}

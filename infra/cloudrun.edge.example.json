@@ -1,0 +1,48 @@
+{
+  "project": "example-project",
+  "region": "us-west1",
+  "service": "cellapp",
+  "repository": "cellapp-images",
+  "service_account": "cellapp@example-project.iam.gserviceaccount.com",
+  "network": "cellapp-test",
+  "subnet": "cellapp-test-us-west1",
+  "control_origin": "https://control.example.com",
+  "apps_domain": "apps.example.net",
+  "github_client_id": "replace-with-github-oauth-client-id",
+  "s3_endpoint": "https://account-id.r2.cloudflarestorage.com",
+  "s3_region": "auto",
+  "s3_bucket": "cellapp-private-releases",
+  "scheduler_job": "cellapp-cleanup-trigger",
+  "scheduler_region": "us-west1",
+  "publication_paused": true,
+  "limits": {
+    "MAX_APPS": 10,
+    "MAX_FILES": 1000,
+    "MAX_FILE_BYTES": 10000000,
+    "MAX_DEPLOYMENT_BYTES": 50000000,
+    "MAX_STORAGE_BYTES": 500000000,
+    "MAX_MONTHLY_VISITORS": 1000,
+    "MAX_REQUESTS_PER_MINUTE": 120,
+    "UPLOAD_TTL_SECONDS": 3600,
+    "RETENTION_SECONDS": 86400
+  },
+  "secrets": {
+    "SECRET": "cellapp-secret:1",
+    "DATABASE_URL": "cellapp-database-url:1",
+    "APP_DATA_DATABASE_URL": "cellapp-app-data-database-url:1",
+    "APP_DATA_JWT_SECRET": "cellapp-app-data-jwt-secret:1",
+    "PGRST_DB_URI": "cellapp-app-data-authenticator-url:1",
+    "PGRST_JWT_SECRET": "cellapp-app-data-jwt-secret:1",
+    "GITHUB_CLIENT_SECRET": "cellapp-github-secret:1",
+    "S3_ACCESS_KEY_ID": "cellapp-s3-access-key:1",
+    "S3_SECRET_ACCESS_KEY": "cellapp-s3-secret-key:1"
+  },
+  "cloudflare_edge": {
+    "origin_host": "cellapp-example.us-west1.run.app",
+    "secret": "cellapp-edge-origin-secret:1"
+  },
+  "edge_delivery": {
+    "grant_key_id": "key-1",
+    "signing_key": "cellapp-edge-grant-signing-key:1"
+  }
+}

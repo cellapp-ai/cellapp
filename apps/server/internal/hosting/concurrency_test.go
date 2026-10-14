@@ -69,14 +69,14 @@ func TestIntegrationConcurrentQuotasAndIdempotency(t *testing.T) {
 	response[any](t, f.request(t, "POST", path, body, f.token, "control.localhost:8443", ""), 201)
 }
 
-func TestIntegrationTrafficRaceAndCleanupRetry(t *testing.T) {
+func TestIntegrationVisitorRaceAndCleanupRetry(t *testing.T) {
 	f := setup(t)
 	a, key := f.create(t)
 	d, _ := f.stage(t, a, "ok")
 	f.uploadAndPublish(t, a, d, "ok")
 	session := f.unlock(t, a, key)
 	u, _ := url.Parse(a.URL)
-	f.server.Config.Limits.TrafficBytes = 2
+	f.server.Config.Limits.MonthlyVisitors = 1
 	statuses := make(chan int, 8)
 	var wg sync.WaitGroup
 	for i := 0; i < 8; i++ {
@@ -89,12 +89,12 @@ func TestIntegrationTrafficRaceAndCleanupRetry(t *testing.T) {
 	for status := range statuses {
 		if status == 200 {
 			success++
-		} else if status != 429 {
+		} else {
 			t.Fatal(status)
 		}
 	}
-	if success != 1 {
-		t.Fatal("traffic quota raced", success)
+	if success != 8 {
+		t.Fatal("same visitor should count once", success)
 	}
 	response[any](t, f.request(t, "DELETE", "/apps/"+a.ID, nil, f.token, "control.localhost:8443", ""), 200)
 	f.storage.failDelete = true

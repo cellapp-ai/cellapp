@@ -1,0 +1,20 @@
+{
+  "name": "cellapp-edge-candidate",
+  "main": "./cloudflare-worker.mjs",
+  "compatibility_date": "2026-10-14",
+  "workers_dev": true,
+  "vars": {
+    "CONTROL_HOST": "console.example.com",
+    "APPS_DOMAIN": "apps.example.net",
+    "ORIGIN_URL": "https://cellapp-example.us-west1.run.app",
+    "EDGE_STATIC_MODE": "r2",
+    "PUBLICATION_PAUSED": "true",
+    "EDGE_GRANT_PUBLIC_KEYS": "{\"key-1\":\"BASE64URL_ED25519_PUBLIC_KEY\"}"
+  },
+  "r2_buckets": [
+    { "binding": "R2_BUCKET", "bucket_name": "cellapp-private-releases" }
+  ],
+  "ratelimits": [
+    { "name": "EDGE_RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 600, "period": 60 } }
+  ]
+}

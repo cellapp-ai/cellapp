@@ -8,7 +8,7 @@
 
 对象 bucket 必须私有。S3 使用通用配置变量，生产显式注入 `S3_ACCESS_KEY_ID` 和 `S3_SECRET_ACCESS_KEY`，Endpoint 必须为 HTTPS；服务只探测配置的 Bucket，不自动创建生产 Bucket。本地 MinIO、凭证兼容和已有后端升级见 [S3 存储配置](s3-storage.md)。运行匿名 GET 验收时应返回拒绝，不得返回对象内容；仅服务端具备读写权限。不要在客户端发放对象读取签名 URL。对象上传使用有界临时文件，配置足够的临时磁盘并限制并发入口，上传失败不会发布版本。
 
-额度涵盖应用数、文件数、单文件/部署大小、全部暂存和保留版本占用、每应用 UTC 月流量。`UPLOAD_TTL_SECONDS` 和 `RETENTION_SECONDS` 控制回收期限。免费额度耗尽返回错误，不收费。具体数值必须在上线前结合预算配置。
+额度涵盖应用数、文件数、单文件/部署大小、全部暂存和保留版本占用、每应用每 UTC 月独立访客数。访客按已登录平台用户 ID 去重，默认每月每应用 1,000 位；所有者不占名额。`UPLOAD_TTL_SECONDS` 和 `RETENTION_SECONDS` 控制回收期限。免费额度耗尽返回错误，不收费。历史 `usage.bytes` 保留读取，但不再限制静态响应。具体数值必须在上线前结合预算配置。
 
 应用数据使用独立 PostgreSQL 数据库，角色与备份流程见 [应用数据数据库运维](app-data-operations.md)。
 
@@ -86,6 +86,8 @@ docker compose -f infra/compose.yaml exec -T postgres psql -U cellapp_rename_adm
 `origin_host` 是该 Cloud Run 服务的稳定 `run.app` 主机名；`secret` 是只授予服务运行账号读取权限的 Secret Manager `name:version` 引用。为 Cloudflare Worker 单独生成随机密钥，并将同一个值设置为 Worker 的 `EDGE_ORIGIN_SECRET` secret binding。不要把密钥值写入配置、仓库或 Worker 源码。Worker 源码见 [cloudflare-worker.mjs](../infra/cloudflare-worker.mjs)，需要配置 `CONTROL_HOST`、`APPS_DOMAIN`、`ORIGIN_URL` 和 `EDGE_ORIGIN_SECRET`；`PROBE_HOST` 只用于临时 workers.dev 测试。
 
 此模式下发布脚本将服务 ingress 设为 `all`，因为 Cloudflare Worker 从公网访问 `run.app`。Go 服务仅在请求的 Host 等于配置的 `origin_host` 且两个专用请求头的密钥匹配时，才接受 `X-Cellapp-Original-Host`；其他直接访问保持原有未知域名响应。Cloudflare 的 DNS 记录要开启代理，并为 `console.cellapp.ai/*` 与 `*.ce11.app/*` 安装 Worker 路由。正式 Worker 名为 `cellapp-edge`；由于它自行请求 `run.app`，这两条代理 A 记录可使用 Cloudflare 推荐的保留占位地址 `192.0.2.0`，不依赖 Google 负载均衡 IP。确保 Cloudflare 安全设置不会对正常访客持续发起人机验证。Cloudflare 免费 Workers 有每日请求额度，达到额度后的行为应按所选套餐设置与监控；它仍产生 Cloud Run、出网、数据库和存储费用。
+
+私有 R2 静态分发、60 秒授权、每月访客计数、迁移验收和服务/Worker 组合回滚见[边缘静态分发与回滚](edge-delivery.md)。该流程在独立候选链路验收后另行切换正式域名；部署脚本不会因 `edge_delivery` 配置存在而自动修改 Cloudflare 路由。
 
 初次切换时先用独立测试 Worker 和服务验证 `/login` 返回 200、未知访客域返回 404 且带 `X-Request-ID`，并确认直接 `run.app` 访问无法作为有效控制域。随后打开 DNS 代理，检查两个真实域名的 HTTPS 证书、GitHub 登录与访客资源。若 Google 负载均衡尚在，可将 DNS 改回仅 DNS 作为临时回退。当前环境已移除负载均衡；后续应用回滚应保留 Cloudflare Worker、代理 DNS 和专用回源密钥，将正式 Cloud Run 服务流量切回兼容该回源协议的旧修订版本。不能把 DNS 改回已释放的旧 IP。
 

@@ -17,8 +17,8 @@ NAME = re.compile(r"^[a-z][a-z0-9-]{1,61}[a-z0-9]$")
 DOMAIN = re.compile(r"^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$")
 DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 SECRET_KEYS = ("SECRET", "DATABASE_URL", "APP_DATA_DATABASE_URL", "APP_DATA_JWT_SECRET", "PGRST_DB_URI", "PGRST_JWT_SECRET", "GITHUB_CLIENT_SECRET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY")
-PUBLIC_ENV = ("NODE_ENV", "AUTH_MODE", "CONTROL_ORIGIN", "APPS_DOMAIN", "GITHUB_CLIENT_ID", "S3_ENDPOINT", "S3_REGION", "S3_BUCKET", "POSTGREST_URL", "PGRST_SERVER_HOST", "PGRST_SERVER_PORT", "PGRST_DB_SCHEMAS", "PGRST_DB_PRE_CONFIG", "PGRST_DB_ANON_ROLE", "PGRST_OPENAPI_MODE", "PGRST_DB_POOL", "PGRST_DB_MAX_ROWS", "PGRST_DB_PRE_REQUEST", "MAX_APPS", "MAX_FILES", "MAX_FILE_BYTES", "MAX_DEPLOYMENT_BYTES", "MAX_STORAGE_BYTES", "MAX_MONTHLY_TRAFFIC_BYTES", "MAX_REQUESTS_PER_MINUTE", "UPLOAD_TTL_SECONDS", "RETENTION_SECONDS")
-LIMIT_KEYS = ("MAX_APPS", "MAX_FILES", "MAX_FILE_BYTES", "MAX_DEPLOYMENT_BYTES", "MAX_STORAGE_BYTES", "MAX_MONTHLY_TRAFFIC_BYTES", "MAX_REQUESTS_PER_MINUTE", "UPLOAD_TTL_SECONDS", "RETENTION_SECONDS")
+PUBLIC_ENV = ("NODE_ENV", "AUTH_MODE", "CONTROL_ORIGIN", "APPS_DOMAIN", "GITHUB_CLIENT_ID", "S3_ENDPOINT", "S3_REGION", "S3_BUCKET", "POSTGREST_URL", "PGRST_SERVER_HOST", "PGRST_SERVER_PORT", "PGRST_DB_SCHEMAS", "PGRST_DB_PRE_CONFIG", "PGRST_DB_ANON_ROLE", "PGRST_OPENAPI_MODE", "PGRST_DB_POOL", "PGRST_DB_MAX_ROWS", "PGRST_DB_PRE_REQUEST", "MAX_APPS", "MAX_FILES", "MAX_FILE_BYTES", "MAX_DEPLOYMENT_BYTES", "MAX_STORAGE_BYTES", "MAX_MONTHLY_VISITORS", "MAX_REQUESTS_PER_MINUTE", "UPLOAD_TTL_SECONDS", "RETENTION_SECONDS", "PUBLICATION_PAUSED")
+LIMIT_KEYS = ("MAX_APPS", "MAX_FILES", "MAX_FILE_BYTES", "MAX_DEPLOYMENT_BYTES", "MAX_STORAGE_BYTES", "MAX_MONTHLY_VISITORS", "MAX_REQUESTS_PER_MINUTE", "UPLOAD_TTL_SECONDS", "RETENTION_SECONDS")
 
 
 class DeploymentError(Exception):
@@ -91,6 +91,20 @@ def load_config(path):
             raise DeploymentError("cloudflare_edge origin_host overlaps a public domain")
         if not isinstance(edge["secret"], str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,254}:(?:latest|[1-9][0-9]*)", edge["secret"]):
             raise DeploymentError("invalid cloudflare_edge secret reference")
+    delivery = config.get("edge_delivery")
+    if delivery is not None:
+        if not edge or not isinstance(delivery, dict) or set(delivery) != {"grant_key_id", "signing_key"}:
+            raise DeploymentError("edge_delivery requires cloudflare_edge, grant_key_id and signing_key")
+        if not isinstance(delivery["grant_key_id"], str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", delivery["grant_key_id"]):
+            raise DeploymentError("invalid edge_delivery grant_key_id")
+        if not isinstance(delivery["signing_key"], str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,254}:(?:latest|[1-9][0-9]*)", delivery["signing_key"]):
+            raise DeploymentError("invalid edge_delivery signing_key reference")
+        if config["s3_region"] != "auto":
+            raise DeploymentError("edge_delivery requires R2 S3 region auto")
+        if limits["RETENTION_SECONDS"] <= 60:
+            raise DeploymentError("edge_delivery requires retention longer than grant lifetime")
+    if not isinstance(config.get("publication_paused", False), bool):
+        raise DeploymentError("publication_paused must be a boolean")
     if secrets["APP_DATA_JWT_SECRET"] != secrets["PGRST_JWT_SECRET"]:
         raise DeploymentError("APP_DATA_JWT_SECRET and PGRST_JWT_SECRET must reference the same secret version")
     if "cloudsql_instance" in config and not re.fullmatch(r"[a-z][a-z0-9-]+:[a-z0-9-]+:[a-z][a-z0-9-]+", config["cloudsql_instance"]):
@@ -146,6 +160,9 @@ def preflight(c):
     if c.get("cloudflare_edge"):
         name, version = c["cloudflare_edge"]["secret"].rsplit(":", 1)
         gcloud("edge secret reference", "secrets", "versions", "describe", version, f"--secret={name}", f"--project={project}")
+    if c.get("edge_delivery"):
+        name, version = c["edge_delivery"]["signing_key"].rsplit(":", 1)
+        gcloud("edge grant signing key reference", "secrets", "versions", "describe", version, f"--secret={name}", f"--project={project}")
     scheduler = gcloud("cleanup scheduler", "scheduler", "jobs", "describe", c["scheduler_job"], f"--location={c['scheduler_region']}", f"--project={project}", json_output=True)
     expected = f"/projects/{project}/locations/{region}/jobs/{c['service']}-cleanup:run"
     uri = scheduler.get("httpTarget", {}).get("uri", "")
@@ -164,6 +181,7 @@ def settings(c):
         "PGRST_DB_POOL": "5", "PGRST_DB_MAX_ROWS": "1000", "PGRST_DB_PRE_REQUEST": "cellapp_internal.pre_request",
     }
     env.update({key: str(c["limits"][key]) for key in LIMIT_KEYS})
+    env["PUBLICATION_PAUSED"] = str(c.get("publication_paused", False)).lower()
     for key in PUBLIC_ENV:
         if "," in env[key] or "=" in env[key]:
             raise DeploymentError(f"unsupported character in configuration: {key}")
@@ -183,6 +201,11 @@ def service_settings(c):
     if edge:
         flags = [flag + ",EDGE_ORIGIN_HOST=" + edge["origin_host"] if flag.startswith("--set-env-vars=")
                  else flag + ",EDGE_ORIGIN_SECRET=" + edge["secret"] if flag.startswith("--set-secrets=")
+                 else flag for flag in flags]
+    delivery = c.get("edge_delivery")
+    if delivery:
+        flags = [flag + ",EDGE_GRANT_KEY_ID=" + delivery["grant_key_id"] if flag.startswith("--set-env-vars=")
+                 else flag + ",EDGE_GRANT_SIGNING_KEY=" + delivery["signing_key"] if flag.startswith("--set-secrets=")
                  else flag for flag in flags]
     return flags
 

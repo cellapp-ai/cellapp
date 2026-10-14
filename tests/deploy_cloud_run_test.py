@@ -63,6 +63,26 @@ class ConfigTests(unittest.TestCase):
             with self.subTest(edge=edge), self.assertRaises(deploy.DeploymentError):
                 self.config(lambda c: c.update(cloudflare_edge=edge))
 
+    def test_edge_delivery_requires_r2_and_versioned_signing_secret(self):
+        def configured(c):
+            c["cloudflare_edge"] = {"origin_host": "cellapp-nok7htj6gq-uw.a.run.app", "secret": "cellapp-edge-origin-secret:1"}
+            c["s3_region"] = "auto"
+            c["edge_delivery"] = {"grant_key_id": "key-1", "signing_key": "cellapp-edge-grant-key:1"}
+            c["publication_paused"] = True
+
+        config = self.config(configured)
+        flags = " ".join(deploy.service_settings(config))
+        self.assertIn("EDGE_GRANT_KEY_ID=key-1", flags)
+        self.assertIn("EDGE_GRANT_SIGNING_KEY=cellapp-edge-grant-key:1", flags)
+        self.assertIn("PUBLICATION_PAUSED=true", flags)
+        self.assertNotIn("EDGE_GRANT_SIGNING_KEY", " ".join(deploy.settings(config)))
+        for edit in (lambda c: c.update(s3_region="us-west1"),
+                     lambda c: c["edge_delivery"].update(signing_key="literal"),
+                     lambda c: c["limits"].update(RETENTION_SECONDS=60),
+                     lambda c: c.update(publication_paused="true")):
+            with self.subTest(edit=edit), self.assertRaises(deploy.DeploymentError):
+                self.config(lambda c: (configured(c), edit(c)))
+
     def test_preflight_checks_dependencies_and_scheduler_target(self):
         calls = []
         config = self.config()

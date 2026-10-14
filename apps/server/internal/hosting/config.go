@@ -1,6 +1,8 @@
 package hosting
 
 import (
+	"crypto/ed25519"
+	"encoding/base64"
 	"fmt"
 	"net"
 	"net/url"
@@ -14,6 +16,7 @@ import (
 )
 
 var edgeOriginHostPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$`)
+var edgeGrantKeyPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,32}$`)
 
 type Limits struct {
 	Apps            int64 `json:"apps"`
@@ -21,14 +24,17 @@ type Limits struct {
 	FileBytes       int64 `json:"fileBytes"`
 	DeploymentBytes int64 `json:"deploymentBytes"`
 	StorageBytes    int64 `json:"storageBytes"`
-	TrafficBytes    int64 `json:"trafficBytes"`
+	MonthlyVisitors int64 `json:"monthlyVisitors"`
 	Requests        int64 `json:"requests"`
 }
 type Config struct {
 	WebRoot                                                                              string
 	Production                                                                           bool
+	PublicationPaused                                                                    bool
 	Address, ControlOrigin, AppsDomain, AppPort, Secret, DatabaseURL, AppDataDatabaseURL string
 	EdgeOriginHost, EdgeOriginSecret                                                     string
+	EdgeGrantKeyID                                                                       string
+	EdgeGrantSigningKey                                                                  ed25519.PrivateKey
 	PostgRESTURL, AppDataJWTSecret                                                       string
 	AuthMode                                                                             string
 	GitHubClientID, GitHubClientSecret                                                   string
@@ -39,6 +45,13 @@ type Config struct {
 
 func LoadConfig(get func(string) string) (c Config, err error) {
 	c.Production = get("NODE_ENV") == "production"
+	switch get("PUBLICATION_PAUSED") {
+	case "", "false":
+	case "true":
+		c.PublicationPaused = true
+	default:
+		return c, fmt.Errorf("PUBLICATION_PAUSED must be true or false")
+	}
 	value := func(key, fallback string) string {
 		v := get(key)
 		if v == "" && !c.Production {
@@ -69,6 +82,18 @@ func LoadConfig(get func(string) string) (c Config, err error) {
 	c.AppPort = get("APP_PORT")
 	c.EdgeOriginHost = get("EDGE_ORIGIN_HOST")
 	c.EdgeOriginSecret = get("EDGE_ORIGIN_SECRET")
+	c.EdgeGrantKeyID = get("EDGE_GRANT_KEY_ID")
+	if encoded := get("EDGE_GRANT_SIGNING_KEY"); encoded != "" {
+		key, keyError := base64.RawURLEncoding.DecodeString(encoded)
+		if keyError != nil || len(key) != ed25519.PrivateKeySize {
+			return c, fmt.Errorf("EDGE_GRANT_SIGNING_KEY must be a base64url Ed25519 private key")
+		}
+		c.EdgeGrantSigningKey = ed25519.PrivateKey(key)
+	}
+	if (c.EdgeGrantKeyID == "") != (len(c.EdgeGrantSigningKey) == 0) ||
+		c.EdgeGrantKeyID != "" && !edgeGrantKeyPattern.MatchString(c.EdgeGrantKeyID) {
+		return c, fmt.Errorf("EDGE_GRANT_KEY_ID and EDGE_GRANT_SIGNING_KEY must be configured together")
+	}
 	if !c.Production && c.AppPort == "" {
 		c.AppPort = "8443"
 	}
@@ -115,9 +140,12 @@ func LoadConfig(get func(string) string) (c Config, err error) {
 		}
 	}
 	c.S3AccessKeyID, c.S3SecretAccessKey = access, secret
-	c.Limits = Limits{number("MAX_APPS", 10), number("MAX_FILES", 1000), number("MAX_FILE_BYTES", 10_000_000), number("MAX_DEPLOYMENT_BYTES", 50_000_000), number("MAX_STORAGE_BYTES", 500_000_000), number("MAX_MONTHLY_TRAFFIC_BYTES", 1_000_000_000), number("MAX_REQUESTS_PER_MINUTE", 120)}
+	c.Limits = Limits{number("MAX_APPS", 10), number("MAX_FILES", 1000), number("MAX_FILE_BYTES", 10_000_000), number("MAX_DEPLOYMENT_BYTES", 50_000_000), number("MAX_STORAGE_BYTES", 500_000_000), number("MAX_MONTHLY_VISITORS", 1_000), number("MAX_REQUESTS_PER_MINUTE", 120)}
 	c.UploadTTL = time.Duration(number("UPLOAD_TTL_SECONDS", 3600)) * time.Second
 	c.Retention = time.Duration(number("RETENTION_SECONDS", 86400)) * time.Second
+	if len(c.EdgeGrantSigningKey) != 0 && c.Retention <= edgeGrantLifetime && err == nil {
+		err = fmt.Errorf("RETENTION_SECONDS must exceed edge grant lifetime")
+	}
 	if err != nil {
 		return c, err
 	}
