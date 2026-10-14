@@ -87,7 +87,8 @@ func (s *Server) createApp(w http.ResponseWriter, r *http.Request) error {
 	if s.AppDataDB != nil {
 		e = appdata.Reconcile(r.Context(), s.DB, s.AppDataDB, app.ID, s.AppDataProbe)
 		if e != nil && !errors.Is(e, appdata.ErrAPIProbeRequired) {
-			return fail(503, "app_data_not_ready", "Application data is not ready; retry creation with the same request ID")
+			s.logDataReconcileFailure(r.Context(), app.ID, e)
+			return &APIError{Status: 503, Code: "app_data_not_ready", Message: "Application data is not ready; retry with the same application", Details: map[string]string{"appId": app.ID}}
 		}
 		if e == nil {
 			app.DataState = "ready"

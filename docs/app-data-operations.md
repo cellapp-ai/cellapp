@@ -24,6 +24,8 @@ PostgREST 需设置 `PGRST_DB_SCHEMAS=cellapp_api`、`PGRST_DB_PRE_CONFIG=cellap
 
 上线前核对：两个 DSN 连接的数据库名称不同；应用角色只能访问本应用 schema；新建表在授权前不可读写；PostgREST 的内部接口无法从公网或应用脚本直接连通。正常服务的 `/health` 会探测控制库、应用数据连接和对象存储；表结构/API 缓存未就绪的应用保持 pending/error，不能报告为可发布。应用创建和删除跨两个数据库，失败由后台幂等重试，不通过删除数据库卷恢复。
 
+若首次部署返回 `app_data_not_ready`，先保留生成的 `cellapp.json` 和 CLI 私有凭证目录，不要换 slug 或删除应用。执行 `cellapp data status --project <项目目录>`，查看 `state` 和 `errorCode`；确认应用数据库、PostgREST 与 JWT 配置恢复后，执行 `cellapp data reconcile --project <项目目录>`，再重试原部署命令。服务端的 `app_data_reconcile_failed` 日志按 `app_id` 记录底层错误；API 只向所有者返回稳定错误码，不返回 SQL 或数据库凭证。旧版 CLI 若在失败后没有写入 `cellapp.json`，可从 `cellapp apps` 确认所属应用 ID，再执行 `cellapp link <app-id> --project <项目目录> --output <静态产物目录>`。若初始访问密钥已经遗失，所有者可显式执行 `cellapp reset-key <app-id>`；这不会撤销既有访客授权。
+
 ## 备份、恢复与回滚
 
 分别备份控制库、应用数据数据库及私有对象存储，并保留三者同一可恢复时间范围的快照。恢复后核对控制库中未删除的应用与数据 schema、角色、版本账本、发布对象相互匹配；缺失时先拒绝该应用访问并执行安全的重新协调。删除应用先在控制库阻断访问，再异步清理对应 schema，数据库暂时不可用时保留清理状态。回滚服务版本时保留两个数据库及其数据，不执行 `docker compose down -v`，也不把新登录与用户授权流程退回匿名密钥会话。

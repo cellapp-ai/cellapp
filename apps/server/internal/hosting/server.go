@@ -109,6 +109,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /apps/{app}", s.wrap(s.deleteApp))
 	mux.HandleFunc("POST /apps/{app}/key", s.wrap(s.resetKey))
 	mux.HandleFunc("GET /apps/{app}/data", s.wrap(s.dataStatus))
+	mux.HandleFunc("POST /apps/{app}/data/reconcile", s.wrap(s.dataReconcile))
 	mux.HandleFunc("POST /apps/{app}/data/plan", s.wrap(s.dataPlan))
 	mux.HandleFunc("POST /apps/{app}/data/apply", s.wrap(s.dataApply))
 	mux.HandleFunc("POST /apps/{app}/data/verify", s.wrap(s.dataVerify))
