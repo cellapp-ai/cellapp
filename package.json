@@ -14,7 +14,11 @@
     "migrate": "go run ./apps/server/cmd/server -migrate",
     "dev:web": "npm run dev --workspace @cellapp/web --",
     "preview:web": "npm run preview --workspace @cellapp/web --",
-    "lint:web": "npm run lint --workspace @cellapp/web"
+    "lint:web": "npm run lint --workspace @cellapp/web",
+    "build:website": "cd apps/website && corepack pnpm run build",
+    "lint:website": "cd apps/website && corepack pnpm run lint",
+    "preview:website": "cd apps/website && corepack pnpm run preview",
+    "test:website": "cd apps/website && corepack pnpm run test"
   },
   "devDependencies": {
     "@supabase/supabase-js": "2.117.3",

@@ -1,0 +1,9 @@
+node_modules/
+.parcel-cache/
+.build/
+src/fonts.css
+test-results/
+*.tsbuildinfo
+*.log
+.DS_Store
+*.local

@@ -2,6 +2,12 @@
 
 免费静态应用托管：在本机通过 Skill / CLI 构建发布，使用固定 HTTPS 地址。应用可用 `@命名空间/别名` 分享，原有应用 ID 地址保持稳定。访客先登录 Cellapp；公开应用允许已登录用户直接访问，受限应用通过申请审批或访问密钥授权。平台提供独立应用数据库与受控的 Supabase 表级 CRUD。服务端为 Go，CLI 为 TypeScript；PostgreSQL 保存控制元数据和独立的应用表数据，私有 S3 兼容存储保存发布产物，本地开发默认使用 MinIO。
 
+想部署自己的项目，可打开 [部署指南](https://cellapp.ai/deploy)，复制一句指令给正在开发项目的 AI。AI 会读取[机器可读部署指引](https://cellapp.ai/deploy/AGENTS.md)、按需安装 CLI、在本机完成构建和发布；首次使用时，你只需在浏览器确认授权。当前托管静态前端，应用售卖尚未开放。
+
+## 产品官网
+
+`apps/website` 承接原独立官网项目，作为独立 pnpm 项目构建和测试；Cloudflare Pages 项目 `cellapp-website` 承载 `cellapp.ai`。公开 `/deploy` 页面与 `/deploy/AGENTS.md` 由官网静态产物提供，控制台 `console.cellapp.ai` 继续处理登录和授权。官网的改动先在 `apps/website` 目录运行 `corepack pnpm install --frozen-lockfile` 安装依赖，再在仓库根目录运行 `npm run build:website` 构建，并在预览服务启动后运行 `npm run test:website` 验收。Git 推送不会自动发布官网，上传 `apps/website/dist/` 到 Cloudflare Pages 是单独的发布步骤。
+
 ## 开发
 
 需要 Go 1.24+、Node.js 22.12+ 和 Docker Compose。

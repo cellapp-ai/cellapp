@@ -10,6 +10,7 @@ node_modules
 coverage
 test-results
 skills
+apps/website
 docs
 openspec
 tests

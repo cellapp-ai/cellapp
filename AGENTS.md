@@ -21,6 +21,7 @@ cellapp/
 |-- AGENTS.md
 |-- .gitmodules
 |-- apps/web/              # Web 控制面，主仓库 npm workspace
+|-- apps/website/          # 产品官网，独立 pnpm 项目与 Cloudflare Pages 静态产物
 |-- apps/server/
 |   |-- cmd/server/             # 启动、组装、进程生命周期
 |   |-- internal/hosting/       # 授权、部署、网关、存储及 Go 测试
@@ -42,7 +43,7 @@ cellapp/
 
 公开 CLI/shared TypeScript 包放在 `skills/packages/<name>/`，纳入子仓库工作区；控制台前端应用放在主仓库 `apps/web/`，纳入根 npm workspace。主仓库维护控制台、服务端、开发编排和跨服务验收，不重复维护 CLI。子仓库规范见 `skills/AGENTS.md`；独立贡献者无需主仓库私有资料。
 
-前端任务阅读 [前端规范入口](docs/standards/README.md)、[前端工程规范](docs/standards/frontend.md)、[前端代码规范](docs/standards/frontend-code.md) 和 [前端设计规范](docs/standards/design.md)。这些规范专门适用于 `apps/web`，不替代下述服务端与客户端规范。
+控制台前端任务阅读 [前端规范入口](docs/standards/README.md)、[前端工程规范](docs/standards/frontend.md)、[前端代码规范](docs/standards/frontend-code.md) 和 [前端设计规范](docs/standards/design.md)。这些规范专门适用于 `apps/web`。官网任务阅读 [官网协作入口](apps/website/AGENTS.md) 和 [官网规范](apps/website/docs/standards/README.md)，品牌命名仍以主仓库规范为准。官网保留自己的 `pnpm-lock.yaml`，不纳入根 npm workspace；其 Cloudflare Pages 发布是独立步骤。
 
 ## 扩展与依赖
 
@@ -88,6 +89,8 @@ npm run typecheck
 npm test
 npm run build
 go vet ./apps/server/...
+corepack pnpm --dir apps/website install --frozen-lockfile
+corepack pnpm --dir apps/website run build
 ```
 
 服务端事务、权限、额度或并发修改执行隔离 PostgreSQL 集成和 race 检查；浏览器授权、Cookie、来源、资源路由或客户端联调变化执行浏览器验收：
@@ -97,7 +100,7 @@ TEST_DATABASE_URL=<isolated-test-dsn> go test -race -count=1 ./apps/server/...
 RUN_BROWSER_TESTS=1 TEST_DATABASE_URL=<isolated-test-dsn> go test -race -count=1 -run TestBrowserEndToEnd ./apps/server/internal/hosting
 ```
 
-客户端独立检查见子仓库 AGENTS。文档修改检查事实、链接、命令即可，不增加镜像实现的形式化测试。缺少必要环境时记录缺口，不以跳过代替通过。
+客户端独立检查见子仓库 AGENTS。官网检查在 `apps/website` 执行 `corepack pnpm run lint`、`build` 和正式静态预览上的 `test`；Cloudflare Pages 发布需单独执行并验收，不随根仓库 `npm run build` 或 Git 推送发生。文档修改检查事实、链接、命令即可，不增加镜像实现的形式化测试。缺少必要环境时记录缺口，不以跳过代替通过。
 
 ## 默认使用 Worktree 开发
 
