@@ -75,3 +75,17 @@ The CLI SHALL preserve a stable creation request and its initial access key outs
 #### Scenario: Older project lacks association
 - **WHEN** the owner selects an application they own and supplies an output directory to link an unassociated project
 - **THEN** the CLI writes a non-secret project association without creating another application
+
+### Requirement: Daily CLI update notice
+
+The CLI SHALL attempt to check the public npm registry for a newer stable `@cellapp/cli` release on its first invocation of each local calendar day. It SHALL notify on stderr only when the latest version is newer, without changing command stdout or exit status. The request MUST NOT include Cellapp credentials or project data. Registry and local state failures MUST NOT prevent the requested command.
+
+#### Scenario: New release available
+
+- **WHEN** the first CLI invocation of the day receives a valid newer stable version
+- **THEN** the CLI prints the version and upgrade command to stderr and runs the requested command normally
+
+#### Scenario: Same day or offline
+
+- **WHEN** the CLI runs again on the same local day, or npm cannot be reached within the bounded timeout
+- **THEN** it does not repeatedly query npm that day and continues the requested command without an update-check error
