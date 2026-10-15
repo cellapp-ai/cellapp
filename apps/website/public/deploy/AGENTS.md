@@ -1,6 +1,6 @@
 # Deploy to Cellapp — instructions for coding agents
 
-The user wants the current project developed and deployed to Cellapp. Use the official `cellapp` CLI. Handle project inspection, CLI setup, building, upload and verification yourself. The user only needs to approve device authorization in the browser. Do not implement Cellapp's upload protocol yourself.
+The user wants the current project developed and deployed to Cellapp. Run the official published client yourself for building, upload and verification. The user only needs to approve device authorization in the browser. Do not implement Cellapp's upload protocol yourself or ask the user to install a CLI.
 
 ## Inspect the project
 
@@ -8,28 +8,27 @@ Work from the user's project directory. Read its package manifest, lockfile, bui
 
 Cellapp hosts static frontend files. It does not run Next.js SSR, a custom server, serverless functions or a private backend. If the project needs a server, explain the blocker or prepare a genuine static export when that preserves the intended behavior. Do not put private credentials in bundled frontend files; admitted visitors can read them.
 
-## Prepare the CLI
+## Run the published client on demand
 
-Check whether `cellapp --help` works. If it does, use that CLI. Otherwise check Node.js is at least 22.12 and npm is available. Then install and verify the published package:
+Check Node.js is at least 22.12 and npm is available. Verify the official published package from the project directory:
 
 ```sh
-npm install -g @cellapp/cli@latest
-cellapp --help
+npm exec --yes --package=@cellapp/cli@latest -- cellapp --help
 ```
 
-If global installation is blocked, use `npm exec --yes --package=@cellapp/cli@latest -- cellapp --help` and the same `npm exec --yes --package=@cellapp/cli@latest -- cellapp` prefix for later commands. Do not default to asking the user to install the CLI. If Node.js or npm is unavailable, the package cannot be fetched, or both CLI invocation methods fail, report the specific blocker. Do not use `sudo`, disable TLS verification or install from an unverified source.
+Use the same `npm exec --yes --package=@cellapp/cli@latest -- cellapp` prefix for all later commands. npm obtains and caches the package on demand; no global install is needed. If Node.js or npm is unavailable, package retrieval fails, or help verification fails, report the specific blocker. Do not use `sudo`, disable TLS verification or install from an unverified source.
 
-The CLI's default control origin is `https://console.cellapp.ai`. Respect an origin supplied by the user, the existing project, or `CELLAPP_ORIGIN`; do not substitute the public website `https://cellapp.ai` as an API origin. Keep credentials out of project files and logs.
+The client defaults to `https://cellapp.ai`. It migrates project associations at the exact retired origin `https://console.cellapp.ai` while preserving the application and pending deployment IDs. An explicit old origin is rejected; respect other custom origins supplied by the user or environment. The old credential is never copied: ask for browser approval once on this machine, then reuse the new user-level credential across the owner's projects. Keep credentials out of project files and logs.
 
 ## Build, authorize and publish
 
 Use the project's actual output directory and build command. For example:
 
 ```sh
-cellapp deploy --project . --output dist --build 'npm run build'
+npm exec --yes --package=@cellapp/cli@latest -- cellapp deploy --project . --output dist --build 'npm run build'
 ```
 
-Omit `--build` for plain HTML. The CLI builds locally, validates static files, uploads them and publishes atomically. If device authorization starts, send the verification URL and code to the user and keep the command running while the user approves in the browser. Never request a password, cookie, access key or deployment credential. A chat reply is not browser approval.
+Omit `--build` for plain HTML. The client builds locally, validates static files, uploads them and publishes atomically. If device authorization starts, send the verification URL and code to the user and keep the command running while the user approves in the browser. Never request a password, cookie, access key or deployment credential. A chat reply is not browser approval.
 
 Report success only when the CLI returns `status: published`. Give the user the app URL and explain any remaining visitor access step. The first deployment may return an access key once: share it only with the requesting owner, never put it in a URL, repository, issue or project file. A public app still requires visitors to sign in to Cellapp; a restricted app also needs owner approval or key redemption.
 

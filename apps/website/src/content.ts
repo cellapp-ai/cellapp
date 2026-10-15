@@ -8,17 +8,16 @@ export const plans: Plan[] = [
 ];
 export interface DocSection { id: string; title: string; heading: string; intro: string; steps: { heading: string; text: string; code?: string; link?: { label: string; href: string } }[] }
 export const docs: DocSection[] = [
-  { id: 'getting-started', title: 'Getting Started', heading: 'Give your AI one request.', intro: 'Open the deployment guide in the project you are building. Your AI can inspect the project, install the CLI and deploy it; you approve access in the browser.', steps: [
+  { id: 'getting-started', title: 'Getting Started', heading: 'Give your AI one request.', intro: 'Open the deployment guide in the project you are building. Your AI prepares and publishes it; you approve access in the browser.', steps: [
     { heading: '1. Copy the deployment prompt', text: 'Use the prompt on the deployment page with the AI tool working in your project.', link: { label: 'Open the deployment guide', href: '/deploy/' } },
-    { heading: '2. Approve access', text: 'When the CLI requests device authorization, open the link and compare the code. Do not send your password or credential in chat.' },
+    { heading: '2. Approve access', text: 'When your AI shares an authorization link, open it and compare the code. Do not send your password or credential in chat.' },
     { heading: '3. Verify and share', text: 'Wait for a published result, then open the HTTPS URL. Check the main page, assets and nested routes before sharing.' },
   ] },
   { id: 'deploy', title: 'Deploy', heading: 'Build locally. Publish the result.', intro: 'Cellapp accepts static frontends. Vite, Astro, or an exported Next.js site can fit when the output does not need a running application server.', steps: [
-    { heading: 'Manual CLI path', text: 'Node.js 22.12 or later is required. Install @cellapp/cli from npm if needed, then run this command from the project directory, changing dist to your actual output folder.', code: 'cellapp deploy --project . --output dist --build "npm run build"' },
-    { heading: 'Agent instructions', text: 'The public runbook covers project inspection, CLI setup, browser authorization, publishing and recovery.', link: { label: 'Read Agent instructions', href: 'https://cellapp.ai/deploy/AGENTS.md' } },
+    { heading: 'Agent instructions', text: 'The public guide covers project inspection, browser authorization, publishing and recovery.', link: { label: 'Read Agent instructions', href: 'https://cellapp.ai/deploy/AGENTS.md' } },
+    { heading: 'Manage your applications', text: 'The dashboard shows your applications and authorizations after sign in.', link: { label: 'Open dashboard', href: '/dashboard' } },
   ] },
-  { id: 'reference', title: 'CLI / API Reference', heading: 'Know what the command does.', intro: 'The deployment example publishes a static directory. Refer to the current CLI help and project documentation for supported flags, authentication, and API contracts.', steps: [
-    { heading: 'Inspect available commands', text: 'Use the installed CLI help as the source of truth for your version.', code: 'cellapp --help' },
+  { id: 'reference', title: 'API Reference', heading: 'Understand the publishing flow.', intro: 'Your AI builds and publishes a static directory locally. The public client repository documents supported authentication and API contracts.', steps: [
     { heading: 'API reference', text: 'The public client repository publishes HTTP contracts for supported deployment and application data operations.', link: { label: 'View public client contracts', href: 'https://github.com/cellapp-ai/skills/tree/main/contracts' } },
   ] },
   { id: 'config', title: 'Configuration', heading: 'Keep secrets out of the build.', intro: 'Static frontend files can be read by people who load your app. Treat values embedded in the build as public.', steps: [
@@ -28,14 +27,14 @@ export const docs: DocSection[] = [
   { id: 'troubleshooting', title: 'Troubleshooting', heading: 'Find the missing step.', intro: 'Most static deployment problems are visible in the output folder or the browser network panel.', steps: [
     { heading: 'A blank page or missing assets', text: 'Confirm index.html exists and that asset URLs match your hosting path. Check the browser network panel for failed requests, then rebuild and deploy the output folder.' },
     { heading: 'A nested URL returns 404', text: 'Generate static entries for your routes or configure a host fallback that serves your entry document. Test a direct visit and a refresh, not just client-side navigation.' },
-    { heading: 'The upload did not finish', text: 'Read the CLI error, confirm the directory and network connection, and retry when the underlying issue is resolved. Include the command and error text when requesting help.', link: { label: 'Find support in the project', href: github } },
+    { heading: 'The upload did not finish', text: 'Ask your AI to check the build output and connection, then retry after fixing the reported problem. Include the error text when requesting help.', link: { label: 'Find support in the project', href: github } },
   ] },
 ];
 export interface Article { slug: string; category: string; date: string; readMinutes: number; title: string; summary: string; body: { heading: string; paragraphs: string[]; code?: string }[] }
 export const articles: Article[] = [
   { slug: 'ship-static', category: 'Shipping notes', date: '2026-09-18', readMinutes: 3, title: 'The calm path from local build to live link', summary: 'Why a static frontend deserves a dependable home, even when it starts as a demo.', body: [
     { heading: 'Static does not mean temporary.', paragraphs: ['Frontend teams already do the hard work: choose the tools, compose the interface, and produce a clean build. The final step is giving that build a dependable home.', 'A static folder is a useful boundary. It holds the page, styles, scripts, and assets needed to show the work. Keeping that boundary clear makes deployment easier to understand.'] },
-    { heading: 'The handoff should outlive the meeting.', paragraphs: ['A reviewer may not open the link while you are on the call. When the same address works tomorrow, the interface becomes a shared reference and feedback can stay attached to the work.', 'Before sharing, check the page in a fresh window. Follow its links, load a nested route directly, and make sure the demo has the configuration it needs.'], code: 'cellapp deploy --project . --output dist' },
+    { heading: 'The handoff should outlive the meeting.', paragraphs: ['A reviewer may not open the link while you are on the call. When the same address works tomorrow, the interface becomes a shared reference and feedback can stay attached to the work.', 'Before sharing, check the page in a fresh window. Follow its links, load a nested route directly, and make sure the demo has the configuration it needs.'] },
     { heading: 'Leave a clear next step.', paragraphs: ['Send a short explanation with the URL: what changed, what to try, and where feedback should go. If viewers need an access key, share it with the intended people. A good link and a little context make the handoff easier.'] },
   ] },
   { slug: 'frontend-handoff', category: 'Practice', date: '2026-08-29', readMinutes: 2, title: 'A better handoff for the next frontend review', summary: 'What makes a review link useful after the meeting ends.', body: [
@@ -53,7 +52,7 @@ export const articleBySlug = (slug: string) => articles.find(a => a.slug === slu
 export const routePaths = ['/', '/deploy/', '/pricing/', '/docs/', '/blog/', ...articles.map(a => `/blog/${a.slug}/`)];
 export const normalizeRoute = (route: string) => route === '/' ? '/' : `${route.replace(/\/+$/, '')}/`;
 export function metadata(route: string) {
-  if (route === '/deploy/') return { title: 'Deploy — Cellapp', description: 'Ask your coding agent to build and deploy a static app to Cellapp. One prompt handles CLI setup, authorization and publication.' };
+  if (route === '/deploy/') return { title: 'Deploy — Cellapp', description: 'Ask your coding agent to build and deploy a static app to Cellapp. One prompt handles authorization and publication.' };
   if (route === '/pricing/') return { title: 'Pricing — Cellapp', description: 'Compare Cellapp plan drafts, features, and monthly or annual pricing.' };
   if (route === '/docs/') return { title: 'Documentation — Cellapp', description: 'Prepare, deploy, verify, and share a static frontend with Cellapp.' };
   if (route === '/blog/') return { title: 'Journal — Cellapp', description: 'Notes on static shipping, frontend reviews, and dependable handoffs.' };

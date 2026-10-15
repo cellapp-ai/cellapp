@@ -37,7 +37,7 @@ try {
   const first = await deploy(client, project, {output: 'dist', spa: true}, () => {});
   assert.ok('accessKey' in first && first.accessKey && /^[a-f0-9]{64}$/.test(first.accessKey));
   const accessKey = first.accessKey;
-  assert.match(first.aliasUrl, /^https:\/\/control\.localhost:\d+\/a\/[a-z][a-z0-9-]+\/[a-z][a-z0-9-]+$/);
+  assert.match(first.aliasUrl, /^https:\/\/cellapp\.localhost:\d+\/a\/[a-z][a-z0-9-]+\/[a-z][a-z0-9-]+$/);
   const alias = await ownerContext.request.get(first.aliasUrl, {maxRedirects: 0});
   assert.equal(alias.status(), 307);
   assert.equal(alias.headers()['location'], first.url);
@@ -81,7 +81,7 @@ try {
   const pendingIdentity = await visitorContext.request.get(first.url + '/_cellapp/me');
   assert.equal(pendingIdentity.status(), 403);
   assert.equal((await pendingIdentity.json()).error, 'access_pending');
-  await ownerPage.goto(origin + '/applications/' + metadata.appId);
+  await ownerPage.goto(origin + '/dashboard/applications/' + metadata.appId);
   await ownerPage.getByText('Table version').waitFor();
   await ownerPage.getByRole('button', {name: 'Approve', exact: true}).click();
   await ownerPage.getByRole('button', {name: 'Confirm', exact: true}).click();
@@ -148,7 +148,7 @@ try {
     const errorBody: unknown = await unsupported.json();
     assert.ok(errorBody && typeof errorBody === 'object' && 'error' in errorBody && typeof errorBody.error === 'string');
   }
-  await ownerPage.goto(origin + '/applications/' + metadata.appId);
+  await ownerPage.goto(origin + '/dashboard/applications/' + metadata.appId);
   await ownerPage.getByRole('button', {name: 'Delete application'}).click();
   await ownerPage.getByRole('button', {name: 'Confirm', exact: true}).click();
   await ownerPage.getByRole('heading', {name: 'Applications', exact: true}).waitFor();

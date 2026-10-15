@@ -1,9 +1,10 @@
 import { afterEach, test } from 'node:test';
 import assert from 'node:assert/strict';
-import worker from './cloudflare-worker.mjs';
+import { readFileSync } from 'node:fs';
+import worker, { controlRoute } from './cloudflare-worker.mjs';
 
 const env = {
-  CONTROL_HOST: 'console.cellapp.ai',
+  CONTROL_HOST: 'cellapp.ai',
   APPS_DOMAIN: 'ce11.app',
   ORIGIN_URL: 'https://cellapp-example.us-west1.run.app',
   EDGE_ORIGIN_SECRET: 'a-dedicated-edge-secret-with-32-bytes',
@@ -11,6 +12,28 @@ const env = {
 
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
+
+test('every registered control endpoint has a declared apex route', () => {
+  const source = readFileSync(new URL('../apps/server/internal/hosting/server.go', import.meta.url), 'utf8');
+  const config = JSON.parse(readFileSync(new URL('./wrangler.edge.example.jsonc', import.meta.url), 'utf8'));
+  const routePatterns = config.routes.map(route => route.pattern);
+  const matches = path => routePatterns.some(pattern => {
+    if (!pattern.startsWith('cellapp.ai/')) return false;
+    const expression = new RegExp(`^${pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\*/g, '.*')}$`);
+    return expression.test(`cellapp.ai${path}`);
+  });
+  const registered = [...source.matchAll(/mux\.HandleFunc\("(?:GET|POST|PUT|DELETE) (\/[^"]+)"/g)].map(match => match[1]);
+  for (const route of registered) {
+    if (route === '/health') continue;
+    assert.ok(controlRoute(route), `unclassified Go control endpoint ${route}`);
+    const sample = route.replace(/\{[^}]+\}/g, 'a'.repeat(32));
+    assert.ok(matches(sample), `missing Worker route for ${route}`);
+  }
+  for (const path of ['/', '/deploy/', '/pricing/', '/docs/', '/blog/', '/assets/site.css']) {
+    assert.equal(controlRoute(path), false, path);
+    assert.equal(matches(path), false, path);
+  }
+});
 
 test('forwards control requests with authenticated original host and no redirect following', async () => {
   let forwarded;
@@ -20,12 +43,12 @@ test('forwards control requests with authenticated original host and no redirect
     options = opts;
     return new Response(null, { status: 302, headers: { Location: 'https://github.com/login', 'Set-Cookie': '__Host-owner=value; Secure; Path=/' } });
   };
-  const request = new Request('https://console.cellapp.ai/auth/login?next=%2Fapps', {
+  const request = new Request('https://cellapp.ai/auth/login?next=%2Fapps', {
     headers: { 'X-Cellapp-Original-Host': 'evil.example', 'X-Cellapp-Edge-Secret': 'forged', 'X-Forwarded-Host': 'evil.example' },
   });
   const response = await worker.fetch(request, env);
   assert.equal(forwarded.url, 'https://cellapp-example.us-west1.run.app/auth/login?next=%2Fapps');
-  assert.equal(forwarded.headers.get('X-Cellapp-Original-Host'), 'console.cellapp.ai');
+  assert.equal(forwarded.headers.get('X-Cellapp-Original-Host'), 'cellapp.ai');
   assert.equal(forwarded.headers.get('X-Cellapp-Edge-Secret'), env.EDGE_ORIGIN_SECRET);
   assert.equal(forwarded.headers.get('X-Forwarded-Host'), null);
   assert.equal(options.redirect, 'manual');
@@ -33,6 +56,31 @@ test('forwards control requests with authenticated original host and no redirect
   assert.equal(response.headers.get('Location'), 'https://github.com/login');
   assert.match(response.headers.get('Set-Cookie'), /__Host-owner=/);
   assert.equal(response.headers.get('Cache-Control'), 'private, no-store');
+});
+
+test('forwards root-host mutations and rejects public or retired paths', async () => {
+  let calls = 0;
+  globalThis.fetch = async request => {
+    calls++;
+    assert.equal(request.method, 'PUT');
+    assert.equal(new URL(request.url).pathname, '/api/console/profile');
+    assert.equal(new URL(request.url).search, '?view=full');
+    assert.equal(request.headers.get('Cookie'), '__Host-owner=session');
+    assert.equal(request.headers.get('Origin'), 'https://cellapp.ai');
+    assert.equal(await request.text(), '{"displayName":"Alice"}');
+    return Response.json({ displayName: 'Alice' });
+  };
+  const write = await worker.fetch(new Request('https://cellapp.ai/api/console/profile?view=full', {
+    method: 'PUT', headers: { Cookie: '__Host-owner=session', Origin: 'https://cellapp.ai' }, body: '{"displayName":"Alice"}',
+  }), env);
+  assert.equal(write.status, 200);
+  assert.equal(write.headers.get('Cache-Control'), 'private, no-store');
+  assert.equal(calls, 1);
+  for (const path of ['/', '/deploy/', '/assets/logo.svg', '/dashboard-extra', '/apps-extra', '/health']) {
+    assert.equal((await worker.fetch(new Request(`https://cellapp.ai${path}`), env)).status, 404, path);
+  }
+  assert.equal((await worker.fetch(new Request('https://console.cellapp.ai/apps', {headers: {Authorization: 'Bearer old'}}), env)).status, 404);
+  assert.equal(calls, 1);
 });
 
 test('preserves visitor upload method and body', async () => {
@@ -73,7 +121,7 @@ test('keeps publication paused while an old origin serves static during rollback
 
 test('rejects unknown and malformed hosts before contacting origin', async () => {
   globalThis.fetch = () => { throw new Error('unexpected origin fetch'); };
-  for (const host of ['unknown.example', 'ce11.app', 'a.b.ce11.app', 'evilconsole.cellapp.ai']) {
+  for (const host of ['unknown.example', 'ce11.app', 'a.b.ce11.app', 'evilconsole.cellapp.ai', 'console.cellapp.ai']) {
     const response = await worker.fetch(new Request(`https://${host}/`), env);
     assert.equal(response.status, 404, host);
   }
@@ -209,7 +257,7 @@ test('keeps login recovery on the origin and rejects an incomplete edge binding'
   globalThis.fetch = async request => {
     paths.push(new URL(request.url).pathname);
     if (paths.length === 1) return new Response('login required', { status: 401 });
-    return new Response(null, { status: 303, headers: { Location: 'https://console.cellapp.ai/auth/app' } });
+    return new Response(null, { status: 303, headers: { Location: 'https://cellapp.ai/auth/app' } });
   };
   const response = await edgeFetch(new Request(`https://${f.host}/`, { headers: { Accept: 'text/html' } }), f.env);
   assert.equal(response.status, 303);

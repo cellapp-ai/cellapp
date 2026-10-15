@@ -333,7 +333,7 @@ func TestIntegrationDeviceAuthorization(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	approve := f.request(t, "POST", "/device", url.Values{"code": {auth["userCode"].(string)}, "decision": {"approved"}}.Encode(), "", "control.localhost:8443", "__Host-owner="+browser)
+	approve := f.request(t, "POST", "/dashboard/device", url.Values{"code": {auth["userCode"].(string)}, "decision": {"approved"}}.Encode(), "", "control.localhost:8443", "__Host-owner="+browser)
 	if approve.Code != 200 {
 		t.Fatal(approve.Body.String())
 	}

@@ -183,7 +183,7 @@ func (s *Server) logoutBrowser(w http.ResponseWriter, r *http.Request) error {
 	}
 	_, e := s.DB.Exec(r.Context(), "DELETE FROM browser_sessions WHERE hash=$1", keyed(s.Config.Secret, cookieValue(r, "__Host-owner")))
 	cookie(w, "__Host-owner", "", -1)
-	http.Redirect(w, r, "/", 303)
+	http.Redirect(w, r, "/dashboard", 303)
 	return e
 }
 func (s *Server) createDevice(w http.ResponseWriter, r *http.Request) error {
@@ -193,7 +193,7 @@ func (s *Server) createDevice(w http.ResponseWriter, r *http.Request) error {
 	if e != nil {
 		return e
 	}
-	jsonResponse(w, 201, map[string]any{"deviceSecret": secret, "userCode": code, "verificationUri": s.Config.ControlOrigin + "/device?code=" + code, "expiresIn": 600, "interval": 5})
+	jsonResponse(w, 201, map[string]any{"deviceSecret": secret, "userCode": code, "verificationUri": s.Config.ControlOrigin + "/dashboard/device?code=" + code, "expiresIn": 600, "interval": 5})
 	return nil
 }
 func (s *Server) deviceDecision(w http.ResponseWriter, r *http.Request) error {
@@ -283,7 +283,7 @@ func (s *Server) revokeBrowser(w http.ResponseWriter, r *http.Request) error {
 	if e != nil {
 		return e
 	}
-	http.Redirect(w, r, "/credentials", 303)
+	http.Redirect(w, r, "/dashboard/credentials", 303)
 	return nil
 }
 func (s *Server) revokeCurrent(w http.ResponseWriter, r *http.Request) error {

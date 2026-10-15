@@ -119,7 +119,7 @@ export async function request<T>(path: string, parse: (value: unknown) => T, opt
   });
   if (response.status === 401) {
     // Reload discards every private component state, including a newly generated share key.
-    if (path !== '/session') window.location.replace(`/login?return=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+    if (path !== '/session') window.location.replace(`/dashboard/login?return=${encodeURIComponent(window.location.pathname + window.location.search)}`);
     throw new RequestError(401, 'Sign in to continue.');
   }
   const value: unknown = await response.json();

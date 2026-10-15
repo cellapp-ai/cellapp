@@ -68,7 +68,7 @@ func TestIntegrationDeviceDenialExpiryAndCSRF(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	req := httptest.NewRequest("POST", "https://control.localhost:8443/credentials/revoke", strings.NewReader("id=anything"))
+	req := httptest.NewRequest("POST", "https://control.localhost:8443/dashboard/credentials/revoke", strings.NewReader("id=anything"))
 	req.Header.Set("Cookie", "__Host-owner="+browser)
 	req.Header.Set("Origin", "https://attacker.example")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")

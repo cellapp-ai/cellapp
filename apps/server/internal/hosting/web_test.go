@@ -221,12 +221,12 @@ func TestWebCredentialFiltering(t *testing.T) {
 }
 
 func TestControlReturnPaths(t *testing.T) {
-	for _, value := range []string{"https://outside.example", "//outside.example", "/api/console/apps", "/applications/%2f%2foutside.example", "/notes", "/credentials\\outside"} {
-		if safeControlReturn(value) != "/" {
+	for _, value := range []string{"https://outside.example", "//outside.example", "/api/console/apps", "/dashboard/applications/%2f%2foutside.example", "/notes", "/dashboard/credentials\\outside", "/applications", "/credentials"} {
+		if safeControlReturn(value) != "/dashboard" {
 			t.Fatal("unsafe return", value)
 		}
 	}
-	for _, value := range []string{"/applications", "/applications/" + id(), "/device?code=ABC", "/credentials", "/profile"} {
+	for _, value := range []string{"/dashboard", "/dashboard/applications", "/dashboard/applications/" + id(), "/dashboard/device?code=ABC", "/dashboard/credentials", "/dashboard/profile"} {
 		if safeControlReturn(value) != value {
 			t.Fatal("valid return lost", value)
 		}
@@ -301,14 +301,14 @@ func TestWebStaticDelivery(t *testing.T) {
 		t.Fatal(e)
 	}
 	s := Server{Web: web}
-	for _, p := range []string{"/", "/login", "/applications", "/applications/" + id(), "/credentials", "/device?code=ABC", "/profile"} {
+	for _, p := range []string{"/dashboard", "/dashboard/", "/dashboard/login", "/dashboard/applications", "/dashboard/applications/" + id(), "/dashboard/credentials", "/dashboard/device?code=ABC", "/dashboard/profile"} {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest("GET", p, nil)
 		if e := s.webPage(w, r); e != nil || w.Code != 200 || !strings.Contains(w.Header().Get("Content-Security-Policy"), "script-src 'self'") {
 			t.Fatal(p, e)
 		}
 	}
-	for _, p := range []string{"/api/console/missing", "/missing.js", "/applications/bad"} {
+	for _, p := range []string{"/", "/login", "/applications", "/credentials", "/api/console/missing", "/missing.js", "/dashboard/applications/bad"} {
 		w := httptest.NewRecorder()
 		if e := s.webPage(w, httptest.NewRequest("GET", p, nil)); e == nil {
 			t.Fatal("unknown path accepted", p)
@@ -319,14 +319,14 @@ func TestWebStaticDelivery(t *testing.T) {
 	if e := os.Symlink(outside, filepath.Join(root, "assets", "secret.js")); e != nil {
 		t.Fatal(e)
 	}
-	for _, p := range []string{"/assets/missing.js", "/assets/secret.js", "/assets/../index.html"} {
+	for _, p := range []string{"/assets/test-abc.js", "/dashboard/assets/missing.js", "/dashboard/assets/secret.js", "/dashboard/assets/../index.html"} {
 		w := httptest.NewRecorder()
 		if e := s.webAsset(w, httptest.NewRequest("GET", p, nil)); e == nil {
 			t.Fatal("unsafe resource accepted", p)
 		}
 	}
 	w := httptest.NewRecorder()
-	if e := s.webAsset(w, httptest.NewRequest("GET", "/assets/test-abc.js", nil)); e != nil || w.Code != 200 || !strings.Contains(w.Header().Get("Cache-Control"), "immutable") {
+	if e := s.webAsset(w, httptest.NewRequest("GET", "/dashboard/assets/test-abc.js", nil)); e != nil || w.Code != 200 || !strings.Contains(w.Header().Get("Cache-Control"), "immutable") {
 		t.Fatal(e)
 	}
 	if _, e := LoadWebFS(t.TempDir()); e == nil {

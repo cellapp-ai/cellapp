@@ -41,21 +41,21 @@ func TestAuthenticatedOriginalHost(t *testing.T) {
 		r.Header.Set("X-Cellapp-Edge-Secret", proof)
 		return s.requestHost(r)
 	}
-	if got := request(origin, "console.cellapp.ai", secret); got != "console.cellapp.ai" {
+	if got := request(origin, "cellapp.ai", secret); got != "cellapp.ai" {
 		t.Fatalf("authenticated control host = %q", got)
 	}
 	if got := request(origin, strings.Repeat("a", 32)+".ce11.app", secret); got != strings.Repeat("a", 32)+".ce11.app" {
 		t.Fatalf("authenticated visitor host = %q", got)
 	}
 	for _, proof := range []string{"", "invalid"} {
-		if got := request(origin, "console.cellapp.ai", proof); got != origin {
+		if got := request(origin, "cellapp.ai", proof); got != origin {
 			t.Fatalf("forged host accepted with proof %q", proof)
 		}
 	}
-	if got := request("unknown.example", "console.cellapp.ai", secret); got != "unknown.example" {
+	if got := request("unknown.example", "cellapp.ai", secret); got != "unknown.example" {
 		t.Fatalf("assertion from wrong origin accepted: %q", got)
 	}
-	if got := request("console.cellapp.ai", "unknown.example", ""); got != "console.cellapp.ai" {
+	if got := request("cellapp.ai", "unknown.example", ""); got != "cellapp.ai" {
 		t.Fatalf("direct host changed: %q", got)
 	}
 }

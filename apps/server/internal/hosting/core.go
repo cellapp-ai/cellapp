@@ -131,7 +131,7 @@ func safeControlReturn(value string) string {
 	value = safeReturn(value)
 	u, e := url.ParseRequestURI(value)
 	if e != nil || u.IsAbs() || u.Fragment != "" || (!webUIPath(u.Path) && u.Path != "/auth/app") {
-		return "/"
+		return "/dashboard"
 	}
 	return value
 }

@@ -1,6 +1,6 @@
 # 边缘静态分发与回滚
 
-本方案仅在独立候选环境验收后切换正式访客域名。控制台、登录、授权变更、`/_cellapp/*` 和 `/rest/v1/*` 仍进 Cloud Run；Worker 仅在访客域名处理静态 GET/HEAD。当前线上 GCS 路径在切换前保持可用。
+访客静态 GET/HEAD 在独立候选环境验收后由 Worker 和私有 R2 提供；登录、授权变更、`/_cellapp/*` 和 `/rest/v1/*` 仍进 Cloud Run。根域名的 Dashboard 与控制 API 使用同一 Worker 的独立路径路由，公开官网仍由 Pages 提供；根域名切换见[切换清单](root-domain-cutover.md)。以下历史记录描述 2026-10-14 的访客边缘交付，不代表根域名迁移已上线。
 
 ## 内部授权协议
 

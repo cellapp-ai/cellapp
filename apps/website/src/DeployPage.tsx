@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 
-export const deploymentPrompt = 'Please develop and deploy the current project to Cellapp. Read https://cellapp.ai/deploy/AGENTS.md first. Check and install the Cellapp CLI yourself if needed, build and publish the project, and send me the browser authorization link and code when approval is needed. After publication, give me the app URL and any remaining steps.';
+export const deploymentPrompt = 'Please develop and deploy the current project to Cellapp. Read https://cellapp.ai/deploy/AGENTS.md first. Prepare and publish the project for me. Send me the browser authorization link and code when approval is needed. After publication, give me the app URL and any remaining steps.';
 
 export default function DeployPage() {
   const [copyStatus, setCopyStatus] = useState('');
@@ -36,7 +36,7 @@ export default function DeployPage() {
     <section className="wrap deploy-hero">
       <div className="eyebrow">Build · deploy · share</div>
       <h1>From idea to<br /><em>a live app.</em></h1>
-      <p>Give one request to the AI tool already working on your project. It checks the code, prepares the CLI and publishes the finished site. You approve access in your browser.</p>
+      <p>Give one request to the AI tool already working on your project. It checks the code and publishes the finished site. You approve access in your browser.</p>
     </section>
 
     <section className="wrap deploy-prompt" aria-labelledby="deploy-prompt-title">
@@ -49,7 +49,7 @@ export default function DeployPage() {
       <div className="section-label">How it works</div>
       <h2 id="deploy-flow-title">Three steps to a link.</h2>
       <ol>
-        <li><span>01</span><h3>Ask your AI</h3><p>It reads the project, confirms a static build and installs the Cellapp CLI if needed.</p></li>
+        <li><span>01</span><h3>Ask your AI</h3><p>It reads the project, confirms a static build and prepares the publishing tools.</p></li>
         <li><span>02</span><h3>Approve in your browser</h3><p>On first use, open the verification link and compare the code. Keep passwords and credentials out of the chat.</p></li>
         <li><span>03</span><h3>Get the URL</h3><p>The build and upload run locally. A successful publication returns a stable HTTPS address for your app.</p></li>
       </ol>
@@ -60,6 +60,6 @@ export default function DeployPage() {
       <div><div className="section-label">Access and data</div><h2>What happens next?</h2><p>Visitors sign in to Cellapp; restricted apps need an additional grant. Controlled application tables can store shared data. Paid app sales are a future direction and are not available in this flow.</p></div>
     </section>
 
-    <section className="wrap deploy-next"><p>For agents: <a href="https://cellapp.ai/deploy/AGENTS.md">read the full deployment instructions</a>. For manual setup: <a href="https://github.com/cellapp-ai/skills">see the CLI and Skill documentation</a>.</p></section>
+    <section className="wrap deploy-next"><p>For agents: <a href="https://cellapp.ai/deploy/AGENTS.md">read the full deployment instructions</a>. Manage your apps in the <a href="/dashboard">dashboard</a>.</p></section>
   </React.Fragment>;
 }

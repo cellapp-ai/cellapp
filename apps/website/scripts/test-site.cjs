@@ -52,9 +52,7 @@ const routes = ['/', '/deploy/', '/pricing/', '/docs/', '/blog/', '/blog/ship-st
     await page.getByRole('link', { name: 'Explore Ship' }).click();
     await page.waitForURL('**/docs/?plan=ship&cadence=yearly');
     await page.getByRole('status').filter({ hasText: 'Ship plan preview' }).waitFor();
-    await page.getByRole('button', { name: 'Copy terminal command' }).first().click();
-    await page.getByText('Copied to clipboard', { exact: true }).waitFor();
-    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'cellapp deploy --project . --output dist --build "npm run build"');
+    assert.equal(await page.getByRole('link', { name: 'Open dashboard' }).getAttribute('href'), '/dashboard');
     await page.getByRole('link', { name: 'Configuration', exact: true }).first().click();
     await page.waitForFunction(() => document.querySelector('aside a[aria-current="location"]')?.getAttribute('href') === '#config');
     results.push('Keyboard pricing cadence, exact savings, selected plan handoff, clipboard, docs active state');
@@ -65,7 +63,10 @@ const routes = ['/', '/deploy/', '/pricing/', '/docs/', '/blog/', '/blog/ship-st
     const instructions = await context.request.get(targetUrl + '/deploy/AGENTS.md');
     assert.equal(instructions.status(), 200);
     assert.match(instructions.headers()['content-type'], /text\/markdown|text\/plain/);
-    assert.match(await instructions.text(), /npm install -g @cellapp\/cli@latest/);
+    const guide = await instructions.text();
+    assert.match(guide, /npm exec --yes --package=@cellapp\/cli@latest -- cellapp --help/);
+    assert.doesNotMatch(guide, /npm install -g/);
+    assert.equal(await page.getByRole('navigation', { name: 'Primary navigation' }).getByRole('link', { name: 'Dashboard' }).getAttribute('href'), '/dashboard');
     results.push('Deployment prompt copy and public Agent Markdown');
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(targetUrl + '/deploy/');
@@ -97,6 +98,7 @@ const routes = ['/', '/deploy/', '/pricing/', '/docs/', '/blog/', '/blog/ship-st
     await nojs.close();
     await page.goto('file://' + path.join(root, 'dist/bundle.html'));
     await page.getByRole('heading', { level: 1, name: /Ship a frontend/ }).waitFor();
+    assert.equal(await page.getByRole('navigation', { name: 'Primary navigation' }).getByRole('link', { name: 'Dashboard' }).getAttribute('href'), 'https://cellapp.ai/dashboard');
     await page.getByRole('navigation', { name: 'Primary navigation' }).getByRole('link', { name: 'Pricing', exact: true }).click();
     await page.getByRole('button', { name: 'Yearly', exact: true }).click();
     await page.getByRole('link', { name: 'Explore Ship' }).click();

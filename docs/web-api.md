@@ -1,6 +1,6 @@
 # 浏览器控制面 API
 
-Cellapp Web 通过控制域下的 `/api/console` 访问浏览器专用 JSON 接口。此契约属于主仓库，不属于公开 CLI 的 Bearer HTTP 契约。
+Cellapp Web 从 `https://cellapp.ai/dashboard` 通过同域 `/api/console` 访问浏览器专用 JSON 接口。官网公开页面由 Pages 提供，管理页面和 API 由路径路由转发到控制服务。此契约属于主仓库，不属于公开 CLI 的 Bearer HTTP 契约。
 
 ## 认证与来源
 
@@ -8,7 +8,7 @@ Cellapp Web 通过控制域下的 `/api/console` 访问浏览器专用 JSON 接�
 
 所有 POST/PUT/DELETE 要求 `Origin` 与 `CONTROL_ORIGIN` 精确一致，缺失或不匹配返回 `403 origin_rejected`。有请求体时要求 `application/json`，否则返回 `415 json_required`；设备决策和资料更新最多 1 MiB，只允许声明的字段和一个 JSON 值，无效内容返回 `400 invalid_json`。接口不开放携带凭证的 CORS。API 和页面使用 `private, no-store`。
 
-GET `/auth/login?return=<本站管理路径>` 和 `/auth/callback` 保留现有登录流程。设备链接仍为 `/device?code=...`；打开或登录不会自动批准。CLI 的 `/apps`、设备创建/轮询、发布等路径及 Bearer 授权保持原契约。
+GET `/auth/login?return=<本站管理路径>` 和 `/auth/callback` 保留现有登录流程，回调 URL 为 `https://cellapp.ai/auth/callback`。管理路径统一位于 `/dashboard`，包括 `/dashboard/applications/{app}`、`/dashboard/credentials`、`/dashboard/device`、`/dashboard/profile` 与 `/dashboard/login`。设备链接为 `/dashboard/device?code=...`；打开或登录不会自动批准。CLI 的 `/apps`、设备创建/轮询、发布等路径及 Bearer 授权保持原契约，但基域迁移到 `https://cellapp.ai`。旧 `console.cellapp.ai` API 不再转发。
 
 ## 接口
 

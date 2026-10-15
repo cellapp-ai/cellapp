@@ -4,7 +4,7 @@
 
 从 `.env.example` 创建自己的配置，设置 `NODE_ENV=production` 和 `AUTH_MODE=github`，替换 GitHub OAuth、S3、数据库、SECRET 和域名。GitHub OAuth App 的 callback URL 必须精确设置为 `${CONTROL_ORIGIN}/auth/callback`。`AUTH_MODE=dev` 只供 localhost 非生产开发，生产或非本地控制域会拒绝启动。服务启动时检查必填配置和正数额度；SECRET 必须稳定保存，变更会使所有摘要凭证不可用。
 
-控制域和应用域必须使用不同注册域，例如 `console.cellapp.ai` 与 `*.ce11.app`；生产环境设置 `APPS_DOMAIN=ce11.app`，并为泛域名配置 DNS 与 TLS 证书。应用主机名使用 `{应用slug}-{用户slug}.ce11.app`，保留的旧 ID 域名继续解析。精确 Host 路由隔离应用；反向代理终止 TLS 并保留原始 Host，不将应用内容与控制面共享缓存。后端端口仅暴露给代理，不能开放给公网。网关响应为 `private, no-store`。
+控制域和应用域必须使用不同注册域，例如 `cellapp.ai` 与 `*.ce11.app`；生产环境设置 `APPS_DOMAIN=ce11.app`，并为泛域名配置 DNS 与 TLS 证书。应用主机名使用 `{应用slug}-{用户slug}.ce11.app`，保留的旧 ID 域名继续解析。精确 Host 路由隔离应用；反向代理终止 TLS 并保留原始 Host，不将应用内容与控制面共享缓存。后端端口仅暴露给代理，不能开放给公网。网关响应为 `private, no-store`。
 
 对象 bucket 必须私有。S3 使用通用配置变量，生产显式注入 `S3_ACCESS_KEY_ID` 和 `S3_SECRET_ACCESS_KEY`，Endpoint 必须为 HTTPS；服务只探测配置的 Bucket，不自动创建生产 Bucket。本地 MinIO、凭证兼容和已有后端升级见 [S3 存储配置](s3-storage.md)。运行匿名 GET 验收时应返回拒绝，不得返回对象内容；仅服务端具备读写权限。不要在客户端发放对象读取签名 URL。对象上传使用有界临时文件，配置足够的临时磁盘并限制并发入口，上传失败不会发布版本。
 
@@ -66,7 +66,7 @@ docker compose -f infra/compose.yaml exec -T postgres psql -U cellapp_rename_adm
 
 `npm run build` 生成服务端和完整 Web 静态产物。将两者放在同一版本的发布目录，正常服务显式设置 `WEB_ROOT=/absolute/release/web`；默认目录仅适用于仓库开发。启动时检查 index 和 assets，缺失则失败，不回退到旧首页。数据库迁移、清理、暂停和统计维护命令独立于静态目录。
 
-控制域提供 `/login`、`/applications`、`/applications/<id>`、`/credentials` 和 `/device`，有效深链可刷新。`/api/console` 使用浏览器会话和严格 Origin，CLI `/apps` 等接口继续要求 Bearer。未知资源/API 返回 404，API 与 HTML 不缓存，带指纹资源可长期缓存。CSP 限制资源来自本站并禁止嵌入；不放宽访客网关边界。
+控制域提供 `/dashboard/login`、`/dashboard/applications`、`/dashboard/applications/<id>`、`/dashboard/credentials` 和 `/dashboard/device`，有效深链可刷新。`/api/console` 使用浏览器会话和严格 Origin，CLI `/apps` 等接口继续要求 Bearer。未知资源/API 返回 404，API 与 HTML 不缓存，带指纹资源可长期缓存。CSP 限制资源来自本站并禁止嵌入；不放宽访客网关边界。
 
 部署后检查登录、应用列表、深链与资源加载，并回归 CLI 与访客域。回滚恢复配套的前一版可执行文件和 Web 目录，不恢复已重置的密钥、已撤销凭证或已删除应用。浏览器接口字段及失败恢复见 [Web API](web-api.md)，本轮验收见 [Web 控制面验收](web-control-plane-verification.md)。
 
@@ -74,7 +74,7 @@ docker compose -f infra/compose.yaml exec -T postgres psql -U cellapp_rename_adm
 
 ### Cloudflare 直连模式
 
-如需由 Cloudflare 为 `console.cellapp.ai` 和 `*.ce11.app` 提供 HTTPS，并绕开 Google HTTPS 负载均衡，在 `infra/cloudrun.json` 中增加：
+如需由 Cloudflare 为 `cellapp.ai` 的管理路径和 `*.ce11.app` 提供 HTTPS，并绕开 Google HTTPS 负载均衡，在 `infra/cloudrun.json` 中增加：
 
 ```json
 "cloudflare_edge": {
@@ -85,11 +85,11 @@ docker compose -f infra/compose.yaml exec -T postgres psql -U cellapp_rename_adm
 
 `origin_host` 是该 Cloud Run 服务的稳定 `run.app` 主机名；`secret` 是只授予服务运行账号读取权限的 Secret Manager `name:version` 引用。为 Cloudflare Worker 单独生成随机密钥，并将同一个值设置为 Worker 的 `EDGE_ORIGIN_SECRET` secret binding。不要把密钥值写入配置、仓库或 Worker 源码。Worker 源码见 [cloudflare-worker.mjs](../infra/cloudflare-worker.mjs)，需要配置 `CONTROL_HOST`、`APPS_DOMAIN`、`ORIGIN_URL` 和 `EDGE_ORIGIN_SECRET`；`PROBE_HOST` 只用于临时 workers.dev 测试。
 
-此模式下发布脚本将服务 ingress 设为 `all`，因为 Cloudflare Worker 从公网访问 `run.app`。Go 服务仅在请求的 Host 等于配置的 `origin_host` 且两个专用请求头的密钥匹配时，才接受 `X-Cellapp-Original-Host`；其他直接访问保持原有未知域名响应。Cloudflare 的 DNS 记录要开启代理，并为 `console.cellapp.ai/*` 与 `*.ce11.app/*` 安装 Worker 路由。正式 Worker 名为 `cellapp-edge`；由于它自行请求 `run.app`，这两条代理 A 记录可使用 Cloudflare 推荐的保留占位地址 `192.0.2.0`，不依赖 Google 负载均衡 IP。确保 Cloudflare 安全设置不会对正常访客持续发起人机验证。Cloudflare 免费 Workers 有每日请求额度，达到额度后的行为应按所选套餐设置与监控；它仍产生 Cloud Run、出网、数据库和存储费用。
+此模式下发布脚本将服务 ingress 设为 `all`，因为 Cloudflare Worker 从公网访问 `run.app`。Go 服务仅在请求的 Host 等于配置的 `origin_host` 且两个专用请求头的密钥匹配时，才接受 `X-Cellapp-Original-Host`；其他直接访问保持原有未知域名响应。Cloudflare 的 DNS 记录要开启代理，并按[根域名切换清单](root-domain-cutover.md)为 `cellapp.ai` 的管理路径安装 Worker 路由，同时保留 `*.ce11.app/*` 访客路由。公开官网路径仍由 Pages 提供，旧 `console.cellapp.ai` API 路由必须移除。正式 Worker 名为 `cellapp-edge`；由于它自行请求 `run.app`，访客域的代理 A 记录可使用 Cloudflare 推荐的保留占位地址 `192.0.2.0`，不依赖 Google 负载均衡 IP；`cellapp.ai` 继续使用 Pages custom domain 的 DNS 记录。确保 Cloudflare 安全设置不会对正常访客持续发起人机验证。Cloudflare 免费 Workers 有每日请求额度，达到额度后的行为应按所选套餐设置与监控；它仍产生 Cloud Run、出网、数据库和存储费用。
 
 私有 R2 静态分发、60 秒授权、每月访客计数、迁移验收和服务/Worker 组合回滚见[边缘静态分发与回滚](edge-delivery.md)。该流程在独立候选链路验收后另行切换正式域名；部署脚本不会因 `edge_delivery` 配置存在而自动修改 Cloudflare 路由。
 
-初次切换时先用独立测试 Worker 和服务验证 `/login` 返回 200、未知访客域返回 404 且带 `X-Request-ID`，并确认直接 `run.app` 访问无法作为有效控制域。随后打开 DNS 代理，检查两个真实域名的 HTTPS 证书、GitHub 登录与访客资源。若 Google 负载均衡尚在，可将 DNS 改回仅 DNS 作为临时回退。当前环境已移除负载均衡；后续应用回滚应保留 Cloudflare Worker、代理 DNS 和专用回源密钥，将正式 Cloud Run 服务流量切回兼容该回源协议的旧修订版本。不能把 DNS 改回已释放的旧 IP。
+初次切换时先用独立测试 Worker 和服务验证 `/dashboard/login` 返回 200、未知访客域返回 404 且带 `X-Request-ID`，并确认直接 `run.app` 访问无法作为有效控制域。随后打开 DNS 代理，检查两个真实域名的 HTTPS 证书、GitHub 登录与访客资源。若 Google 负载均衡尚在，可将 DNS 改回仅 DNS 作为临时回退。当前环境已移除负载均衡；后续应用回滚应保留 Cloudflare Worker、代理 DNS 和专用回源密钥，将正式 Cloud Run 服务流量切回兼容该回源协议的旧修订版本。不能把 DNS 改回已释放的旧 IP。
 
 根目录 `Dockerfile` 从同一提交构建 Go server 与 Web console，并把 Caddy 放在单一运行镜像中。容器内 Go 只监听 loopback，Caddy 监听 Cloud Run 的 `$PORT`；外部 HTTPS 由 Google 负载均衡或 Cloudflare 终止，生产不使用本地 `tls internal`。未配置 `cloudflare_edge` 时，Cloud Run service ingress 为 `internal-and-cloud-load-balancing`，控制域和访客域的 Host 原样转发给 Go。当前按直接连接地址限流，代理后的请求可能共享来源配额；上线前按实际流量评估，不因转发头而放宽授权。
 
@@ -111,7 +111,7 @@ Google Cloud Storage 可通过 XML API 与现有 S3 客户端兼容：`s3_endpoi
 python3 scripts/deploy-cloud-run.py --config infra/cloudrun.json
 ```
 
-脚本以提交 SHA 和时间标记镜像；未提交源码会提示，生产建议在干净 Git 检出上运行。构建完成后记录不可变 digest 作为实际交付标识。它先更新并执行 `SERVICE-migrate` job，成功后更新 `SERVICE-cleanup` job，再以不接流量方式部署服务 revision。Cloudflare 模式会给候选修订版本加 0% 流量标签，确认公开 `/health` 和 Cloud Run 实际健康状态后切流量；两种模式都用 HTTPS 检查控制域 `/login` 和无效访客子域的路由。失败时脚本会标记部署未完成；查看对应 Cloud Build、Cloud Run job execution 和 revision，排除原因后重试。迁移成功但后续失败时数据库可能已升级，不应回滚数据库或删除对象；数据库变更必须保持与上一服务版本兼容。
+脚本以提交 SHA 和时间标记镜像；未提交源码会提示，生产建议在干净 Git 检出上运行。构建完成后记录不可变 digest 作为实际交付标识。它先更新并执行 `SERVICE-migrate` job，成功后更新 `SERVICE-cleanup` job，再以不接流量方式部署服务 revision。Cloudflare 模式会给候选修订版本加 0% 流量标签，确认公开 `/health` 和 Cloud Run 实际健康状态后切流量；两种模式都用 HTTPS 检查控制域 `/dashboard/login` 和无效访客子域的路由。失败时脚本会标记部署未完成；查看对应 Cloud Build、Cloud Run job execution 和 revision，排除原因后重试。迁移成功但后续失败时数据库可能已升级，不应回滚数据库或删除对象；数据库变更必须保持与上一服务版本兼容。
 
 切流量前记下旧 revision。若新 revision 上线后验收失败，将服务流量切回旧 revision（替换示例值），保留数据库、对象和 Secret：
 

@@ -15,6 +15,17 @@ function originalHost(request, env) {
   return null;
 }
 
+// The apex route is shared with Pages. Only control namespaces may reach Cloud Run.
+export function controlRoute(path) {
+  return path === '/dashboard' || path.startsWith('/dashboard/') ||
+    path === '/api/console' || path.startsWith('/api/console/') ||
+    path === '/auth' || path.startsWith('/auth/') ||
+    path === '/device-authorizations' || path.startsWith('/device-authorizations/') ||
+    path === '/apps' || path.startsWith('/apps/') ||
+    path === '/limits' || path === '/credentials/current' ||
+    path === '/a' || path.startsWith('/a/');
+}
+
 function cookieValue(request, name) {
   const entry = (request.headers.get('Cookie') || '').split(';').map(part => part.trim()).find(part => part.startsWith(`${name}=`));
   return entry ? entry.slice(name.length + 1) : '';
@@ -155,6 +166,7 @@ export default {
     const host = originalHost(request, env);
     if (!host || !env.EDGE_ORIGIN_SECRET || !env.ORIGIN_URL) return new Response('Not found', { status: 404 });
     const pathname = new URL(request.url).pathname;
+    if (host === env.CONTROL_HOST && !controlRoute(pathname)) return new Response('Not found', { status: 404 });
     if (pathname === '/_cellapp/edge-grant') return new Response('Not found', { status: 404 });
     if (env.PUBLICATION_PAUSED === 'true' && publicationMutation(request, pathname, host, env)) {
       return Response.json({ error: 'publication_paused', message: 'Application publication is temporarily paused' },

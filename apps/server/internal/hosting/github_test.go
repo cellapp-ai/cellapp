@@ -59,7 +59,7 @@ func TestGitHubOAuthPKCEAndUserIdentity(t *testing.T) {
 
 func TestIntegrationLoginStateAndLogout(t *testing.T) {
 	f := setup(t)
-	login := f.request(t, "GET", "/auth/login?return=/device", nil, "", "control.localhost:8443", "")
+	login := f.request(t, "GET", "/auth/login?return=/dashboard/device", nil, "", "control.localhost:8443", "")
 	if login.Code != 302 {
 		t.Fatal(login.Body.String())
 	}
@@ -70,12 +70,12 @@ func TestIntegrationLoginStateAndLogout(t *testing.T) {
 	if bad.Code != 401 {
 		t.Fatal("wrong state accepted")
 	}
-	login = f.request(t, "GET", "/auth/login?return=/device", nil, "", "control.localhost:8443", "")
+	login = f.request(t, "GET", "/auth/login?return=/dashboard/device", nil, "", "control.localhost:8443", "")
 	auth, _ = url.Parse(login.Header().Get("Location"))
 	cookies = login.Result().Cookies()
 	loginCookie = cookies[0].Name + "=" + cookies[0].Value
 	callback := f.request(t, "GET", "/auth/callback?code=valid&state="+auth.Query().Get("state"), nil, "", "control.localhost:8443", loginCookie)
-	if callback.Code != 303 || callback.Header().Get("Location") != "/device" {
+	if callback.Code != 303 || callback.Header().Get("Location") != "/dashboard/device" {
 		t.Fatal("callback failed", callback.Body.String())
 	}
 	ownerCookie := ""
@@ -102,8 +102,8 @@ func TestDevelopmentLoginUsesFixedLocalOwner(t *testing.T) {
 	f := setup(t)
 	f.server.Config.AuthMode = "dev"
 	f.server.Identity = nil
-	login := f.request(t, "GET", "/auth/login?return=/credentials", nil, "", "control.localhost:8443", "")
-	if login.Code != http.StatusSeeOther || login.Header().Get("Location") != "/credentials" {
+	login := f.request(t, "GET", "/auth/login?return=/dashboard/credentials", nil, "", "control.localhost:8443", "")
+	if login.Code != http.StatusSeeOther || login.Header().Get("Location") != "/dashboard/credentials" {
 		t.Fatal("development login failed", login.Body.String())
 	}
 	var issuer, subject string

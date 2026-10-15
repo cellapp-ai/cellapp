@@ -3,9 +3,20 @@
   "main": "./cloudflare-worker.mjs",
   "compatibility_date": "2026-10-14",
   "workers_dev": true,
+  "routes": [
+    { "pattern": "cellapp.ai/dashboard*", "zone_name": "cellapp.ai" },
+    { "pattern": "cellapp.ai/api/console*", "zone_name": "cellapp.ai" },
+    { "pattern": "cellapp.ai/auth*", "zone_name": "cellapp.ai" },
+    { "pattern": "cellapp.ai/device-authorizations*", "zone_name": "cellapp.ai" },
+    { "pattern": "cellapp.ai/apps*", "zone_name": "cellapp.ai" },
+    { "pattern": "cellapp.ai/limits*", "zone_name": "cellapp.ai" },
+    { "pattern": "cellapp.ai/credentials/current*", "zone_name": "cellapp.ai" },
+    { "pattern": "cellapp.ai/a/*", "zone_name": "cellapp.ai" },
+    { "pattern": "*.ce11.app/*", "zone_name": "ce11.app" }
+  ],
   "vars": {
-    "CONTROL_HOST": "console.example.com",
-    "APPS_DOMAIN": "apps.example.net",
+    "CONTROL_HOST": "cellapp.ai",
+    "APPS_DOMAIN": "ce11.app",
     "ORIGIN_URL": "https://cellapp-example.us-west1.run.app",
     "EDGE_STATIC_MODE": "r2",
     "PUBLICATION_PAUSED": "true",

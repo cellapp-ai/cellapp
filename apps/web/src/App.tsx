@@ -21,9 +21,9 @@ const applications = list(application);
 const credentials = list(credential);
 function date(value: string) { return new Date(value).toLocaleString('en-GB', { timeZone: 'UTC' }) + ' UTC'; }
 function loginReturn(): string {
-  const value = new URLSearchParams(window.location.search).get('return') ?? '/applications';
+  const value = new URLSearchParams(window.location.search).get('return') ?? '/dashboard';
   const path = value.split('?')[0] ?? '';
-  return ['/applications', '/credentials', '/device', '/profile'].includes(path) || /^\/applications\/[a-f0-9]{32}$/.test(path) ? value : '/applications';
+  return ['/dashboard', '/dashboard/applications', '/dashboard/credentials', '/dashboard/device', '/dashboard/profile'].includes(path) || /^\/dashboard\/applications\/[a-f0-9]{32}$/.test(path) ? value : '/dashboard';
 }
 function Feedback({ children, error = false }: { children: ReactNode; error?: boolean }) {
   return <p className={error ? 'feedback error' : 'feedback'} role={error ? 'alert' : 'status'}>{children}</p>;
@@ -69,7 +69,7 @@ function Applications({ navigate }: { navigate: Navigate }) {
   const { state, reload } = useResource('/apps', applications);
   return <><div className="page-heading"><p className="eyebrow">YOUR WORKSPACE</p><h1>Applications</h1><p>Manage access to your hosted applications.</p></div>
     <LoadingError state={state} retry={reload} />
-    {state.kind === 'ready' && (state.value.length === 0 ? <section className="empty"><h2>No applications yet</h2><p>Use the Cellapp deployment Skill in your AI conversation, or run <code>cellapp deploy</code> from your local project. Your applications will appear here after deployment.</p><button onClick={() => reload()}>Refresh applications</button></section> : <div className="application-list">{state.value.map(app => <ConsoleLink className="application-row" href={`/applications/${app.id}`} navigate={navigate} key={app.id}><div><h2>{app.name}</h2><p>@{app.namespace}/{app.slug}</p><p>{app.url}</p></div><span className="badge">{app.suspended ? 'Suspended' : app.activeDeployment ? 'Published' : 'Not published'}</span><span aria-hidden="true">↗</span></ConsoleLink>)}</div>)}
+    {state.kind === 'ready' && (state.value.length === 0 ? <section className="empty"><h2>No applications yet</h2><p>Ask your AI assistant to deploy this project with the Cellapp Skill. Your applications will appear here after deployment.</p><button onClick={() => reload()}>Refresh applications</button></section> : <div className="application-list">{state.value.map(app => <ConsoleLink className="application-row" href={`/dashboard/applications/${app.id}`} navigate={navigate} key={app.id}><div><h2>{app.name}</h2><p>@{app.namespace}/{app.slug}</p><p>{app.url}</p></div><span className="badge">{app.suspended ? 'Suspended' : app.activeDeployment ? 'Published' : 'Not published'}</span><span aria-hidden="true">↗</span></ConsoleLink>)}</div>)}
   </>;
 }
 function SlugEditor({ label, value, maxLength, save }: { label: string; value: string; maxLength: number; save: (next: string) => Promise<void> }) {
@@ -110,7 +110,7 @@ function ApplicationPage({ id, navigate }: { id: string; navigate: Navigate }) {
         setOperation(null); reload();
       } else {
         await request(`/apps/${id}`, success('deleted'), { method: 'DELETE' });
-        navigate('/applications');
+        navigate('/dashboard/applications');
       }
     } catch (caught) {
       setOperation(null);
@@ -127,10 +127,10 @@ function ApplicationPage({ id, navigate }: { id: string; navigate: Navigate }) {
       setError(`${message(caught)} Refresh access to check the current state.`);
     } finally { setBusy(false); setAccessAction(null); }
   };
-  return <><ConsoleLink className="back" href="/applications" navigate={navigate}>← Applications</ConsoleLink><LoadingError state={state} retry={reload} />
+  return <><ConsoleLink className="back" href="/dashboard/applications" navigate={navigate}>← Applications</ConsoleLink><LoadingError state={state} retry={reload} />
     {state.kind === 'ready' && <><div className="page-heading"><p className="eyebrow">APPLICATION</p><h1>{state.value.name}</h1><span className="badge">{state.value.suspended ? 'Suspended' : state.value.release ? 'Published' : 'Not published'}</span></div>
       <section className="panel"><h2>Application address</h2><p><code>@{state.value.namespace}/{state.value.slug}</code></p><Copy value={state.value.aliasUrl} label="Copy share link" /><Copy value={state.value.url} label="Copy address" /><a className="text-link" href={state.value.url} target="_blank" rel="noopener noreferrer">Open application ↗</a><p>Address format: <code>app-slug-user-slug</code>. Existing addresses stay assigned to this application.</p><AppSlugSettings id={id} slug={state.value.slug} userSlug={state.value.namespace} reload={reload} /><p>Visitors sign in with Cellapp. {state.value.visibility === 'public' ? 'Any signed-in user can access this application.' : 'Restricted access requires approval or an access key.'}</p></section>
-      <section className="panel"><h2>Current release</h2>{state.value.release ? <dl><dt>Release</dt><dd><code>{state.value.release.id}</code></dd><dt>Published</dt><dd>{state.value.release.publishedAt ? date(state.value.release.publishedAt) : 'Not published'}</dd><dt>Files</dt><dd>{state.value.release.fileCount}</dd><dt>Size</dt><dd>{state.value.release.bytes.toLocaleString('en-GB')} bytes</dd><dt>Navigation</dt><dd>{state.value.release.spa ? 'Single page application' : 'Static pages'}</dd></dl> : <p>No release has been published. Deploy from your local project using the Skill or CLI.</p>}</section>
+      <section className="panel"><h2>Current release</h2>{state.value.release ? <dl><dt>Release</dt><dd><code>{state.value.release.id}</code></dd><dt>Published</dt><dd>{state.value.release.publishedAt ? date(state.value.release.publishedAt) : 'Not published'}</dd><dt>Files</dt><dd>{state.value.release.fileCount}</dd><dt>Size</dt><dd>{state.value.release.bytes.toLocaleString('en-GB')} bytes</dd><dt>Navigation</dt><dd>{state.value.release.spa ? 'Single page application' : 'Static pages'}</dd></dl> : <p>No release has been published. Ask your AI assistant to deploy this project with the Cellapp Skill.</p>}</section>
       <section className="panel"><h2>Access and lifecycle</h2><dl><dt>Visibility</dt><dd>{state.value.visibility === 'public' ? 'Public to signed-in users' : 'Restricted'}</dd></dl><div className="actions"><button disabled={busy} onClick={() => setAccessAction({ path: `/apps/${id}/visibility/${state.value.visibility === 'public' ? 'restricted' : 'public'}`, title: state.value.visibility === 'public' ? 'Restrict access?' : 'Make public?', explanation: state.value.visibility === 'public' ? 'Users without an explicit grant will lose access immediately.' : 'Every signed-in Cellapp user will be able to open this application.' })}>{state.value.visibility === 'public' ? 'Restrict access' : 'Make public'}</button><button disabled={busy} onClick={() => setOperation('key')}>Rotate access key</button><button className="danger" disabled={busy} onClick={() => setOperation('delete')}>Delete application</button><button disabled={busy} onClick={() => { setNewKey(''); reload(); accessState.reload(); dataState.reload(); }}>Refresh details</button></div></section>
     </>}
     <section className="panel"><h2>Application tables</h2><LoadingError state={dataState.state} retry={dataState.reload} />{dataState.state.kind === 'ready' && <dl><dt>Provisioning</dt><dd>{dataState.state.value.state}</dd><dt>Table version</dt><dd>{dataState.state.value.version}</dd></dl>}</section>
@@ -218,7 +218,7 @@ function Workspace({ owner }: { owner: Session }) {
   };
   const logout = async () => {
     setBusy(true); setError('');
-    try { await request('/logout', success('loggedOut'), { method: 'POST' }); window.location.replace('/login'); }
+    try { await request('/logout', success('loggedOut'), { method: 'POST' }); window.location.replace('/dashboard/login'); }
     catch (caught) { setError(`${message(caught)} Sign out may already have completed. Reload to check.`); setBusy(false); }
   };
   useEffect(() => {
@@ -231,19 +231,19 @@ function Workspace({ owner }: { owner: Session }) {
     window.addEventListener('keydown', escape);
     return () => window.removeEventListener('keydown', escape);
   }, [menu]);
-  const id = path.startsWith('/applications/') ? path.slice('/applications/'.length) : '';
+  const id = path.startsWith('/dashboard/applications/') ? path.slice('/dashboard/applications/'.length) : '';
   return <div className="workspace min-w-0"><header className="sidebar">
-    <ConsoleLink className="brand" href="/applications" navigate={navigate} aria-label="Cellapp applications"><img src="/logos/cellapp-landscape.svg" alt="Cellapp" /></ConsoleLink>
+    <ConsoleLink className="brand" href="/dashboard" navigate={navigate} aria-label="Cellapp applications"><img src="/dashboard/logos/cellapp-landscape.svg" alt="Cellapp" /></ConsoleLink>
     <button className="menu-toggle" ref={toggle} aria-label={menu ? 'Close menu' : 'Open menu'} aria-expanded={menu} aria-controls="navigation" onClick={() => setMenu(value => !value)}>Menu</button>
     <nav id="navigation" aria-label="Workspace" className={menu ? 'navigation is-open' : 'navigation'}>
-      <ConsoleLink href="/applications" navigate={navigate} aria-current={path.startsWith('/applications') ? 'page' : undefined}>Applications</ConsoleLink>
-      <ConsoleLink href="/credentials" navigate={navigate} aria-current={path === '/credentials' ? 'page' : undefined}>Deployment credentials</ConsoleLink>
-      <ConsoleLink href="/device" navigate={navigate} aria-current={path === '/device' ? 'page' : undefined}>Authorize tool</ConsoleLink>
-      <ConsoleLink href="/profile" navigate={navigate} aria-current={path === '/profile' ? 'page' : undefined}>Profile settings</ConsoleLink>
+      <ConsoleLink href="/dashboard/applications" navigate={navigate} aria-current={path === '/dashboard' || path.startsWith('/dashboard/applications') ? 'page' : undefined}>Applications</ConsoleLink>
+      <ConsoleLink href="/dashboard/credentials" navigate={navigate} aria-current={path === '/dashboard/credentials' ? 'page' : undefined}>Deployment credentials</ConsoleLink>
+      <ConsoleLink href="/dashboard/device" navigate={navigate} aria-current={path === '/dashboard/device' ? 'page' : undefined}>Authorize tool</ConsoleLink>
+      <ConsoleLink href="/dashboard/profile" navigate={navigate} aria-current={path === '/dashboard/profile' ? 'page' : undefined}>Profile settings</ConsoleLink>
     </nav>
     <div className="account"><p className="eyebrow">{owner.authMode === 'dev' ? 'LOCAL DEVELOPMENT' : 'SIGNED IN'}</p><code title={owner.ownerId}>{owner.ownerId.slice(0, 8)}…</code><button disabled={busy} onClick={() => { void logout(); }}>{busy ? 'Signing out…' : 'Sign out'}</button></div>
   </header><main id="content" tabIndex={-1} className="content">{error && <Feedback error>{error}</Feedback>}
-    {path === '/credentials' ? <Credentials /> : path === '/device' ? <Device key={route} /> : path === '/profile' ? <ProfilePage owner={owner} /> : /^[a-f0-9]{32}$/.test(id) ? <ApplicationPage key={id} id={id} navigate={navigate} /> : path === '/applications' ? <Applications navigate={navigate} /> : <><h1>Page not found</h1><ConsoleLink href="/applications" navigate={navigate}>Return to applications</ConsoleLink></>}
+    {path === '/dashboard/credentials' ? <Credentials /> : path === '/dashboard/device' ? <Device key={route} /> : path === '/dashboard/profile' ? <ProfilePage owner={owner} /> : /^[a-f0-9]{32}$/.test(id) ? <ApplicationPage key={id} id={id} navigate={navigate} /> : path === '/dashboard' || path === '/dashboard/applications' ? <Applications navigate={navigate} /> : <><h1>Page not found</h1><ConsoleLink href="/dashboard" navigate={navigate}>Return to applications</ConsoleLink></>}
   </main></div>;
 }
 export function App() {
@@ -253,16 +253,17 @@ export function App() {
     const controller = new AbortController();
     request('/session', session, { signal: controller.signal }).then(owner => {
       if (controller.signal.aborted) return;
-      if (window.location.pathname === '/' || window.location.pathname === '/login') window.history.replaceState(null, '', window.location.pathname === '/login' ? loginReturn() : '/applications');
+      if (window.location.pathname === '/dashboard/') window.history.replaceState(null, '', '/dashboard' + window.location.search);
+      if (window.location.pathname === '/dashboard/login') window.history.replaceState(null, '', loginReturn());
       setState({ kind: 'ready', value: owner });
     }, error => {
       if (controller.signal.aborted) return;
       if (error instanceof RequestError && error.status === 401) {
-        if (window.location.pathname !== '/login') window.history.replaceState(null, '', `/login?return=${encodeURIComponent(window.location.pathname === '/' ? '/applications' : window.location.pathname + window.location.search)}`);
+        if (window.location.pathname !== '/dashboard/login') window.history.replaceState(null, '', `/dashboard/login?return=${encodeURIComponent(window.location.pathname + window.location.search)}`);
         setState({ kind: 'signed-out' });
       } else setState({ kind: 'error', message: 'Unable to connect. Try again when the service is available.' });
     });
     return () => controller.abort();
   }, [version]);
-  return <><a className="skip-link" href="#content" onClick={() => document.getElementById('content')?.focus()}>Skip to content</a>{state.kind === 'ready' ? <Workspace owner={state.value} /> : <main id="content" tabIndex={-1} className="login"><img className="login-logo" src="/logos/cellapp-landscape.svg" alt="Cellapp" /><h1>{state.kind === 'signed-out' ? 'Sign in to Cellapp' : state.kind === 'error' ? 'Cellapp is unavailable' : 'Opening Cellapp…'}</h1>{state.kind === 'signed-out' && <p>Manage your applications and deployment access.</p>}{state.kind === 'signed-out' ? <a className="primary button" href={`/auth/login?return=${encodeURIComponent(loginReturn())}`}>Continue to sign in</a> : state.kind === 'error' ? <><Feedback error>{state.message}</Feedback><button onClick={() => setVersion(value => value + 1)}>Try again</button></> : <Feedback>Checking your session…</Feedback>}</main>}</>;
+  return <><a className="skip-link" href="#content" onClick={() => document.getElementById('content')?.focus()}>Skip to content</a>{state.kind === 'ready' ? <Workspace owner={state.value} /> : <main id="content" tabIndex={-1} className="login"><img className="login-logo" src="/dashboard/logos/cellapp-landscape.svg" alt="Cellapp" /><h1>{state.kind === 'signed-out' ? 'Sign in to Cellapp' : state.kind === 'error' ? 'Cellapp is unavailable' : 'Opening Cellapp…'}</h1>{state.kind === 'signed-out' && <p>Manage your applications and deployment access.</p>}{state.kind === 'signed-out' ? <a className="primary button" href={`/auth/login?return=${encodeURIComponent(loginReturn())}`}>Continue to sign in</a> : state.kind === 'error' ? <><Feedback error>{state.message}</Feedback><button onClick={() => setVersion(value => value + 1)}>Try again</button></> : <Feedback>Checking your session…</Feedback>}</main>}</>;
 }

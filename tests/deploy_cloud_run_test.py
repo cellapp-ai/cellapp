@@ -366,9 +366,10 @@ class ReleaseTests(unittest.TestCase):
         self.assertNotIn("--no-traffic", dict(calls)["service deploy"])
 
     def test_route_failure_is_not_success(self):
-        with patch.object(deploy, "probe", side_effect=[(200, "control-id"), (200, "wrong-route-id")]):
+        with patch.object(deploy, "probe", side_effect=[(200, "control-id"), (200, "wrong-route-id")]) as probe:
             with self.assertRaises(deploy.DeploymentError):
                 deploy.verify_routes(self.config)
+            self.assertEqual(probe.call_args_list[0].args[0], self.config["control_origin"] + "/dashboard/login")
 
 
 if __name__ == "__main__":

@@ -32,10 +32,10 @@ func LoadWebFS(directory string) (fs.FS, error) {
 }
 
 func webUIPath(p string) bool {
-	if p == "/" || p == "/login" || p == "/applications" || p == "/credentials" || p == "/device" || p == "/profile" {
+	if p == "/dashboard" || p == "/dashboard/" || p == "/dashboard/login" || p == "/dashboard/applications" || p == "/dashboard/credentials" || p == "/dashboard/device" || p == "/dashboard/profile" {
 		return true
 	}
-	return strings.HasPrefix(p, "/applications/") && idPattern.MatchString(strings.TrimPrefix(p, "/applications/"))
+	return strings.HasPrefix(p, "/dashboard/applications/") && idPattern.MatchString(strings.TrimPrefix(p, "/dashboard/applications/"))
 }
 func (s *Server) webPage(w http.ResponseWriter, r *http.Request) error {
 	if s.Web == nil || !webUIPath(r.URL.Path) {
@@ -54,8 +54,8 @@ func (s *Server) webPage(w http.ResponseWriter, r *http.Request) error {
 	return e
 }
 func (s *Server) webAsset(w http.ResponseWriter, r *http.Request) error {
-	name := strings.TrimPrefix(r.URL.Path, "/")
-	if s.Web == nil || !fs.ValidPath(name) || path.Clean(name) != name || strings.ContainsAny(name, "\\%") {
+	name := strings.TrimPrefix(r.URL.Path, "/dashboard/")
+	if s.Web == nil || !strings.HasPrefix(r.URL.Path, "/dashboard/") || !fs.ValidPath(name) || path.Clean(name) != name || strings.ContainsAny(name, "\\%") || (!strings.HasPrefix(name, "assets/") && !strings.HasPrefix(name, "logos/")) {
 		return fail(404, "not_found", "Resource not found")
 	}
 	for _, part := range strings.Split(name, "/") {

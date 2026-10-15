@@ -71,7 +71,7 @@ func TestBrowserEndToEnd(t *testing.T) {
 	server := httptest.NewUnstartedServer(nil)
 	edgeAppID := ""
 	_, port, _ := net.SplitHostPort(server.Listener.Addr().String())
-	f.server.Config.ControlOrigin = "https://control.localhost:" + port
+	f.server.Config.ControlOrigin = "https://cellapp.localhost:" + port
 	f.server.Config.AppPort = port
 	f.server.Identity = browserIdentity{origin: f.server.Config.ControlOrigin}
 	root, e := filepath.Abs("../../../..")
@@ -127,7 +127,7 @@ func TestBrowserEndToEnd(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	cert := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "Cellapp isolated browser test"}, DNSNames: []string{"control.localhost", "*.apps.localhost"}, NotBefore: time.Now().Add(-time.Minute), NotAfter: time.Now().Add(time.Hour), KeyUsage: x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, IsCA: true, BasicConstraintsValid: true}
+	cert := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "Cellapp isolated browser test"}, DNSNames: []string{"cellapp.localhost", "*.apps.localhost"}, NotBefore: time.Now().Add(-time.Minute), NotAfter: time.Now().Add(time.Hour), KeyUsage: x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, IsCA: true, BasicConstraintsValid: true}
 	parent := cert
 	var signer crypto.Signer = key
 	caPEM := []byte(nil)
@@ -200,7 +200,7 @@ func TestBrowserEndToEnd(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		f.server.Config.EdgeOriginHost = "control.localhost:" + port
+		f.server.Config.EdgeOriginHost = "cellapp.localhost:" + port
 		f.server.Config.EdgeOriginSecret = "isolated-browser-edge-origin-secret-32-bytes"
 		f.server.Config.EdgeGrantKeyID = "browser-key"
 		f.server.Config.EdgeGrantSigningKey = private

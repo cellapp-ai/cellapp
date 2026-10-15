@@ -55,8 +55,11 @@ try {
     const value = path === '/apps' ? mode === 'empty' ? [] : [app] : path === '/credentials' ? mode === 'empty' ? [] : [{id: credentialID, createdAt:'2026-09-01T00:00:00Z', expiresAt:'2026-10-01T00:00:00Z'}] : path === '/profile' ? {displayName,userSlug} : path.endsWith('/access') ? {requests: [], grants: []} : path.endsWith('/data') ? {state:'ready',version:1,digest:'f'.repeat(64)} : {...app, release: null};
     await route.fulfill({json: value});
   });
-  await page.goto(origin + '/applications');
+  await page.goto(origin + '/dashboard/');
   await page.getByRole('heading', {name: 'Applications', exact: true}).waitFor();
+  assert.equal(new URL(page.url()).pathname, '/dashboard');
+  assert.equal(await page.locator('link[rel="icon"]').getAttribute('href'), '/dashboard/logos/cellapp-square.svg');
+  assert((await page.locator('script[src]').first().getAttribute('src'))?.startsWith('/dashboard/assets/'));
   await page.getByRole('heading', {name: 'Shared notes'}).waitFor();
   await page.getByText('@demo/shared-notes').waitFor();
   assert.equal(await page.title(), 'Cellapp');
@@ -83,7 +86,7 @@ try {
   assert.equal(sessionRequests,1);
   await page.getByRole('link',{name:'Profile settings'}).click();
   await page.getByRole('heading',{name:'Profile settings'}).waitFor();
-  assert.equal(new URL(page.url()).pathname,'/profile');
+  assert.equal(new URL(page.url()).pathname,'/dashboard/profile');
   assert.equal(sessionRequests,1);
   await page.goBack();await page.getByRole('heading',{name:'Applications',exact:true}).waitFor();
   assert.equal(sessionRequests,1);
@@ -129,11 +132,11 @@ try {
   mode='lost';await page.getByRole('button',{name:'Rotate access key',exact:true}).click();const sent=mutations;await page.getByRole('button',{name:'Confirm',exact:true}).click();
   await page.getByRole('alert').filter({hasText:'may already have taken effect'}).waitFor();assert.equal(mutations,sent+1);
   checks.push('Details deep link, unpublished state, confirmation/cancel focus, transient key and uncertain write without retry');
-  mode='normal';await page.goto(origin+'/credentials');await page.getByRole('button',{name:'Revoke',exact:true}).click();await page.getByRole('button',{name:'Confirm',exact:true}).click();await page.getByRole('status').filter({hasText:'credential revoked'}).waitFor();
-  await page.goto(origin+'/device?code=ABC123');await page.getByLabel('Authorization code').waitFor();assert.equal(await page.getByLabel('Authorization code').inputValue(),'ABC123');assert.equal(deviceDecision,'');
+  mode='normal';await page.goto(origin+'/dashboard/credentials');await page.getByRole('button',{name:'Revoke',exact:true}).click();await page.getByRole('button',{name:'Confirm',exact:true}).click();await page.getByRole('status').filter({hasText:'credential revoked'}).waitFor();
+  await page.goto(origin+'/dashboard/device?code=ABC123');await page.getByLabel('Authorization code').waitFor();assert.equal(await page.getByLabel('Authorization code').inputValue(),'ABC123');assert.equal(deviceDecision,'');
   await page.getByRole('button',{name:'Deny access'}).click();await page.getByRole('status').filter({hasText:'Authorization denied'}).waitFor();assert.equal(deviceDecision,'denied');
   checks.push('Credential confirmation and explicit device decision with prefilled code');
-  await page.goto(origin+'/profile');await page.getByRole('heading',{name:'Profile settings'}).waitFor();
+  await page.goto(origin+'/dashboard/profile');await page.getByRole('heading',{name:'Profile settings'}).waitFor();
   await page.getByLabel('Name',{exact:true}).fill('Alice');
   await page.getByRole('button',{name:'Save name'}).click();
   await page.getByRole('status').filter({hasText:'Display name saved'}).waitFor();
@@ -154,7 +157,7 @@ try {
     if ([390,1440].includes(width)) await page.screenshot({path: `${artifacts}/profile-${width}.png`,fullPage:true});
   }
   checks.push('Profile deep link, save, reload, validation, discard and responsive layout');
-  mode='empty';await page.goto(origin+'/applications');await page.getByRole('heading',{name:'No applications yet'}).waitFor();
+  mode='empty';await page.goto(origin+'/dashboard/applications');await page.getByRole('heading',{name:'No applications yet'}).waitFor();
   mode='error';await page.getByRole('button',{name:'Refresh applications'}).click();await page.getByRole('alert').filter({hasText:'Service temporarily unavailable'}).waitFor();
   assert.equal(await page.getByRole('heading',{name:'No applications yet'}).count(),0);
   mode='normal';await page.getByRole('button',{name:'Try again'}).click();await page.getByRole('heading',{name:'Shared notes'}).waitFor();
@@ -163,9 +166,11 @@ try {
   await page.emulateMedia({reducedMotion:'reduce'});assert.equal(await page.locator('button').first().evaluate(e => getComputedStyle(e).transitionDuration),'0s');
   await page.setViewportSize({width:720,height:800});await page.locator('html').evaluate(e => {e.style.fontSize='200%';});assert(await page.evaluate(() => document.documentElement.scrollWidth<=innerWidth));
   checks.push('Empty/error/retry, long content, text zoom and reduced motion');
-  mode='expired';await page.goto(origin+'/applications');await page.getByRole('link',{name:'Continue to sign in'}).waitFor();assert.equal(new URL(page.url()).pathname,'/login');
-  const disconnected = await browser.newContext();const disconnectedPage = await disconnected.newPage();await disconnectedPage.goto(origin);await disconnectedPage.getByRole('alert').filter({hasText:'Unable to connect'}).waitFor();await disconnected.close();
-  const noScript=await browser.newContext({javaScriptEnabled:false,viewport:{width:320,height:800}});const plain=await noScript.newPage();await plain.goto(origin);assert(await plain.getByText(/Enable JavaScript/).isVisible());await noScript.close();
+  mode='expired';await page.goto(origin+'/dashboard/device?code=ABC123');await page.getByRole('link',{name:'Continue to sign in'}).waitFor();assert.equal(new URL(page.url()).pathname,'/dashboard/login');
+  assert.equal(new URLSearchParams(new URL(page.url()).search).get('return'), '/dashboard/device?code=ABC123');
+  assert.equal(new URL((await page.getByRole('link',{name:'Continue to sign in'}).getAttribute('href')) ?? '', origin).searchParams.get('return'), '/dashboard/device?code=ABC123');
+  const disconnected = await browser.newContext();const disconnectedPage = await disconnected.newPage();await disconnectedPage.goto(origin+'/dashboard/');await disconnectedPage.getByRole('alert').filter({hasText:'Unable to connect'}).waitFor();await disconnected.close();
+  const noScript=await browser.newContext({javaScriptEnabled:false,viewport:{width:320,height:800}});const plain=await noScript.newPage();await plain.goto(origin+'/dashboard/');assert(await plain.getByText(/Enable JavaScript/).isVisible());await noScript.close();
   checks.push('Session expiry, standalone unavailable service, meaningful no-script text');
   assert.deepEqual(failures,[]);
   await writeFile(`${artifacts}/report.json`,JSON.stringify({kind:'UI fixtures and standalone preview; not real control-domain acceptance',checks,failures},null,2));
