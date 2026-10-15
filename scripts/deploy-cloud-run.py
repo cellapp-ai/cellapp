@@ -338,7 +338,8 @@ def probe(url):
 def verify_routes(c):
     control_status, control_id = probe(c["control_origin"] + "/dashboard/login")
     invalid_status, invalid_id = probe("https://cellapp-invalid-probe." + c["apps_domain"] + "/")
-    if control_status != 200 or not control_id or invalid_status != 404 or not invalid_id:
+    # R2 edge delivery can return the origin's denial body without its request ID.
+    if control_status != 200 or not control_id or invalid_status != 404 or (not c.get("edge_delivery") and not invalid_id):
         raise DeploymentError("custom domain checks failed; inspect edge routing and TLS; revision remains available for rollback")
 
 
