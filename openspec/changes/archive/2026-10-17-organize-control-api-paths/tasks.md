@@ -26,3 +26,7 @@
 
 - 验收满足后按项目流程同步主规格、归档并提交；跨仓库先处理 skills，再处理主仓 gitlink。
 - 服务和边缘路由先上线并验证，新版 CLI/Skill 后发布；旧路径退役需另起变更。Git 推送不等于 Cloud Run、Worker 或 npm 发布。
+
+## Archive note
+
+- 2026-10-17：用户在获知 4.2 未完成后要求归档。本次归档保留该任务未勾选；独立候选 Host 与有效线上凭证的正向授权验收仍需后续单独完成，实际已执行范围见 `docs/control-api-verification.md`。

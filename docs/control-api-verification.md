@@ -21,5 +21,5 @@ Go 隔离测试覆盖设备待批准、限频、拒绝、过期、重放和无�
 - Cloud Run `cellapp-511002/us-west1`：镜像 `sha256:419a0e65f0ba1609daf38df12cc291511d80ded6a678ef2de99890264aa65254`；迁移执行 `cellapp-migrate-vrj8p` 成功；修订版 `cellapp-00018-n8f` 通过候选健康检查并接收 100% 流量。上一服务修订版为 `cellapp-00017-p9s`。
 - 正式 Worker `cellapp-edge`：版本 `694b3ade-2919-4dd5-9667-45f37f42557c` 接收 100% 流量；原有 R2、限流、回源 Secret 与 9 条路由保留，新增 `cellapp.ai/api/control/v1*`，10 条正式路由均已从 Cloudflare 控制面核对。上一版本为 `b443a8b6-5fcd-4da8-95d2-cb1e23788933`。
 - 正式域名只读检查：`/dashboard/login` 返回 `200`；新旧 `/limits` 均返回相同的 `401 authorization_required` JSON；新路径无效 Cookie、控制台无效 Bearer 均返回 `401`；未知及近似新 API 路径、未知应用 Host 的控制 API 返回 `404`。网络偶发超时的探针已用可达 Cloudflare 地址重试；未将超时记为通过。
-- 受控联调使用正式根域的**新路径**短暂挂候选 Worker，未获得独立候选 Host，也未使用有效线上 Cookie/Bearer 完成正向授权检查；旧路径的发布暂停仅在 Worker 本地测试中验证。故 OpenSpec 4.2 保持未完成，规格暂不归档。线上测试没有写入生产应用或数据。
+- 受控联调使用正式根域的**新路径**短暂挂候选 Worker，未获得独立候选 Host，也未使用有效线上 Cookie/Bearer 完成正向授权检查；旧路径的发布暂停仅在 Worker 本地测试中验证。OpenSpec 4.2 保持未完成；2026-10-17 按用户要求带此警告归档，未把缺口写成通过。线上测试没有写入生产应用或数据。
 - 本次不发布 npm；`@cellapp/cli` 线上仍为 `0.2.1`，本地待发布版本为 `0.3.0`。公开 Skill 若先推送，其 `@latest` 命令仍运行旧 CLI，服务与 Worker 保留旧路径兼容。
