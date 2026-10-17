@@ -1,6 +1,6 @@
 # Cellapp product website
 
-This directory is the frontend project inside the main Cellapp repository (React 18, TypeScript, Vite and Tailwind). `src/` contains application code, `public/` contains public assets, and `scripts/` contains build and verification tools. This directory's `package.json` and `pnpm-lock.yaml` cover its own dependencies, independently of the parent npm workspace. `dist/` contains complete pre-rendered pages with inline application scripts and styles. Every article and `/deploy/` has its own static entry. JavaScript enhances pricing, navigation and copying; page content is available without it. The public Agent runbook is shipped at `/deploy/AGENTS.md`.
+This directory is the frontend project inside the main Cellapp repository (React 18, TypeScript, Vite and Tailwind). `src/` contains application code, `public/` contains public assets, and `scripts/` contains build and verification tools. This directory's `package.json` and `pnpm-lock.yaml` cover its own dependencies, independently of the parent npm workspace. `dist/` contains complete pre-rendered pages with inline application scripts and styles. Every article and `/deploy/` has its own static entry. JavaScript enhances pricing, navigation and copying; page content is available without it. The public Agent runbook and user-app design guidance are shipped in English and Simplified Chinese at `/deploy/AGENTS.md`, `/deploy/AGENTS.zh-CN.md`, `/deploy/app-design.md`, and `/deploy/app-design.zh-CN.md`.
 
 ## Project standards
 
@@ -12,9 +12,9 @@ From `apps/website`, install dependencies with `corepack pnpm install --frozen-l
 
 ## Build and preview
 
-Run `corepack pnpm run build`. It type-checks the source, builds with Vite and Parcel, inlines the application with HTML-inline, and exports complete HTML pages to `dist/`. The build copies the public `/deploy/AGENTS.md` alongside the static pages. Intermediate builds and the inline template are confined to the ignored `.build/` directory; the build does not install dependencies.
+Run `corepack pnpm run build`. It type-checks the source, builds with Vite and Parcel, inlines the application with HTML-inline, and exports complete HTML pages to `dist/`. The build copies both language editions of the public deployment runbook and user-app design guide alongside the static pages. Intermediate builds and the inline template are confined to the ignored `.build/` directory; the build does not install dependencies.
 
-Run `corepack pnpm run preview` to serve the complete `dist/` folder at `http://127.0.0.1:4181`. Set `PORT` to choose a different port. The route directories support direct visits and refreshes without a server rewrite. Deploy the **whole dist folder**, including `/deploy/` and `/deploy/AGENTS.md`. `dist/bundle.html` is the portable single-file version; it uses query-based navigation when opened as a local file.
+Run `corepack pnpm run preview` to serve the complete `dist/` folder at `http://127.0.0.1:4181`. Set `PORT` to choose a different port. The route directories support direct visits and refreshes without a server rewrite. Deploy the **whole dist folder**, including both language editions of the deployment runbook and design guide under `/deploy/`. `dist/bundle.html` is the portable single-file version; it uses query-based navigation when opened as a local file.
 
 ## Cloudflare deployment
 
@@ -22,7 +22,7 @@ The public site is deployed to the Cloudflare Pages project `cellapp-website`, w
 
 ## Verify
 
-With that preview running, run `corepack pnpm test`. The browser check covers all eight routes, refreshes, metadata, four viewport widths, accessibility checks, keyboard actions, pricing handoff, exact clipboard text, the deployment prompt and Markdown guide, no-JavaScript reading/navigation, and local-file bundle navigation. It saves screenshots and a validation report in `test-results/`. Set `TARGET_URL` and `PW_ARTIFACT_DIR` to override the preview URL or artifact folder. Set `CHROME_PATH` to an installed Chrome executable or install the Playwright browser with `corepack pnpm exec playwright install chromium`.
+With that preview running, run `corepack pnpm test`. The browser check covers all eight routes, refreshes, metadata, four viewport widths, accessibility checks, keyboard actions, pricing handoff, exact clipboard text, the deployment prompt and the public Agent Markdown guides in English and Chinese, no-JavaScript reading/navigation, and local-file bundle navigation. It saves screenshots and a validation report in `test-results/`. Set `TARGET_URL` and `PW_ARTIFACT_DIR` to override the preview URL or artifact folder. Set `CHROME_PATH` to an installed Chrome executable or install the Playwright browser with `corepack pnpm exec playwright install chromium`.
 
 ## Content
 

@@ -1,5 +1,7 @@
 # Deploy to Cellapp — instructions for coding agents
 
+[简体中文版](./AGENTS.zh-CN.md)
+
 The user wants the current project developed and deployed to Cellapp. Run the official published client yourself for building, upload and verification. The user only needs to approve device authorization in the browser. Do not implement Cellapp's upload protocol yourself or ask the user to install a CLI.
 
 ## Inspect the project
@@ -7,6 +9,10 @@ The user wants the current project developed and deployed to Cellapp. Run the of
 Work from the user's project directory. Read its package manifest, lockfile, build scripts, static output and any existing `cellapp.json`. Determine a working build command and the output directory containing `index.html`. For plain HTML, omit the build command. Add `--spa` only for client-side routes. Reuse the association in `cellapp.json` on later deployments. Ask only when the build command or output directory is genuinely ambiguous.
 
 Cellapp hosts static frontend files. It does not run Next.js SSR, a custom server, serverless functions or a private backend. If the project needs a server, explain the blocker or prepare a genuine static export when that preserves the intended behavior. Do not put private credentials in bundled frontend files; admitted visitors can read them.
+
+## Develop the interface when needed
+
+If the request includes developing or substantially redesigning an app and the user has not supplied UI direction, read the [user-app design guidance](https://cellapp.ai/deploy/app-design.md) and apply it as adaptable defaults without asking the user to opt in. Follow explicit user design instructions and the project's established conventions. Choose the framework and styling approach yourself from the app's needs; the guidance does not require a particular tool or Cellapp-branded look. If the request is only to deploy an existing app, continue the deployment flow without redesigning it. If the guidance is unavailable, use these precedence rules and continue the requested work.
 
 ## Run the published client on demand
 
