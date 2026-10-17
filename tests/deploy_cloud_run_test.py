@@ -371,6 +371,14 @@ class ReleaseTests(unittest.TestCase):
                 deploy.verify_routes(self.config)
             self.assertEqual(probe.call_args_list[0].args[0], self.config["control_origin"] + "/dashboard/login")
 
+    def test_r2_denial_may_omit_origin_request_id(self):
+        config = {**self.config, "edge_delivery": {"grant_key_id": "test"}}
+        with patch.object(deploy, "probe", side_effect=[(200, "control-id"), (404, None)]):
+            deploy.verify_routes(config)
+        with patch.object(deploy, "probe", side_effect=[(200, "control-id"), (404, None)]):
+            with self.assertRaises(deploy.DeploymentError):
+                deploy.verify_routes(self.config)
+
 
 if __name__ == "__main__":
     unittest.main()
