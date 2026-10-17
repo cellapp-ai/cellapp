@@ -23,3 +23,11 @@ Go 隔离测试覆盖设备待批准、限频、拒绝、过期、重放和无�
 - 正式域名只读检查：`/dashboard/login` 返回 `200`；新旧 `/limits` 均返回相同的 `401 authorization_required` JSON；新路径无效 Cookie、控制台无效 Bearer 均返回 `401`；未知及近似新 API 路径、未知应用 Host 的控制 API 返回 `404`。网络偶发超时的探针已用可达 Cloudflare 地址重试；未将超时记为通过。
 - 受控联调使用正式根域的**新路径**短暂挂候选 Worker，未获得独立候选 Host，也未使用有效线上 Cookie/Bearer 完成正向授权检查；旧路径的发布暂停仅在 Worker 本地测试中验证。OpenSpec 4.2 保持未完成；2026-10-17 按用户要求带此警告归档，未把缺口写成通过。线上测试没有写入生产应用或数据。
 - 本次不发布 npm；`@cellapp/cli` 线上仍为 `0.2.1`，本地待发布版本为 `0.3.0`。公开 Skill 若先推送，其 `@latest` 命令仍运行旧 CLI，服务与 Worker 保留旧路径兼容。
+
+## 后续 npm 发布（2026-10-17）
+
+- 发布依据：主仓 `main` 为 `111906a`，固定 skills `main` 的 `c4d7610`；Cloud Run `cellapp-00018-n8f` 接收 100% 流量，正式 Worker `694b3ade-2919-4dd5-9667-45f37f42557c` 已提供新控制 API 路径。线上只读探针确认新路径未授权返回 `401 authorization_required`、未知新路径返回 `404`，旧路径未授权仍返回 `401`。IPv6 探针曾超时，改用 IPv4 后通过；没有将超时算作成功。
+- 官网先发布 Cloudflare Pages 生产部署 `eb8258e7-f157-4ae4-bfc6-f6480a6f0780`（来源 `111906a`）。`cellapp.ai` 上部署指引和应用设计指导的中英文四份 Markdown 均以 `text/markdown` 返回，内容与源码逐字一致。网站 lint、构建和生产预览浏览器检查通过；初次构建因旧 Parcel 缓存导致预渲染与脚本不一致，禁用该缓存重建后，浏览器检查无运行时错误，上传的是复验后的产物。
+- 发布前 npm 最新版为 `0.2.1`，目标 `0.3.0` 尚未占用；`NPM_ACCESS_TOKEN` 以免交互方式验证为 `cellapp-ai`，未输出或写入 token。skills `c4d7610` 的 typecheck、22 项测试、build、Skill、公开边界和打包检查通过；38 个打包文件包括中英文 Skill，本地打包安装验证了 `cellapp` 与兼容命令 `ohmyapp`。
+- 从 skills `main` 提交 `c4d7610` 发布 `@cellapp/cli@0.3.0` 成功。公共 npm 注册表的 `latest` 已更新为 `0.3.0`；从注册表全新安装后，两条命令均能显示帮助，中英文 Skill 文件与仓库源码一致。没有重复发布。
+- 正式环境没有可复用的 Cellapp 用户凭证，因此本次未执行带有效用户授权的线上正向读写验收；此前隔离环境的真实浏览器、PostgreSQL、PostgREST 和 MinIO 联调通过，此缺口仍按上节记录保留。
