@@ -19,6 +19,7 @@ function originalHost(request, env) {
 export function controlRoute(path) {
   return path === '/dashboard' || path.startsWith('/dashboard/') ||
     path === '/api/console' || path.startsWith('/api/console/') ||
+    path === '/api/control/v1' || path.startsWith('/api/control/v1/') ||
     path === '/auth' || path.startsWith('/auth/') ||
     path === '/device-authorizations' || path.startsWith('/device-authorizations/') ||
     path === '/apps' || path.startsWith('/apps/') ||
@@ -97,7 +98,7 @@ function dynamicRoute(path) {
 
 function publicationMutation(request, path, host, env) {
   return host === env.CONTROL_HOST && /^(POST|PUT|PATCH|DELETE)$/.test(request.method) &&
-    /^\/apps\/[a-f0-9]{32}\/deployments(?:\/|$)/.test(path);
+    /^\/(?:api\/control\/v1\/)?apps\/[a-f0-9]{32}\/deployments(?:\/|$)/.test(path);
 }
 
 function safePath(pathname) {

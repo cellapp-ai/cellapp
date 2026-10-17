@@ -92,17 +92,35 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/console/credentials/{credential}/revoke", s.webAPI(s.webRevoke))
 	mux.HandleFunc("POST /api/console/device/decision", s.webAPI(s.webDevice))
 	mux.HandleFunc("POST /dashboard/device", s.wrap(s.deviceDecision))
+	mux.HandleFunc("POST /auth/device", s.wrap(s.createDevice))
+	mux.HandleFunc("POST /auth/device/poll", s.wrap(s.pollDevice))
 	mux.HandleFunc("POST /device-authorizations", s.wrap(s.createDevice))
 	mux.HandleFunc("POST /device-authorizations/poll", s.wrap(s.pollDevice))
 	mux.HandleFunc("POST /dashboard/credentials/revoke", s.wrap(s.revokeBrowser))
+	mux.HandleFunc("DELETE /auth/credentials/current", s.wrap(s.revokeCurrent))
 	mux.HandleFunc("DELETE /credentials/current", s.wrap(s.revokeCurrent))
-	mux.HandleFunc("GET /limits", s.wrap(func(w http.ResponseWriter, r *http.Request) error {
+	limits := s.wrap(func(w http.ResponseWriter, r *http.Request) error {
 		if _, e := s.owner(r); e != nil {
 			return e
 		}
 		jsonResponse(w, 200, s.Config.Limits)
 		return nil
-	}))
+	})
+	mux.HandleFunc("GET /api/control/v1/limits", limits)
+	mux.HandleFunc("GET /limits", limits)
+	mux.HandleFunc("GET /api/control/v1/apps", s.wrap(s.listApps))
+	mux.HandleFunc("POST /api/control/v1/apps", s.wrap(s.createApp))
+	mux.HandleFunc("DELETE /api/control/v1/apps/{app}", s.wrap(s.deleteApp))
+	mux.HandleFunc("POST /api/control/v1/apps/{app}/key", s.wrap(s.resetKey))
+	mux.HandleFunc("GET /api/control/v1/apps/{app}/data", s.wrap(s.dataStatus))
+	mux.HandleFunc("POST /api/control/v1/apps/{app}/data/reconcile", s.wrap(s.dataReconcile))
+	mux.HandleFunc("POST /api/control/v1/apps/{app}/data/plan", s.wrap(s.dataPlan))
+	mux.HandleFunc("POST /api/control/v1/apps/{app}/data/apply", s.wrap(s.dataApply))
+	mux.HandleFunc("POST /api/control/v1/apps/{app}/data/verify", s.wrap(s.dataVerify))
+	mux.HandleFunc("POST /api/control/v1/apps/{app}/deployments", s.wrap(s.createDeployment))
+	mux.HandleFunc("GET /api/control/v1/apps/{app}/deployments/{deployment}", s.wrap(s.deploymentStatus))
+	mux.HandleFunc("PUT /api/control/v1/apps/{app}/deployments/{deployment}/files/{index}", s.wrap(s.upload))
+	mux.HandleFunc("POST /api/control/v1/apps/{app}/deployments/{deployment}/publish", s.wrap(s.publish))
 	mux.HandleFunc("GET /apps", s.wrap(s.listApps))
 	mux.HandleFunc("POST /apps", s.wrap(s.createApp))
 	mux.HandleFunc("DELETE /apps/{app}", s.wrap(s.deleteApp))

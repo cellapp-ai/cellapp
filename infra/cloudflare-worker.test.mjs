@@ -33,6 +33,9 @@ test('every registered control endpoint has a declared apex route', () => {
     assert.equal(controlRoute(path), false, path);
     assert.equal(matches(path), false, path);
   }
+  for (const path of ['/api/control/v1-extra', '/api/control/v10/apps']) {
+    assert.equal(controlRoute(path), false, path);
+  }
 });
 
 test('forwards control requests with authenticated original host and no redirect following', async () => {
@@ -58,6 +61,18 @@ test('forwards control requests with authenticated original host and no redirect
   assert.equal(response.headers.get('Cache-Control'), 'private, no-store');
 });
 
+test('unknown versioned control path reaches Go and stays a 404', async () => {
+  let forwarded;
+  globalThis.fetch = async request => {
+    forwarded = request;
+    return Response.json({error: 'not_found', message: 'Not found'}, {status: 404});
+  };
+  const response = await worker.fetch(new Request('https://cellapp.ai/api/control/v1/unknown'), env);
+  assert.equal(new URL(forwarded.url).pathname, '/api/control/v1/unknown');
+  assert.equal(response.status, 404);
+  assert.equal(response.headers.get('Content-Type'), 'application/json');
+});
+
 test('forwards root-host mutations and rejects public or retired paths', async () => {
   let calls = 0;
   globalThis.fetch = async request => {
@@ -76,7 +91,7 @@ test('forwards root-host mutations and rejects public or retired paths', async (
   assert.equal(write.status, 200);
   assert.equal(write.headers.get('Cache-Control'), 'private, no-store');
   assert.equal(calls, 1);
-  for (const path of ['/', '/deploy/', '/assets/logo.svg', '/dashboard-extra', '/apps-extra', '/health']) {
+  for (const path of ['/', '/deploy/', '/assets/logo.svg', '/dashboard-extra', '/apps-extra', '/api/control/v1-extra', '/health']) {
     assert.equal((await worker.fetch(new Request(`https://cellapp.ai${path}`), env)).status, 404, path);
   }
   assert.equal((await worker.fetch(new Request('https://console.cellapp.ai/apps', {headers: {Authorization: 'Bearer old'}}), env)).status, 404);
@@ -107,6 +122,9 @@ test('keeps publication paused while an old origin serves static during rollback
     ['POST', `/apps/${app}/deployments`],
     ['PUT', `/apps/${app}/deployments/${'b'.repeat(32)}/files/0`],
     ['POST', `/apps/${app}/deployments/${'b'.repeat(32)}/publish`],
+    ['POST', `/api/control/v1/apps/${app}/deployments`],
+    ['PUT', `/api/control/v1/apps/${app}/deployments/${'b'.repeat(32)}/files/0`],
+    ['POST', `/api/control/v1/apps/${app}/deployments/${'b'.repeat(32)}/publish`],
   ]) {
     const response = await worker.fetch(new Request(`https://${env.CONTROL_HOST}${path}`, { method }), settings);
     assert.equal(response.status, 503);

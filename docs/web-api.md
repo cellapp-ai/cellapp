@@ -8,7 +8,7 @@ Cellapp Web 从 `https://cellapp.ai/dashboard` 通过同域 `/api/console` 访�
 
 所有 POST/PUT/DELETE 要求 `Origin` 与 `CONTROL_ORIGIN` 精确一致，缺失或不匹配返回 `403 origin_rejected`。有请求体时要求 `application/json`，否则返回 `415 json_required`；设备决策和资料更新最多 1 MiB，只允许声明的字段和一个 JSON 值，无效内容返回 `400 invalid_json`。接口不开放携带凭证的 CORS。API 和页面使用 `private, no-store`。
 
-GET `/auth/login?return=<本站管理路径>` 和 `/auth/callback` 保留现有登录流程，回调 URL 为 `https://cellapp.ai/auth/callback`。管理路径统一位于 `/dashboard`，包括 `/dashboard/applications/{app}`、`/dashboard/credentials`、`/dashboard/device`、`/dashboard/profile` 与 `/dashboard/login`。设备链接为 `/dashboard/device?code=...`；打开或登录不会自动批准。CLI 的 `/apps`、设备创建/轮询、发布等路径及 Bearer 授权保持原契约，但基域迁移到 `https://cellapp.ai`。旧 `console.cellapp.ai` API 不再转发。
+GET `/auth/login?return=<本站管理路径>` 和 `/auth/callback` 保留现有登录流程，回调 URL 为 `https://cellapp.ai/auth/callback`。管理路径统一位于 `/dashboard`，包括 `/dashboard/applications/{app}`、`/dashboard/credentials`、`/dashboard/device`、`/dashboard/profile` 与 `/dashboard/login`。设备链接为 `/dashboard/device?code=...`；打开或登录不会自动批准。CLI 的设备流程位于 `POST /auth/device`、`POST /auth/device/poll`，当前凭证撤销为 `DELETE /auth/credentials/current`，Bearer 管理位于 `/api/control/v1/*`；旧根路径在兼容期仍可调用，且保持同一字段、错误与权限。旧 `console.cellapp.ai` API 不再转发。
 
 ## 接口
 
@@ -47,6 +47,6 @@ GET `/auth/login?return=<本站管理路径>` 和 `/auth/callback` 保留现有�
 
 `POST /_cellapp/request` 和 `POST /_cellapp/redeem` 只接受本应用 Origin。访问密钥明文只用于该次兑换，不放入 URL、持久状态或日志。公开应用仍要求登录；从公开切回受限时，只有已有授权的用户继续访问。
 
-`/rest/v1/{table}` 支持 `supabase-js` 2.117.3 的表级 select、insert、update、delete、eq、order、range 与写后 select。每次请求重新检查登录、应用访问、表授权及行策略，浏览器提交的 Authorization 和 profile 不生效。Auth、Storage、Realtime、Functions、RPC 等路径返回 `501 unsupported_feature`；其他 Supabase API 不在本期范围内。所有者通过 Bearer CLI 的 `/apps/{app}/data`、`/plan`、`/apply`、`/verify` 管理表；表版本和静态发布独立。
+`/rest/v1/{table}` 支持 `supabase-js` 2.117.3 的表级 select、insert、update、delete、eq、order、range 与写后 select。每次请求重新检查登录、应用访问、表授权及行策略，浏览器提交的 Authorization 和 profile 不生效。Auth、Storage、Realtime、Functions、RPC 等路径返回 `501 unsupported_feature`；其他 Supabase API 不在本期范围内。所有者通过 Bearer CLI 的 `/api/control/v1/apps/{app}/data`、`/plan`、`/apply`、`/verify` 管理表；表版本和静态发布独立。
 
 应用显示名允许重复。`namespace` 是账户的用户 slug，`slug` 是应用 slug，新应用 URL 为 `https://{slug}-{namespace}.<APPS_DOMAIN>`，组合后的单个 DNS 标签最长 63 位。用户 slug 至少 3 位；两种 slug 均使用小写字母开头，后续可包含小写字母、数字、连字符，且拒绝 `accounts`、`cloud`、`login`、`app` 等平台保留词。组合域名全局唯一并在删除、改名后保留占用。控制域 `aliasUrl` 对应 `@namespace/slug`，临时重定向到当前 URL。内部 ID 仍用于登录授权、应用数据和部署隔离；旧 ID 域名及先前分配的组合域名可继续访问原应用。历史别名过长或冲突时保留旧 ID 域名，设置合规 slug 后启用组合域名。新所有者首次创建应用可通过 CLI 指定 `namespace` 和 `slug`，控制台的 Profile 与应用详情页可分别修改这两个值。

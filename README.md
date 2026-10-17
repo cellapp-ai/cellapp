@@ -69,7 +69,7 @@ npm test --workspace @cellapp/web
 
 开发默认 `http://127.0.0.1:5173`，正式产物预览默认 `http://127.0.0.1:4173`，仅监听 loopback。前端产物为 `apps/web/dist/`，包含完整 HTML、JS、CSS、字体与品牌资源。前端测试自动构建并启动临时预览，使用本机 Chrome；非 macOS 或其他安装路径通过 `CHROME_PATH` 指定浏览器，报告及截图保存于 `test-results/web/`。
 
-真实联调先构建前端再启动 Go，从 `https://control.localhost:8443` 访问。`WEB_ROOT` 开发默认 `apps/web/dist`；缺少可读取的 index/assets 时正常服务启动失败，迁移/清理等维护命令不依赖前端产物。完整构建生成 `dist/cellapp-server` 与 `dist/web/`，部署和回滚必须配套，生产显式指定静态目录。浏览器契约见 [Web API](docs/web-api.md)。
+真实联调先构建前端再启动 Go，从 `https://control.localhost:8443` 访问。`WEB_ROOT` 开发默认 `apps/web/dist`；缺少可读取的 index/assets 时正常服务启动失败，迁移/清理等维护命令不依赖前端产物。完整构建生成 `dist/cellapp-server` 与 `dist/web/`，部署和回滚必须配套，生产显式指定静态目录。接口域与兼容路径见[控制 API](docs/control-api.md)，浏览器契约见 [Web API](docs/web-api.md)。
 
 完整仓库 `typecheck`、`test`、`build` 也包含 Web 检查，测试包含前端 lint 和浏览器验收；缺少客户端子模块时仍返回初始化提示。前端工程、代码与设计约定见 [前端规范入口](docs/standards/README.md)，与服务端及 CLI 规范分别维护。
 

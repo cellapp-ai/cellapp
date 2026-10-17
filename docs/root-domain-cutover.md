@@ -8,13 +8,14 @@
 | --- | --- | --- |
 | `cellapp.ai` | `/dashboard*` | 页面、`/dashboard/assets/*`、`/dashboard/logos/*`、浏览器表单 |
 | `cellapp.ai` | `/api/console*` | 浏览器会话 API |
-| `cellapp.ai` | `/auth*` | OAuth、登出与应用交接 |
-| `cellapp.ai` | `/device-authorizations*` | 设备授权创建与轮询 |
-| `cellapp.ai` | `/apps*`、`/limits*`、`/credentials/current*` | Bearer 部署 API |
+| `cellapp.ai` | `/auth*` | OAuth、设备授权创建和轮询、当前部署凭证撤销 |
+| `cellapp.ai` | `/api/control/v1*` | 规范 Bearer 管理 API：额度、应用、部署与数据 |
+| `cellapp.ai` | `/device-authorizations*` | 旧设备授权创建与轮询，兼容旧 CLI |
+| `cellapp.ai` | `/apps*`、`/limits*`、`/credentials/current*` | 旧 Bearer 管理 API，兼容旧 CLI |
 | `cellapp.ai` | `/a/*` | 应用别名跳转 |
 | `*.ce11.app` | `/*` | 访客网关和受保护资源 |
 
-星号使带查询参数的精确入口也命中 Cloudflare 路由。Worker 的 `controlRoute` 再按路径边界拒绝 `/dashboard-extra`、`/apps-extra` 等近似路径。`/`、`/deploy/`、`/pricing/`、`/docs/`、`/blog/` 及官网资源不挂 Worker 路由。`/health` 仅供 Cloud Run 探针，不能经公开根域名访问。清单与 Go 注册端点由 `node --test infra/cloudflare-worker.test.mjs` 对照检查；新增私有端点时须同步路由、清单和测试。
+星号使带查询参数的精确入口也命中 Cloudflare 路由。Worker 的 `controlRoute` 再按路径边界拒绝 `/dashboard-extra`、`/apps-extra`、`/api/control/v1-extra` 等近似路径。`/api/control/v1/unknown` 转发到 Go 并返回 404，不能由 Pages 返回官网 HTML。新旧发布写入均受 `PUBLICATION_PAUSED` 保护。`/`、`/deploy/`、`/pricing/`、`/docs/`、`/blog/` 及官网资源不挂 Worker 路由。`/health` 仅供 Cloud Run 探针，不能经公开根域名访问。清单与 Go 注册端点由 `node --test infra/cloudflare-worker.test.mjs` 对照检查；新增私有端点时须同步路由、清单和测试。
 
 ## 候选准备
 

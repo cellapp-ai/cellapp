@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm, readFile, copyFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { Client } from '../skills/packages/cli/src/client.js';
 import { deploy } from '../skills/packages/cli/src/deploy.js';
@@ -55,6 +55,8 @@ try {
   const applied = await cli('data', 'apply', '--project', project);
   assert.equal(applied.verification.ready, true);
   assert.equal(applied.verification.version, 1);
+  const dataStatus = await cli('data', 'status', '--project', project);
+  assert.equal(dataStatus.status.state, 'ready');
   await ownerPage.goto(first.url + '/notes');
   await ownerPage.getByRole('heading', {name: 'Notes app'}).waitFor();
   await ownerPage.getByLabel('笔记内容').fill('browser-created');
@@ -153,6 +155,43 @@ try {
   await ownerPage.getByRole('button', {name: 'Confirm', exact: true}).click();
   await ownerPage.getByRole('heading', {name: 'Applications', exact: true}).waitFor();
   assert.equal((await anotherContext.request.get(first.url)).status(), 404);
+  await client.logout();
+  assert.equal(client.token, undefined);
+  if (process.env.TEST_LEGACY_CLI_BIN) {
+    const legacyBin = process.env.TEST_LEGACY_CLI_BIN;
+    const legacyArgs = (...args: string[]) => [legacyBin, ...args, '--origin', origin, '--config-dir', join(root, 'credentials')];
+    const login = spawn(process.execPath, legacyArgs('login'), {stdio: ['ignore', 'pipe', 'pipe']});
+    let loginOutput = '';
+    const verificationUri = await new Promise<string>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('legacy CLI did not provide a device link')), 10_000);
+      login.stderr.on('data', chunk => {
+        loginOutput += String(chunk);
+        const match = loginOutput.match(/请在浏览器打开 (https:\/\/\S+)/);
+        if (match) { clearTimeout(timeout); resolve(match[1]!); }
+      });
+      login.once('error', reject);
+      login.once('exit', code => { if (code !== 0) reject(new Error(`legacy CLI login exited ${code}`)); });
+    });
+    await ownerPage.goto(verificationUri);
+    await ownerPage.getByRole('button', {name: 'Approve access'}).click();
+    const loginExit = await new Promise<number | null>((resolve, reject) => {
+      login.once('exit', resolve);
+      login.once('error', reject);
+    });
+    assert.equal(loginExit, 0);
+    const legacy = async (...args: string[]) => {
+      const {stdout} = await promisify(execFile)(process.execPath, legacyArgs(...args));
+      return JSON.parse(stdout);
+    };
+    const owned = await legacy('apps') as {id: string}[];
+    const secondAssociation = JSON.parse(await readFile(join(secondProject, 'cellapp.json'), 'utf8')) as {appId: string};
+    assert.ok(owned.some(app => app.id === secondAssociation.appId));
+    const oldStatus = await legacy('data', 'status', '--project', secondProject) as {status: {state: string}};
+    assert.equal(oldStatus.status.state, 'ready');
+    const oldRelease = await legacy('deploy', '--project', secondProject, '--output', 'dist') as {status: string};
+    assert.equal(oldRelease.status, 'published');
+    assert.deepEqual(await legacy('logout'), {loggedOut: true});
+  }
   console.log('HTTPS browser + real PostgreSQL/PostgREST/MinIO: login, grants, requests, key rotation, revocation, public access, CRUD, isolation and deletion passed.');
 } finally {
   await browser.close(); await rm(root, {recursive: true, force: true});

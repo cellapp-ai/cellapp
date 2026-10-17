@@ -6,6 +6,7 @@
   "routes": [
     { "pattern": "cellapp.ai/dashboard*", "zone_name": "cellapp.ai" },
     { "pattern": "cellapp.ai/api/console*", "zone_name": "cellapp.ai" },
+    { "pattern": "cellapp.ai/api/control/v1*", "zone_name": "cellapp.ai" },
     { "pattern": "cellapp.ai/auth*", "zone_name": "cellapp.ai" },
     { "pattern": "cellapp.ai/device-authorizations*", "zone_name": "cellapp.ai" },
     { "pattern": "cellapp.ai/apps*", "zone_name": "cellapp.ai" },
