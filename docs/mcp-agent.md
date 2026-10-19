@@ -59,4 +59,4 @@ codex mcp list
 
 ## 验收状态
 
-本仓库的 Go MCP SDK、隔离 PostgreSQL、隔离 PostgREST 与 Worker 路由测试已覆盖主要协议和业务路径。公开候选服务上的真实 Codex 与豆包浏览器授权、上传和建表连接仍需单独验收，完成前不应把文档中的公开地址视为已可用。
+本仓库的 Go MCP SDK、隔离 PostgreSQL、隔离 PostgREST 与 Worker 路由测试已覆盖主要协议和业务路径。`https://cellapp.ai/mcp` 已通过公开的授权挑战与 OAuth 元数据检查；真实 Codex 与豆包浏览器授权、上传和建表连接仍需使用隔离测试账户单独验收。当前公开地址可用于发起连接，端到端工具流程尚未标记为已验证。

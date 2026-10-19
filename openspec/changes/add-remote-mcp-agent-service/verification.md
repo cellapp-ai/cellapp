@@ -16,9 +16,10 @@ The database checks used a disposable PostgreSQL container on loopback port 5543
 | Skipped | Public S3 integration test requiring `RUN_S3_TESTS=1` | The focused MCP tests used private in-memory storage; the browser suite used disposable MinIO. This does not establish production object-store behavior. |
 | Not executed | Real Codex and 豆包 connections to an HTTPS candidate Cellapp service | No candidate service address or test accounts were available. Tool import, user-delegated OAuth, interrupted upload, data table creation and revoke must be checked with both client products before marking tasks 5.2 and 6.2 complete. |
 | Completed | Cloud Run service publication | User explicitly chose a direct formal-traffic switch. The service release result is recorded below. |
-| Not executed | Cloudflare Worker route and npm publication | The public MCP paths still reach Pages rather than the service. Skills and npm package content did not change. |
+| Completed | Cloudflare Worker route publication | The public MCP and OAuth paths now reach the service. The version, route inventory and response checks are recorded below. |
+| Not applicable | GitHub Skill and npm publication | Skills and npm package content did not change. |
 
-The change remains active pending real client checks and public MCP routing.
+The change remains active pending real client checks.
 
 ## Release direction
 
@@ -29,5 +30,12 @@ On 2026-10-19 the user requested a Cloud Run release and explicitly chose a dire
 - Source: `deploy/main` commit `4d9692e93b7b6c87b3971c15ba13376759b43d01`; fixed skills commit `c4d761025a32068854a937e08d40f1812c12c900`. No skills or npm package content changed; npm remains `@cellapp/cli@0.3.0`.
 - Previous serving revision: `cellapp-00018-n8f`. Migration job execution: `cellapp-migrate-9fft7`, reported successful by the release script. New serving revision: `cellapp-00019-56g`, verified at 100% traffic. Image digest: `sha256:afa6b800920d383f7ff72621c1fcaea3b24a9a98065b1a28c49598a1ea68b053`.
 - Release script passed candidate revision health, readiness, control-domain login and invalid application-host checks. Independent read-only checks found `/dashboard/login` HTTP 200, unauthenticated `/api/control/v1/apps` HTTP 401, and no `ERROR` severity log entries for the new revision in the first 15 minutes.
-- Public `GET /mcp`, `/.well-known/oauth-protected-resource/mcp`, and `/.well-known/oauth-authorization-server` still returned Pages HTML rather than MCP/OAuth responses. The Cloudflare Worker route changes were not published as part of this Cloud Run release. Therefore public Agent connection and tasks 5.2/6.2 remain unverified and unavailable at the documented root-domain URL.
+- Immediately after the Cloud Run release, public `/mcp` and OAuth metadata paths still returned Pages HTML. Cloudflare routing was published separately afterward, as recorded below.
 - Rollback target for a service regression: `cellapp-00018-n8f`. The 009 migration and published objects must remain in place if service traffic is rolled back.
+
+## Cloudflare Worker route release — 2026-10-19
+
+- Previous formal `cellapp-edge` version: `694b3ade-2919-4dd5-9667-45f37f42557c`. New version: `188a635d-c1ec-4b66-b7e2-f24b2f14ace3`, confirmed at 100% traffic. The private release configuration was generated from the previous live bindings and 10 live routes, then added `cellapp.ai/mcp*`, `cellapp.ai/oauth/*`, and `cellapp.ai/.well-known/oauth-*`.
+- Cloudflare route inventory confirmed all 13 routes after publication: 12 on `cellapp.ai` and one on `*.ce11.app`. The new version retained the `EDGE_ORIGIN_SECRET` secret, R2 bucket, rate limiter, all six plain-text configuration bindings, and compatibility date `2026-10-14`.
+- Public read-only checks: `POST /mcp` without a token returned HTTP 401 JSON with `WWW-Authenticate`; the protected-resource and authorization-server metadata paths returned HTTP 200 JSON with resource `https://cellapp.ai/mcp` and issuer `https://cellapp.ai`. Existing `/dashboard/login` returned 200, unauthenticated `/api/control/v1/apps` returned 401, near-match `/mcpx` and `/oauth/not-found` returned 404, and an application-domain `/mcp` returned 404.
+- No real Codex or 豆包 user OAuth, static upload or data-table mutation was attempted. Tasks 5.2 and 6.2 remain incomplete until isolated test accounts and an appropriate test application are available. Rollback target for Worker regressions is version `694b3ade-2919-4dd5-9667-45f37f42557c` with its prior route set.
