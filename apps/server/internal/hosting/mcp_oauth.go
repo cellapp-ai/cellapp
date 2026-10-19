@@ -171,15 +171,21 @@ func (s *Server) mcpMetadataRegistration(ctx context.Context, clientID string) e
 
 func (s *Server) mcpRegisterClient(w http.ResponseWriter, r *http.Request) error {
 	var in mcpClientRegistration
-	if err := decode(w, r, &in); err != nil {
-		return err
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	decoder := json.NewDecoder(r.Body)
+	// RFC 7591 requires ignoring client metadata that this server does not understand.
+	if err := decoder.Decode(&in); err != nil {
+		return fail(400, "invalid_json", "Invalid request body")
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return fail(400, "invalid_json", "Expected one JSON value")
 	}
 	if len(in.Name) == 0 || len(in.Name) > 100 || len(in.RedirectURIs) == 0 || len(in.RedirectURIs) > 5 || (in.TokenAuthMethod != "" && in.TokenAuthMethod != "none") {
 		return fail(400, "invalid_client_metadata", "Invalid public client registration")
 	}
 	for _, value := range in.GrantTypes {
-		if value != "authorization_code" {
-			return fail(400, "invalid_client_metadata", "Only authorization code is supported")
+		if value != "authorization_code" && value != "refresh_token" {
+			return fail(400, "invalid_client_metadata", "Unsupported client grant")
 		}
 	}
 	for _, value := range in.ResponseTypes {

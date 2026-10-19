@@ -43,7 +43,12 @@ func TestMCPOAuthAuthorizationCodeAndRevocation(t *testing.T) {
 	resource := f.server.Config.ControlOrigin + "/mcp"
 	registered := response[map[string]any](t, f.request(t, "POST", "/oauth/register", map[string]any{
 		"client_name": "Codex test", "redirect_uris": []string{"http://127.0.0.1:49152/callback"},
+		"grant_types": []string{"authorization_code", "refresh_token"},
+		"client_uri":  "https://example.com", "software_id": "codex", "scope": "mcp:read mcp:deploy",
 	}, "", host, ""), 201)
+	if grants := registered["grant_types"].([]any); len(grants) != 1 || grants[0] != "authorization_code" {
+		t.Fatalf("registration advertised unsupported grant: %v", grants)
+	}
 	client := registered["client_id"].(string)
 	browser := token()
 	if _, err := f.db.Exec(context.Background(), `INSERT INTO browser_sessions(hash,owner_id,expires_at) VALUES($1,$2,now()+interval '1 day')`, keyed(f.server.Config.Secret, browser), f.owner); err != nil {

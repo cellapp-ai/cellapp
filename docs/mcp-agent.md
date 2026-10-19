@@ -59,4 +59,6 @@ codex mcp list
 
 ## 验收状态
 
+直接在浏览器打开 `/mcp` 会得到 HTTP 401 与 `invalid_token`，因为浏览器尚未带 MCP 令牌。这是客户端发现 OAuth 的起点；若连接器随后失败，应检查客户端是否访问了 OAuth 元数据、动态注册与授权端点，而不能仅凭该页面判断令牌错误。不要把令牌拼入 MCP URL。
+
 本仓库的 Go MCP SDK、隔离 PostgreSQL、隔离 PostgREST 与 Worker 路由测试已覆盖主要协议和业务路径。`https://cellapp.ai/mcp` 已通过公开的授权挑战与 OAuth 元数据检查；真实 Codex 与豆包浏览器授权、上传和建表连接仍需使用隔离测试账户单独验收。当前公开地址可用于发起连接，端到端工具流程尚未标记为已验证。
