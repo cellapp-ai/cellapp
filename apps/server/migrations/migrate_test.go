@@ -69,7 +69,7 @@ func TestRunFreshAndRepeat(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&count); err != nil || count != len(controlMigrations) {
 		t.Fatalf("migration count=%d, err=%v", count, err)
 	}
-	for _, table := range []string{"owners", "apps", "deployments", "access_sessions", "app_monthly_visitors", "app_visitor_admissions"} {
+	for _, table := range []string{"owners", "apps", "deployments", "access_sessions", "app_monthly_visitors", "app_visitor_admissions", "mcp_oauth_clients", "mcp_oauth_consents", "mcp_oauth_codes", "mcp_oauth_tokens", "mcp_upload_chunks"} {
 		var exists bool
 		if err := pool.QueryRow(ctx, `SELECT to_regclass($1) IS NOT NULL`, table).Scan(&exists); err != nil || !exists {
 			t.Fatalf("missing %s: %v", table, err)
@@ -77,7 +77,7 @@ func TestRunFreshAndRepeat(t *testing.T) {
 	}
 }
 
-func TestRunAddsMonthlyVisitorsToExistingDatabase(t *testing.T) {
+func TestRunAddsMCPToExistingDatabase(t *testing.T) {
 	pool, _ := migrationDatabase(t)
 	ctx := context.Background()
 	if _, err := pool.Exec(ctx, `CREATE TABLE schema_migrations(version integer PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
@@ -99,8 +99,8 @@ func TestRunAddsMonthlyVisitorsToExistingDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 	var exists bool
-	if err := pool.QueryRow(ctx, `SELECT to_regclass('app_visitor_admissions') IS NOT NULL`).Scan(&exists); err != nil || !exists {
-		t.Fatalf("monthly visitor migration missing: %v", err)
+	if err := pool.QueryRow(ctx, `SELECT to_regclass('mcp_oauth_tokens') IS NOT NULL`).Scan(&exists); err != nil || !exists {
+		t.Fatalf("MCP migration missing: %v", err)
 	}
 }
 
@@ -253,7 +253,10 @@ func TestAppAccessConstraints(t *testing.T) {
 func TestReadableHostBackfillKeepsLongLegacyAliases(t *testing.T) {
 	pool, _ := migrationDatabase(t)
 	ctx := context.Background()
-	for _, item := range controlMigrations[:len(controlMigrations)-2] {
+	for _, item := range controlMigrations {
+		if item.version >= 7 {
+			break
+		}
 		if _, err := pool.Exec(ctx, item.sql); err != nil {
 			t.Fatal(err)
 		}

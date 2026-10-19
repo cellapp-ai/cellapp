@@ -11,6 +11,12 @@ import (
 
 func (s *Server) Cleanup(ctx context.Context) error {
 	var dataErrors []error
+	if err := s.cleanupCompletedMCPChunks(ctx); err != nil {
+		dataErrors = append(dataErrors, err)
+	}
+	if err := s.cleanupOrphanMCPChunks(ctx); err != nil {
+		dataErrors = append(dataErrors, err)
+	}
 	if s.AppDataDB != nil && s.AppDataProbe != nil {
 		if e := appdata.ReconcilePending(ctx, s.DB, s.AppDataDB, s.AppDataProbe); e != nil {
 			dataErrors = append(dataErrors, e)
@@ -74,6 +80,32 @@ func (s *Server) Cleanup(ctx context.Context) error {
 				if e := s.Storage.Delete(ctx, objectKey(v.id, f.Path)); e != nil {
 					return e
 				}
+			}
+			chunkRows, err := tx.Query(ctx, `SELECT object_key FROM mcp_upload_chunks WHERE deployment_id=$1`, v.id)
+			if err != nil {
+				return err
+			}
+			chunkKeys := []string{}
+			for chunkRows.Next() {
+				var key string
+				if err := chunkRows.Scan(&key); err != nil {
+					chunkRows.Close()
+					return err
+				}
+				chunkKeys = append(chunkKeys, key)
+			}
+			err = chunkRows.Err()
+			chunkRows.Close()
+			if err != nil {
+				return err
+			}
+			for _, key := range chunkKeys {
+				if err := s.Storage.Delete(ctx, key); err != nil {
+					return err
+				}
+			}
+			if _, err := tx.Exec(ctx, `DELETE FROM mcp_upload_chunks WHERE deployment_id=$1`, v.id); err != nil {
+				return err
 			}
 			if e := s.Storage.Delete(ctx, releaseManifestKey(v.id)); e != nil {
 				return e

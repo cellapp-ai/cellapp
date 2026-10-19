@@ -23,14 +23,15 @@ type Identity interface {
 	Exchange(context.Context, string, string) (string, string, error)
 }
 type Server struct {
-	Web          fs.FS
-	Config       Config
-	DB           *pgxpool.Pool
-	AppDataDB    *pgxpool.Pool
-	AppDataProbe appdata.Probe
-	Storage      Storage
-	Identity     Identity
-	Logger       *slog.Logger
+	Web                   fs.FS
+	Config                Config
+	DB                    *pgxpool.Pool
+	AppDataDB             *pgxpool.Pool
+	AppDataProbe          appdata.Probe
+	Storage               Storage
+	Identity              Identity
+	MCPMetadataHTTPClient *http.Client
+	Logger                *slog.Logger
 }
 type handler func(http.ResponseWriter, *http.Request) error
 
@@ -66,6 +67,15 @@ func (s *Server) Handler() http.Handler {
 	}))
 	mux.HandleFunc("GET /a/{namespace}/{slug}", s.wrap(s.redirectAppAlias))
 	mux.HandleFunc("GET /auth/login", s.wrap(s.login))
+	mux.HandleFunc("GET /.well-known/oauth-protected-resource", s.wrap(s.mcpProtectedResourceMetadata))
+	mux.HandleFunc("GET /.well-known/oauth-protected-resource/mcp", s.wrap(s.mcpProtectedResourceMetadata))
+	mux.HandleFunc("GET /.well-known/oauth-authorization-server", s.wrap(s.mcpAuthorizationServerMetadata))
+	mux.HandleFunc("POST /oauth/register", s.wrap(s.mcpRegisterClient))
+	mux.HandleFunc("GET /oauth/authorize", s.wrap(s.mcpAuthorizePage))
+	mux.HandleFunc("POST /oauth/authorize", s.wrap(s.mcpAuthorizeDecision))
+	mux.HandleFunc("POST /oauth/token", s.wrap(s.mcpExchangeCode))
+	mux.HandleFunc("POST /oauth/revoke", s.wrap(s.mcpRevokeToken))
+	mux.Handle("/mcp", s.mcpHTTPHandler())
 	mux.HandleFunc("GET /auth/callback", s.wrap(s.callback))
 	mux.HandleFunc("GET /auth/app", s.wrap(s.startAppHandoff))
 	mux.HandleFunc("POST /auth/logout", s.wrap(s.logoutBrowser))
@@ -89,6 +99,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/console/apps/{app}/requests/{user}/{decision}", s.webAPI(s.webAccessDecision))
 	mux.HandleFunc("POST /api/console/apps/{app}/grants/{user}/revoke", s.webAPI(s.webGrantRevoke))
 	mux.HandleFunc("GET /api/console/credentials", s.webAPI(s.webCredentials))
+	mux.HandleFunc("GET /api/console/mcp/connections", s.webAPI(s.webMCPConnections))
+	mux.HandleFunc("POST /api/console/mcp/connections/{client}/revoke", s.webAPI(s.webMCPRevoke))
 	mux.HandleFunc("POST /api/console/credentials/{credential}/revoke", s.webAPI(s.webRevoke))
 	mux.HandleFunc("POST /api/console/device/decision", s.webAPI(s.webDevice))
 	mux.HandleFunc("POST /dashboard/device", s.wrap(s.deviceDecision))
@@ -173,6 +185,10 @@ func (s *Server) Handler() http.Handler {
 		label := strings.TrimSuffix(host, suffix)
 		if label == host || (!idPattern.MatchString(label) && !aliasPart.MatchString(label)) {
 			errorResponse(w, fail(404, "not_found", "Unknown host"))
+			return
+		}
+		if mcpControlPath(r.URL.Path) {
+			errorResponse(w, fail(404, "not_found", "Unknown application path"))
 			return
 		}
 		app := label

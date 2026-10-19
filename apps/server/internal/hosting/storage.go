@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"time"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -15,6 +16,12 @@ type Storage interface {
 	Get(context.Context, string) (io.ReadCloser, error)
 	Delete(context.Context, string) error
 	Health(context.Context) error
+}
+
+// temporaryObjectWalker is optional so storage substitutes need only implement
+// the public release operations. Production S3 uses it to recover orphaned MCP chunks.
+type temporaryObjectWalker interface {
+	WalkTemporary(context.Context, func(string, time.Time) error) error
 }
 type S3Storage struct {
 	client *minio.Client
@@ -52,6 +59,18 @@ func (s *S3Storage) Get(ctx context.Context, key string) (io.ReadCloser, error) 
 }
 func (s *S3Storage) Delete(ctx context.Context, key string) error {
 	return s.client.RemoveObject(ctx, s.bucket, key, minio.RemoveObjectOptions{})
+}
+
+func (s *S3Storage) WalkTemporary(ctx context.Context, visit func(string, time.Time) error) error {
+	for object := range s.client.ListObjects(ctx, s.bucket, minio.ListObjectsOptions{Prefix: "mcp-chunks/", Recursive: true}) {
+		if object.Err != nil {
+			return object.Err
+		}
+		if err := visit(object.Key, object.LastModified); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 func (s *S3Storage) Health(ctx context.Context) error {
 	exists, e := s.client.BucketExists(ctx, s.bucket)

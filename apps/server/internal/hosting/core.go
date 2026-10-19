@@ -130,7 +130,7 @@ func safeReturn(path string) string {
 func safeControlReturn(value string) string {
 	value = safeReturn(value)
 	u, e := url.ParseRequestURI(value)
-	if e != nil || u.IsAbs() || u.Fragment != "" || (!webUIPath(u.Path) && u.Path != "/auth/app") {
+	if e != nil || u.IsAbs() || u.Fragment != "" || (!webUIPath(u.Path) && u.Path != "/auth/app" && u.Path != "/oauth/authorize") {
 		return "/dashboard"
 	}
 	return value

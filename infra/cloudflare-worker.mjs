@@ -21,6 +21,8 @@ export function controlRoute(path) {
     path === '/api/console' || path.startsWith('/api/console/') ||
     path === '/api/control/v1' || path.startsWith('/api/control/v1/') ||
     path === '/auth' || path.startsWith('/auth/') ||
+    path === '/mcp' || path === '/oauth/authorize' || path === '/oauth/token' || path === '/oauth/register' || path === '/oauth/revoke' ||
+    path === '/.well-known/oauth-protected-resource' || path === '/.well-known/oauth-protected-resource/mcp' || path === '/.well-known/oauth-authorization-server' ||
     path === '/device-authorizations' || path.startsWith('/device-authorizations/') ||
     path === '/apps' || path.startsWith('/apps/') ||
     path === '/limits' || path === '/credentials/current' ||
@@ -96,6 +98,11 @@ function dynamicRoute(path) {
     path.startsWith('/auth/v1') || path.startsWith('/storage/v1') || path.startsWith('/functions/v1') || path.startsWith('/realtime/v1');
 }
 
+function mcpControlPath(path) {
+  return path === '/mcp' || path === '/oauth/authorize' || path === '/oauth/token' || path === '/oauth/register' || path === '/oauth/revoke' ||
+    path === '/.well-known/oauth-protected-resource' || path === '/.well-known/oauth-protected-resource/mcp' || path === '/.well-known/oauth-authorization-server';
+}
+
 function publicationMutation(request, path, host, env) {
   return host === env.CONTROL_HOST && /^(POST|PUT|PATCH|DELETE)$/.test(request.method) &&
     /^\/(?:api\/control\/v1\/)?apps\/[a-f0-9]{32}\/deployments(?:\/|$)/.test(path);
@@ -168,6 +175,7 @@ export default {
     if (!host || !env.EDGE_ORIGIN_SECRET || !env.ORIGIN_URL) return new Response('Not found', { status: 404 });
     const pathname = new URL(request.url).pathname;
     if (host === env.CONTROL_HOST && !controlRoute(pathname)) return new Response('Not found', { status: 404 });
+    if (host !== env.CONTROL_HOST && mcpControlPath(pathname)) return new Response('Not found', { status: 404 });
     if (pathname === '/_cellapp/edge-grant') return new Response('Not found', { status: 404 });
     if (env.PUBLICATION_PAUSED === 'true' && publicationMutation(request, pathname, host, env)) {
       return Response.json({ error: 'publication_paused', message: 'Application publication is temporarily paused' },

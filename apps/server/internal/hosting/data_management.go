@@ -26,42 +26,28 @@ func (s *Server) dataOwner(r *http.Request) (App, error) {
 }
 
 func (s *Server) dataStatus(w http.ResponseWriter, r *http.Request) error {
-	app, err := s.dataOwner(r)
+	owner, err := s.owner(r)
 	if err != nil {
 		return err
 	}
-	if s.AppDataDB == nil {
-		return fail(503, "app_data_not_ready", "Application data database unavailable")
-	}
-	manifest, digest, err := appdata.Latest(r.Context(), s.AppDataDB, app.ID)
+	result, err := s.mcpDataStatus(r.Context(), owner, r.PathValue("app"))
 	if err != nil {
-		return fail(503, "app_data_unavailable", "Application data status unavailable")
-	}
-	version := 0
-	if manifest != nil {
-		version = manifest.Version
-	}
-	var errorCode *string
-	if err := s.DB.QueryRow(r.Context(), `SELECT data_error_code FROM apps WHERE id=$1`, app.ID).Scan(&errorCode); err != nil {
 		return err
 	}
-	jsonResponse(w, 200, map[string]any{"state": app.DataState, "errorCode": errorCode, "version": version, "digest": digest})
+	jsonResponse(w, 200, result)
 	return nil
 }
 
 func (s *Server) dataReconcile(w http.ResponseWriter, r *http.Request) error {
-	app, err := s.dataOwner(r)
+	owner, err := s.owner(r)
 	if err != nil {
 		return err
 	}
-	if s.AppDataDB == nil || s.AppDataProbe == nil {
-		return fail(503, "app_data_not_ready", "Application data service unavailable")
+	result, err := s.mcpDataReconcile(r.Context(), owner, r.PathValue("app"))
+	if err != nil {
+		return err
 	}
-	if err := appdata.Reconcile(r.Context(), s.DB, s.AppDataDB, app.ID, s.AppDataProbe); err != nil {
-		s.logDataReconcileFailure(r.Context(), app.ID, err)
-		return fail(503, "app_data_not_ready", "Application data is not ready; inspect data status and server logs")
-	}
-	jsonResponse(w, 200, map[string]any{"ready": true})
+	jsonResponse(w, 200, result)
 	return nil
 }
 
@@ -79,24 +65,17 @@ func (s *Server) logDataReconcileFailure(ctx context.Context, appID string, err 
 }
 
 func (s *Server) dataPlan(w http.ResponseWriter, r *http.Request) error {
-	app, err := s.dataOwner(r)
+	owner, err := s.owner(r)
 	if err != nil {
 		return err
-	}
-	if s.AppDataDB == nil || app.DataState != "ready" {
-		return fail(503, "app_data_not_ready", "Application data is not ready")
 	}
 	var manifest appdata.Manifest
 	if err := decode(w, r, &manifest); err != nil {
 		return err
 	}
-	previous, _, err := appdata.Latest(r.Context(), s.AppDataDB, app.ID)
+	plan, err := s.mcpDataPlan(r.Context(), owner, r.PathValue("app"), manifest)
 	if err != nil {
-		return fail(503, "app_data_unavailable", "Application data status unavailable")
-	}
-	plan, err := appdata.PlanManifest(previous, manifest)
-	if err != nil {
-		return fail(400, "invalid_manifest", err.Error())
+		return err
 	}
 	jsonResponse(w, 200, plan)
 	return nil
@@ -136,28 +115,14 @@ func (s *Server) dataApply(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Server) dataVerify(w http.ResponseWriter, r *http.Request) error {
-	app, err := s.dataOwner(r)
+	owner, err := s.owner(r)
 	if err != nil {
 		return err
 	}
-	if s.AppDataDB == nil || app.DataState != "ready" || s.AppDataProbe == nil {
-		return fail(503, "app_data_not_ready", "Application data is not ready")
-	}
-	names, _ := appdata.AppNames(app.ID)
-	if err := s.AppDataProbe(r.Context(), names); err != nil {
-		return fail(503, "data_api_not_ready", "Application data API is not ready")
-	}
-	manifest, digest, err := appdata.Latest(r.Context(), s.AppDataDB, app.ID)
+	result, err := s.mcpDataVerify(r.Context(), owner, r.PathValue("app"))
 	if err != nil {
-		return fail(503, "app_data_unavailable", "Application data status unavailable")
+		return err
 	}
-	version := 0
-	if manifest != nil {
-		if err := s.dataTableProbe(r.Context(), names, *manifest); err != nil {
-			return fail(503, "data_api_not_ready", "Application table API is not ready")
-		}
-		version = manifest.Version
-	}
-	jsonResponse(w, 200, map[string]any{"ready": true, "version": version, "digest": digest})
+	jsonResponse(w, 200, result)
 	return nil
 }

@@ -32,6 +32,9 @@ var appSlugHosts string
 //go:embed 008_monthly_visitors.sql
 var monthlyVisitors string
 
+//go:embed 009_mcp_agent_access.sql
+var mcpAgentAccess string
+
 type migration struct {
 	version int
 	sql     string
@@ -45,6 +48,7 @@ var controlMigrations = []migration{
 	{version: 6, sql: ownerProfile},
 	{version: 7, sql: appSlugHosts},
 	{version: 8, sql: monthlyVisitors},
+	{version: 9, sql: mcpAgentAccess},
 }
 
 // Run applies each control migration once, including the initial schema on

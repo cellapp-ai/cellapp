@@ -36,6 +36,11 @@ test('every registered control endpoint has a declared apex route', () => {
   for (const path of ['/api/control/v1-extra', '/api/control/v10/apps']) {
     assert.equal(controlRoute(path), false, path);
   }
+  for (const path of ['/mcp', '/oauth/authorize', '/oauth/token', '/oauth/register', '/oauth/revoke', '/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/mcp', '/.well-known/oauth-authorization-server']) {
+    assert.equal(controlRoute(path), true, path);
+    assert.equal(matches(path), true, path);
+  }
+  for (const path of ['/mcp-extra', '/oauth/unknown', '/.well-known/oauth-other']) assert.equal(controlRoute(path), false, path);
 });
 
 test('forwards control requests with authenticated original host and no redirect following', async () => {
@@ -96,6 +101,18 @@ test('forwards root-host mutations and rejects public or retired paths', async (
   }
   assert.equal((await worker.fetch(new Request('https://console.cellapp.ai/apps', {headers: {Authorization: 'Bearer old'}}), env)).status, 404);
   assert.equal(calls, 1);
+});
+
+test('keeps MCP and OAuth endpoints on the control host', async () => {
+  let calls = 0;
+  globalThis.fetch = async request => { calls++; return new Response(new URL(request.url).pathname); };
+  for (const path of ['/mcp', '/oauth/authorize', '/oauth/token', '/.well-known/oauth-protected-resource/mcp']) {
+    const root = await worker.fetch(new Request(`https://${env.CONTROL_HOST}${path}`), env);
+    assert.equal(root.status, 200, path);
+    const app = await worker.fetch(new Request(`https://notes.ce11.app${path}`), env);
+    assert.equal(app.status, 404, path);
+  }
+  assert.equal(calls, 4);
 });
 
 test('preserves visitor upload method and body', async () => {

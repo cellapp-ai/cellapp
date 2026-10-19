@@ -58,6 +58,7 @@ docker compose -f infra/compose.yaml exec -T postgres psql -U cellapp_rename_adm
 - 更新失败仍返回旧版本；重置后旧密钥/旧 cookie 不可读取；删除后立即拒绝分发。
 - 检查跨账号管理拒绝、跨应用存储隔离、Service Worker 注册被拒绝。
 - 在小额度配置下测试并发创建、上传及流量超限，并验证清理回收。
+- 在独立候选环境使用真实 Codex 和豆包客户端验证 MCP OAuth、分块恢复、静态发布、建表、撤销、跨所有者拒绝与应用域隔离；记录客户端版本和协议版本。先完成候选验收，再开放 `/mcp` 与 OAuth Worker 路由，操作步骤见 [Agent 连接说明](mcp-agent.md)。
 - 验证备份恢复、运营停用、Secret 脱敏及代理端口隔离。
 
 以上真实环境验收未完成前，不应把单元测试通过解释为已可公网运营。
@@ -118,5 +119,7 @@ python3 scripts/deploy-cloud-run.py --config infra/cloudrun.json
 ```sh
 gcloud run services update-traffic cellapp --to-revisions=OLD_REVISION=100 --project=PROJECT --region=REGION
 ```
+
+MCP 出现兼容性或授权故障时，先关闭 Worker 的 `/mcp`、`/oauth/*` 与对应 `/.well-known/*` 路由，再切回旧服务 revision。保留 009 增量迁移及已发布对象；旧服务和 CLI 不接受 MCP 令牌。暂存块由兼容的新清理任务回收，不应把它们当作已发布对象删除。
 
 发布后依照本文件“上线验收”执行真实 GitHub 登录、CLI 授权、应用发布、有效/无效访客域、未知 Host、未授权页面/资源和匿名 S3 读取拒绝检查；同时检查清理 job 的定时执行结果。仅 Docker 构建或脚本替身通过不代表已完成公网验收。

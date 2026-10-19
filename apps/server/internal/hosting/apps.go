@@ -18,63 +18,74 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
+type createAppInput struct {
+	Name      string `json:"name"`
+	Key       string `json:"key"`
+	RequestID string `json:"requestId"`
+	Namespace string `json:"namespace,omitempty"`
+	Slug      string `json:"slug,omitempty"`
+}
+
 func (s *Server) createApp(w http.ResponseWriter, r *http.Request) error {
 	owner, e := s.owner(r)
 	if e != nil {
 		return e
 	}
-	var in struct {
-		Name      string `json:"name"`
-		Key       string `json:"key"`
-		RequestID string `json:"requestId"`
-		Namespace string `json:"namespace,omitempty"`
-		Slug      string `json:"slug,omitempty"`
-	}
+	var in createAppInput
 	if e = decode(w, r, &in); e != nil {
 		return e
 	}
+	app, e := s.createOwnerApp(r.Context(), owner, in)
+	if e != nil {
+		return e
+	}
+	jsonResponse(w, 201, app)
+	return nil
+}
+
+func (s *Server) createOwnerApp(ctx context.Context, owner string, in createAppInput) (App, error) {
 	if len(in.Name) < 1 || len(in.Name) > 100 || !keyValid(in.Key) || !idPattern.MatchString(in.RequestID) {
-		return fail(400, "invalid_app", "Name, random key and requestId are required")
+		return App{}, fail(400, "invalid_app", "Name, random key and requestId are required")
 	}
 	fingerprint := keyed(s.Config.Secret, string(encoded(in)))
 	var app App
-	e = s.transaction(r.Context(), func(tx pgx.Tx) error {
-		if e := lockOwner(r.Context(), tx, owner); e != nil {
+	e := s.transaction(ctx, func(tx pgx.Tx) error {
+		if e := lockOwner(ctx, tx, owner); e != nil {
 			return e
 		}
 		var existing, fp string
-		e := tx.QueryRow(r.Context(), `SELECT id,create_digest FROM apps WHERE owner_id=$1 AND create_key=$2`, owner, in.RequestID).Scan(&existing, &fp)
+		e := tx.QueryRow(ctx, `SELECT id,create_digest FROM apps WHERE owner_id=$1 AND create_key=$2`, owner, in.RequestID).Scan(&existing, &fp)
 		if e == nil {
 			if fp != fingerprint {
 				return fail(409, "idempotency_conflict", "Request ID already used with different content")
 			}
-			app, e = s.app(r.Context(), tx, existing, owner)
+			app, e = s.app(ctx, tx, existing, owner)
 			return e
 		}
 		if e != pgx.ErrNoRows {
 			return e
 		}
 		var count int64
-		if e = tx.QueryRow(r.Context(), `SELECT count(*) FROM apps WHERE owner_id=$1 AND NOT deleted`, owner).Scan(&count); e != nil {
+		if e = tx.QueryRow(ctx, `SELECT count(*) FROM apps WHERE owner_id=$1 AND NOT deleted`, owner).Scan(&count); e != nil {
 			return e
 		}
 		if count >= s.Config.Limits.Apps {
 			return fail(429, "app_limit", "Delete an unused application before creating another")
 		}
-		namespaceID, handle, err := ensureAppNamespace(r.Context(), tx, owner, in.Namespace)
+		namespaceID, handle, err := ensureAppNamespace(ctx, tx, owner, in.Namespace)
 		if err != nil {
 			return err
 		}
-		slug, err := chooseAppSlug(r.Context(), tx, namespaceID, handle, in.Slug, in.Name)
+		slug, err := chooseAppSlug(ctx, tx, namespaceID, handle, in.Slug, in.Name)
 		if err != nil {
 			return err
 		}
 		app = App{ID: id(), Name: in.Name, Namespace: handle, Slug: slug, HostLabel: slug + "-" + handle, Visibility: "restricted"}
 		app.URL = s.appURL(app.ID, app.HostLabel)
 		app.AliasURL = s.appAliasURL(handle, slug)
-		_, e = tx.Exec(r.Context(), `INSERT INTO apps(id,owner_id,namespace_id,slug,host_label,name,key_hash,create_key,create_digest) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, app.ID, owner, namespaceID, slug, app.HostLabel, in.Name, keyed(s.Config.Secret, in.Key), in.RequestID, fingerprint)
+		_, e = tx.Exec(ctx, `INSERT INTO apps(id,owner_id,namespace_id,slug,host_label,name,key_hash,create_key,create_digest) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, app.ID, owner, namespaceID, slug, app.HostLabel, in.Name, keyed(s.Config.Secret, in.Key), in.RequestID, fingerprint)
 		if e == nil {
-			_, e = tx.Exec(r.Context(), `INSERT INTO app_hostnames(label,app_id) VALUES($1,$2)`, app.HostLabel, app.ID)
+			_, e = tx.Exec(ctx, `INSERT INTO app_hostnames(label,app_id) VALUES($1,$2)`, app.HostLabel, app.ID)
 		}
 		var pg *pgconn.PgError
 		if errors.As(e, &pg) && pg.Code == "23505" {
@@ -83,13 +94,13 @@ func (s *Server) createApp(w http.ResponseWriter, r *http.Request) error {
 		return e
 	})
 	if e != nil {
-		return e
+		return App{}, e
 	}
 	if s.AppDataDB != nil {
-		e = appdata.Reconcile(r.Context(), s.DB, s.AppDataDB, app.ID, s.AppDataProbe)
+		e = appdata.Reconcile(ctx, s.DB, s.AppDataDB, app.ID, s.AppDataProbe)
 		if e != nil && !errors.Is(e, appdata.ErrAPIProbeRequired) {
-			s.logDataReconcileFailure(r.Context(), app.ID, e)
-			return &APIError{Status: 503, Code: "app_data_not_ready", Message: "Application data is not ready; retry with the same application", Details: map[string]string{"appId": app.ID}}
+			s.logDataReconcileFailure(ctx, app.ID, e)
+			return App{}, &APIError{Status: 503, Code: "app_data_not_ready", Message: "Application data is not ready; retry with the same application", Details: map[string]string{"appId": app.ID}}
 		}
 		if e == nil {
 			app.DataState = "ready"
@@ -97,8 +108,7 @@ func (s *Server) createApp(w http.ResponseWriter, r *http.Request) error {
 	} else {
 		app.DataState = "pending"
 	}
-	jsonResponse(w, 201, app)
-	return nil
+	return app, nil
 }
 func (s *Server) listApps(w http.ResponseWriter, r *http.Request) error {
 	owner, e := s.owner(r)
@@ -197,9 +207,9 @@ type Deployment struct {
 	Created  time.Time `json:"createdAt"`
 }
 
-func getDeployment(r *http.Request, tx pgx.Tx) (d Deployment, e error) {
+func getDeployment(ctx context.Context, tx pgx.Tx, appID, deploymentID string) (d Deployment, e error) {
 	var raw, uploaded []byte
-	e = tx.QueryRow(r.Context(), `SELECT id,status,manifest,uploaded,base_version,spa,created_at FROM deployments WHERE id=$1 AND app_id=$2 FOR UPDATE`, r.PathValue("deployment"), r.PathValue("app")).Scan(&d.ID, &d.Status, &raw, &uploaded, &d.Base, &d.SPA, &d.Created)
+	e = tx.QueryRow(ctx, `SELECT id,status,manifest,uploaded,base_version,spa,created_at FROM deployments WHERE id=$1 AND app_id=$2 FOR UPDATE`, deploymentID, appID).Scan(&d.ID, &d.Status, &raw, &uploaded, &d.Base, &d.SPA, &d.Created)
 	if e != nil {
 		return d, fail(404, "deployment_not_found", "Deployment not found")
 	}
@@ -209,37 +219,49 @@ func getDeployment(r *http.Request, tx pgx.Tx) (d Deployment, e error) {
 	e = json.Unmarshal(uploaded, &d.Uploaded)
 	return
 }
+
+type createDeploymentInput struct {
+	Manifest  []Entry `json:"manifest"`
+	RequestID string  `json:"requestId"`
+	SPA       bool    `json:"spa"`
+	Base      *string `json:"baseVersion"`
+}
+
 func (s *Server) createDeployment(w http.ResponseWriter, r *http.Request) error {
-	if s.Config.PublicationPaused {
-		return fail(503, "publication_paused", "Application publication is temporarily paused")
-	}
 	owner, e := s.owner(r)
 	if e != nil {
 		return e
 	}
-	var in struct {
-		Manifest  []Entry `json:"manifest"`
-		RequestID string  `json:"requestId"`
-		SPA       bool    `json:"spa"`
-		Base      *string `json:"baseVersion"`
-	}
+	var in createDeploymentInput
 	if e = decode(w, r, &in); e != nil {
 		return e
 	}
-	size, e := validateManifest(in.Manifest, s.Config.Limits)
+	deploymentID, e := s.prepareOwnerDeployment(r.Context(), owner, r.PathValue("app"), in)
 	if e != nil {
 		return e
 	}
+	jsonResponse(w, 201, map[string]string{"id": deploymentID})
+	return nil
+}
+
+func (s *Server) prepareOwnerDeployment(ctx context.Context, owner, appID string, in createDeploymentInput) (string, error) {
+	if s.Config.PublicationPaused {
+		return "", fail(503, "publication_paused", "Application publication is temporarily paused")
+	}
+	size, e := validateManifest(in.Manifest, s.Config.Limits)
+	if e != nil {
+		return "", e
+	}
 	if !idPattern.MatchString(in.RequestID) {
-		return fail(400, "invalid_request_id", "Invalid request ID")
+		return "", fail(400, "invalid_request_id", "Invalid request ID")
 	}
 	fp := digest(encoded(in))
 	deploymentID := ""
-	e = s.transaction(r.Context(), func(tx pgx.Tx) error {
-		if e := lockOwner(r.Context(), tx, owner); e != nil {
+	e = s.transaction(ctx, func(tx pgx.Tx) error {
+		if e := lockOwner(ctx, tx, owner); e != nil {
 			return e
 		}
-		a, e := s.app(r.Context(), tx, r.PathValue("app"), owner)
+		a, e := s.app(ctx, tx, appID, owner)
 		if e != nil {
 			return e
 		}
@@ -247,7 +269,7 @@ func (s *Server) createDeployment(w http.ResponseWriter, r *http.Request) error 
 			return fail(403, "app_suspended", "Application suspended")
 		}
 		var existingFP string
-		e = tx.QueryRow(r.Context(), `SELECT id,digest FROM deployments WHERE app_id=$1 AND idempotency_key=$2`, a.ID, in.RequestID).Scan(&deploymentID, &existingFP)
+		e = tx.QueryRow(ctx, `SELECT id,digest FROM deployments WHERE app_id=$1 AND idempotency_key=$2`, a.ID, in.RequestID).Scan(&deploymentID, &existingFP)
 		if e == nil {
 			if fp != existingFP {
 				return fail(409, "idempotency_conflict", "Request ID content differs")
@@ -261,21 +283,20 @@ func (s *Server) createDeployment(w http.ResponseWriter, r *http.Request) error 
 			return fail(409, "version_conflict", "Refresh current application version")
 		}
 		var used int64
-		if e = tx.QueryRow(r.Context(), `SELECT COALESCE(sum(d.bytes),0) FROM deployments d JOIN apps a ON a.id=d.app_id WHERE a.owner_id=$1 AND d.status<>'cleaned'`, owner).Scan(&used); e != nil {
+		if e = tx.QueryRow(ctx, `SELECT COALESCE(sum(d.bytes),0) FROM deployments d JOIN apps a ON a.id=d.app_id WHERE a.owner_id=$1 AND d.status<>'cleaned'`, owner).Scan(&used); e != nil {
 			return e
 		}
 		if size > s.Config.Limits.StorageBytes-used {
 			return fail(429, "storage_limit", "Storage quota exceeded; delete unused applications or wait for cleanup")
 		}
 		deploymentID = id()
-		_, e = tx.Exec(r.Context(), `INSERT INTO deployments(id,app_id,idempotency_key,digest,manifest,base_version,spa,bytes) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, deploymentID, a.ID, in.RequestID, fp, encoded(in.Manifest), in.Base, in.SPA, size)
+		_, e = tx.Exec(ctx, `INSERT INTO deployments(id,app_id,idempotency_key,digest,manifest,base_version,spa,bytes) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, deploymentID, a.ID, in.RequestID, fp, encoded(in.Manifest), in.Base, in.SPA, size)
 		return e
 	})
 	if e != nil {
-		return e
+		return "", e
 	}
-	jsonResponse(w, 201, map[string]string{"id": deploymentID})
-	return nil
+	return deploymentID, nil
 }
 func sameVersion(a, b *string) bool {
 	if a == nil || b == nil {
@@ -288,20 +309,28 @@ func (s *Server) deploymentStatus(w http.ResponseWriter, r *http.Request) error 
 	if e != nil {
 		return e
 	}
-	var d Deployment
-	e = s.transaction(r.Context(), func(tx pgx.Tx) error {
-		if _, e := s.app(r.Context(), tx, r.PathValue("app"), owner); e != nil {
-			return e
-		}
-		var e error
-		d, e = getDeployment(r, tx)
-		return e
-	})
+	d, e := s.ownerDeploymentStatus(r.Context(), owner, r.PathValue("app"), r.PathValue("deployment"))
 	if e != nil {
 		return e
 	}
 	jsonResponse(w, 200, d)
 	return nil
+}
+
+func (s *Server) ownerDeploymentStatus(ctx context.Context, owner, appID, deploymentID string) (Deployment, error) {
+	var d Deployment
+	e := s.transaction(ctx, func(tx pgx.Tx) error {
+		if _, e := s.app(ctx, tx, appID, owner); e != nil {
+			return e
+		}
+		var e error
+		d, e = getDeployment(ctx, tx, appID, deploymentID)
+		return e
+	})
+	if e != nil {
+		return Deployment{}, e
+	}
+	return d, nil
 }
 func (s *Server) upload(w http.ResponseWriter, r *http.Request) error {
 	if s.Config.PublicationPaused {
@@ -326,7 +355,7 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) error {
 		if s.AppDataDB != nil && a.DataState != "ready" {
 			return fail(503, "app_data_not_ready", "Application data is not ready")
 		}
-		d, e := getDeployment(r, tx)
+		d, e := getDeployment(r.Context(), tx, r.PathValue("app"), r.PathValue("deployment"))
 		if e != nil {
 			return e
 		}
@@ -377,23 +406,32 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 func (s *Server) publish(w http.ResponseWriter, r *http.Request) error {
-	if s.Config.PublicationPaused {
-		return fail(503, "publication_paused", "Application publication is temporarily paused")
-	}
 	owner, e := s.owner(r)
 	if e != nil {
 		return e
 	}
+	result, e := s.publishOwnerDeployment(r.Context(), owner, r.PathValue("app"), r.PathValue("deployment"))
+	if e != nil {
+		return e
+	}
+	jsonResponse(w, 200, result)
+	return nil
+}
+
+func (s *Server) publishOwnerDeployment(ctx context.Context, owner, appID, deploymentID string) (map[string]any, error) {
+	if s.Config.PublicationPaused {
+		return nil, fail(503, "publication_paused", "Application publication is temporarily paused")
+	}
 	var result map[string]any
-	e = s.transaction(r.Context(), func(tx pgx.Tx) error {
-		a, e := s.app(r.Context(), tx, r.PathValue("app"), owner)
+	e := s.transaction(ctx, func(tx pgx.Tx) error {
+		a, e := s.app(ctx, tx, appID, owner)
 		if e != nil {
 			return e
 		}
 		if a.Suspended {
 			return fail(403, "app_suspended", "Application suspended")
 		}
-		d, e := getDeployment(r, tx)
+		d, e := getDeployment(ctx, tx, appID, deploymentID)
 		if e != nil {
 			return e
 		}
@@ -416,18 +454,17 @@ func (s *Server) publish(w http.ResponseWriter, r *http.Request) error {
 		if e != nil {
 			return e
 		}
-		if e = s.Storage.Put(r.Context(), releaseManifestKey(d.ID), bytes.NewReader(manifest), int64(len(manifest))); e != nil {
+		if e = s.Storage.Put(ctx, releaseManifestKey(d.ID), bytes.NewReader(manifest), int64(len(manifest))); e != nil {
 			return e
 		}
-		if _, e = tx.Exec(r.Context(), `UPDATE deployments SET status='published',published_at=now() WHERE id=$1`, d.ID); e != nil {
+		if _, e = tx.Exec(ctx, `UPDATE deployments SET status='published',published_at=now() WHERE id=$1`, d.ID); e != nil {
 			return e
 		}
-		_, e = tx.Exec(r.Context(), `UPDATE apps SET active_deployment=$2 WHERE id=$1`, a.ID, d.ID)
+		_, e = tx.Exec(ctx, `UPDATE apps SET active_deployment=$2 WHERE id=$1`, a.ID, d.ID)
 		return e
 	})
 	if e != nil {
-		return e
+		return nil, e
 	}
-	jsonResponse(w, 200, result)
-	return nil
+	return result, nil
 }
