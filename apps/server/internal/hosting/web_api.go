@@ -4,6 +4,7 @@ import (
 	"context"
 	"mime"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -38,7 +39,21 @@ func (s *Server) webAPI(h webHandler) http.HandlerFunc {
 }
 
 func (s *Server) webSession(w http.ResponseWriter, r *http.Request, owner string) error {
-	jsonResponse(w, 200, map[string]string{"ownerId": owner, "authMode": s.Config.AuthMode})
+	var displayName, githubLogin, issuer, subject string
+	if err := s.DB.QueryRow(r.Context(), `SELECT display_name,github_login,issuer,subject FROM owners WHERE id=$1`, owner).Scan(&displayName, &githubLogin, &issuer, &subject); err != nil {
+		return err
+	}
+	username := displayName
+	if username == "" {
+		username = githubLogin
+	}
+	avatarURL := ""
+	if issuer == githubIssuer {
+		if githubID, err := strconv.ParseInt(subject, 10, 64); err == nil && githubID > 0 {
+			avatarURL = "https://avatars.githubusercontent.com/u/" + strconv.FormatInt(githubID, 10) + "?s=96"
+		}
+	}
+	jsonResponse(w, 200, map[string]string{"ownerId": owner, "authMode": s.Config.AuthMode, "username": username, "avatarUrl": avatarURL})
 	return nil
 }
 func (s *Server) webLogout(w http.ResponseWriter, r *http.Request, owner string) error {

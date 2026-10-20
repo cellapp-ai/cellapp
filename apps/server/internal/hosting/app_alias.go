@@ -80,7 +80,42 @@ func ensureAppNamespace(ctx context.Context, tx pgx.Tx, owner, requested string)
 	namespaceID = id()
 	handle = requested
 	if handle == "" {
-		handle = "n-" + namespaceID
+		var issuer, subject, githubLogin string
+		if err = tx.QueryRow(ctx, `SELECT issuer,subject,github_login FROM owners WHERE id=$1`, owner).Scan(&issuer, &subject, &githubLogin); err != nil {
+			return "", "", err
+		}
+		candidates := []string{}
+		if issuer == githubIssuer && githubLogin != "" {
+			preferred := strings.ToLower(githubLogin)
+			if !validUserSlug(preferred) {
+				preferred = "u-" + preferred
+			}
+			if validUserSlug(preferred) {
+				candidates = append(candidates, preferred)
+			}
+			candidates = append(candidates, "u-"+subject)
+		}
+		candidates = append(candidates, "n-"+namespaceID)
+		for _, candidate := range candidates {
+			if !validUserSlug(candidate) {
+				continue
+			}
+			var used bool
+			if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM app_alias_history WHERE namespace=$1)`, candidate).Scan(&used); err != nil {
+				return "", "", err
+			}
+			if used {
+				continue
+			}
+			result, insertErr := tx.Exec(ctx, `INSERT INTO app_namespaces(id,owner_id,handle) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`, namespaceID, owner, candidate)
+			if insertErr != nil {
+				return "", "", insertErr
+			}
+			if result.RowsAffected() == 1 {
+				return namespaceID, candidate, nil
+			}
+		}
+		return "", "", fail(409, "namespace_taken", "No available namespace for this account")
 	}
 	if !validUserSlug(handle) {
 		return "", "", fail(400, "invalid_namespace", "User slug must be 3–61 lowercase characters, digits or hyphens and cannot be reserved")

@@ -41,7 +41,7 @@ func (s *Server) webPage(w http.ResponseWriter, r *http.Request) error {
 	if s.Web == nil || !webUIPath(r.URL.Path) {
 		return fail(404, "not_found", "Not found")
 	}
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' https://avatars.githubusercontent.com; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'")
 	content, e := fs.ReadFile(s.Web, "index.html")
 	if e != nil {
 		return e

@@ -176,13 +176,13 @@ function Credentials() {
     {selected && <Confirm title="Revoke deployment access?" onClose={() => setSelected(null)} busy={busy} onConfirm={() => { void revoke(); }}>The tool using this credential will need to authorize again. Published applications remain available.</Confirm>}
   </>;
 }
-function ProfilePage({ owner }: { owner: Session }) {
+function ProfilePage({ owner, onNameChange }: { owner: Session; onNameChange: (name: string) => void }) {
   const { state, reload } = useResource('/profile', profile);
   const [draft, setDraft] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [error, setError] = useState('');
-  const saved = state.kind === 'ready' ? state.value.displayName : '';
+  const saved = state.kind === 'ready' ? state.value.displayName || state.value.githubUsername : '';
   const name = draft ?? saved;
   const valid = name === name.trim() && Array.from(name).length <= 80 && !Array.from(name).some(character => { const code = character.codePointAt(0) ?? 0; return code < 32 || code === 127; });
   const save = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -190,7 +190,8 @@ function ProfilePage({ owner }: { owner: Session }) {
     if (!valid || busy || state.kind !== 'ready') return;
     setBusy(true); setFeedback(''); setError('');
     try {
-      await request('/profile', profile, { method: 'PUT', body: { displayName: name } });
+      const updated = await request('/profile', profile, { method: 'PUT', body: { displayName: name } });
+      onNameChange(updated.displayName || updated.githubUsername);
       setDraft(null); reload(); setFeedback('Display name saved.');
     } catch (caught) {
       setError(`${message(caught)} Refresh the profile to check whether the change was saved.`);
@@ -198,9 +199,9 @@ function ProfilePage({ owner }: { owner: Session }) {
   };
   return <><div className="page-heading"><p className="eyebrow">ACCOUNT / PROFILE</p><h1>Profile settings</h1><p>Manage the name shown in your Cellapp account.</p></div>
     <LoadingError state={state} retry={reload} />
-    {state.kind === 'ready' && <><section className="panel"><h2>Display name</h2><form className="profile-form" onSubmit={event => { void save(event); }}><label htmlFor="display-name">Name</label><input id="display-name" value={name} disabled={busy} onChange={event => { setDraft(event.target.value); setFeedback(''); setError(''); }} aria-describedby="display-name-help" /><p id="display-name-help">Optional, up to 80 characters. Leave blank to clear it.</p><div className="actions"><button className="primary" type="submit" disabled={busy || !valid || name === saved}>{busy ? 'Saving…' : 'Save name'}</button><button type="button" disabled={busy || name === saved} onClick={() => { setDraft(null); setError(''); }}>Discard changes</button><button type="button" disabled={busy} onClick={() => { setDraft(null); setFeedback(''); setError(''); reload(); }}>Refresh profile</button></div>{!valid && <Feedback error>Remove leading or trailing spaces, control characters, and use no more than 80 characters.</Feedback>}{feedback && <Feedback>{feedback}</Feedback>}{error && <Feedback error>{error}</Feedback>}</form></section>
-      <section className="panel"><h2>User slug</h2><p>Your application addresses end with this slug. Changing it updates their current addresses; previous addresses remain assigned to the same applications.</p><SlugEditor label="User slug" value={state.value.userSlug} maxLength={61} save={async next => { await request('/profile/slug', profile, { method: 'PUT', body: { userSlug: next } }); reload(true); }} /></section>
-      <section className="panel"><h2>Account details</h2><dl><dt>Account ID</dt><dd><code>{owner.ownerId}</code></dd><dt>Sign-in mode</dt><dd>{owner.authMode === 'dev' ? 'Local development' : 'GitHub'}</dd></dl><p>Your account ID is fixed. Changing your display name does not change application addresses.</p></section></>}
+    {state.kind === 'ready' && <><section className="panel"><h2>Display name</h2><form className="profile-form" onSubmit={event => { void save(event); }}><label htmlFor="display-name">Name</label><input id="display-name" value={name} disabled={busy} onChange={event => { setDraft(event.target.value); setFeedback(''); setError(''); }} aria-describedby="display-name-help" /><p id="display-name-help">Optional, up to 80 characters. {state.value.githubUsername ? 'Leave blank to use your GitHub username.' : 'Leave blank to clear it.'}</p><div className="actions"><button className="primary" type="submit" disabled={busy || !valid || name === saved || (name === '' && state.value.displayName === '')}>{busy ? 'Saving…' : 'Save name'}</button><button type="button" disabled={busy || name === saved} onClick={() => { setDraft(null); setError(''); }}>Discard changes</button><button type="button" disabled={busy} onClick={() => { setDraft(null); setFeedback(''); setError(''); reload(); }}>Refresh profile</button></div>{!valid && <Feedback error>Remove leading or trailing spaces, control characters, and use no more than 80 characters.</Feedback>}{feedback && <Feedback>{feedback}</Feedback>}{error && <Feedback error>{error}</Feedback>}</form></section>
+      <section className="panel"><h2>User slug</h2><p>Your application addresses end with this slug. {state.value.userSlug ? 'Changing it updates their current addresses; previous addresses remain assigned to the same applications.' : 'Your first application will use your GitHub username when available, or you can choose a slug now.'}</p><SlugEditor label="User slug" value={state.value.userSlug} maxLength={61} save={async next => { await request('/profile/slug', profile, { method: 'PUT', body: { userSlug: next } }); reload(true); }} /></section>
+      <section className="panel"><h2>Account details</h2><dl><dt>Account ID</dt><dd><code>{owner.ownerId}</code></dd><dt>Sign-in mode</dt><dd>{owner.authMode === 'dev' ? 'Local development' : 'GitHub'}</dd>{state.value.githubUsername && <><dt>GitHub username</dt><dd>@{state.value.githubUsername}</dd></>}</dl><p>Your account ID is fixed. Changing your display name does not change application addresses.</p></section></>}
   </>;
 }
 function Device() {
@@ -218,6 +219,8 @@ function Device() {
   return <><div className="page-heading"><p className="eyebrow">ACCESS / AUTHORIZE TOOL</p><h1>Authorize a deployment tool</h1><p>Only approve a request you just started on your own device.</p></div><section className="panel"><h2>Check your authorization code</h2><p>Approval gives the tool access to manage your applications. Compare this code with the one shown in your local tool.</p><label htmlFor="device-code">Authorization code</label><input id="device-code" value={code} maxLength={64} disabled={busy || !!result} onChange={event => setCode(event.target.value)} autoComplete="off" spellCheck={false} aria-describedby={error ? 'device-error' : undefined} /><div className="actions"><button className="primary" disabled={busy || !!result || !code.trim()} onClick={() => { void decide('approved'); }}>{busy ? 'Working…' : 'Approve access'}</button><button disabled={busy || !!result || !code.trim()} onClick={() => { void decide('denied'); }}>Deny access</button></div>{result && <Feedback>{result}</Feedback>}{error && <p id="device-error" className="feedback error" role="alert">{error}</p>}</section></>;
 }
 function Workspace({ owner }: { owner: Session }) {
+  const [username, setUsername] = useState(owner.username);
+  const [avatarFailed, setAvatarFailed] = useState(false);
   const [menu, setMenu] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -255,9 +258,9 @@ function Workspace({ owner }: { owner: Session }) {
       <div className="nav-group"><p className="nav-label">ACCESS</p><ConsoleLink href="/dashboard/credentials" navigate={navigate} aria-current={path === '/dashboard/credentials' ? 'page' : undefined}>Deployment credentials</ConsoleLink><ConsoleLink href="/dashboard/device" navigate={navigate} aria-current={path === '/dashboard/device' ? 'page' : undefined}>Authorize tool</ConsoleLink></div>
       <div className="nav-group"><p className="nav-label">ACCOUNT</p><ConsoleLink href="/dashboard/profile" navigate={navigate} aria-current={path === '/dashboard/profile' ? 'page' : undefined}>Profile settings</ConsoleLink></div>
     </nav>
-    <div className="account"><p className="eyebrow">{owner.authMode === 'dev' ? 'LOCAL DEVELOPMENT' : 'SIGNED IN'}</p><code title={owner.ownerId}>{owner.ownerId.slice(0, 8)}…</code><button disabled={busy} onClick={() => { void logout(); }}>{busy ? 'Signing out…' : 'Sign out'}</button></div>
+    <div className="account"><p className="eyebrow">{owner.authMode === 'dev' ? 'LOCAL DEVELOPMENT' : 'SIGNED IN'}</p><div className="account-person"><span className="account-avatar" aria-hidden="true"><span>{(username || owner.ownerId).slice(0, 1).toUpperCase()}</span>{owner.avatarUrl && !avatarFailed && <img src={owner.avatarUrl} alt="" onError={() => setAvatarFailed(true)} referrerPolicy="no-referrer" />}</span><span className="account-username" title={username || owner.ownerId}>{username || `${owner.ownerId.slice(0, 8)}…`}</span></div><button disabled={busy} onClick={() => { void logout(); }}>{busy ? 'Signing out…' : 'Sign out'}</button></div>
   </header><main id="content" tabIndex={-1} className="content">{error && <Feedback error>{error}</Feedback>}
-    {path === '/dashboard/credentials' ? <Credentials /> : path === '/dashboard/device' ? <Device key={route} /> : path === '/dashboard/profile' ? <ProfilePage owner={owner} /> : /^[a-f0-9]{32}$/.test(id) ? <ApplicationPage key={id} id={id} navigate={navigate} /> : path === '/dashboard' || path === '/dashboard/applications' ? <Applications navigate={navigate} /> : <><h1>Page not found</h1><ConsoleLink href="/dashboard" navigate={navigate}>Return to applications</ConsoleLink></>}
+    {path === '/dashboard/credentials' ? <Credentials /> : path === '/dashboard/device' ? <Device key={route} /> : path === '/dashboard/profile' ? <ProfilePage owner={owner} onNameChange={setUsername} /> : /^[a-f0-9]{32}$/.test(id) ? <ApplicationPage key={id} id={id} navigate={navigate} /> : path === '/dashboard' || path === '/dashboard/applications' ? <Applications navigate={navigate} /> : <><h1>Page not found</h1><ConsoleLink href="/dashboard" navigate={navigate}>Return to applications</ConsoleLink></>}
   </main></div>;
 }
 export function App() {

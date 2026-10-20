@@ -9,6 +9,7 @@ import (
 	"html"
 	"io"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +20,8 @@ import (
 )
 
 const githubIssuer = "https://github.com"
+
+var githubLoginPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]{0,38}$`)
 
 type GitHubIdentity struct {
 	config  oauth2.Config
@@ -38,33 +41,34 @@ func NewIdentity(c Config) *GitHubIdentity {
 func (i *GitHubIdentity) Start(state, challenge string) string {
 	return i.config.AuthCodeURL(state, oauth2.SetAuthURLParam("code_challenge", challenge), oauth2.SetAuthURLParam("code_challenge_method", "S256"))
 }
-func (i *GitHubIdentity) Exchange(ctx context.Context, code, verifier string) (string, string, error) {
+func (i *GitHubIdentity) Exchange(ctx context.Context, code, verifier string) (IdentityClaims, error) {
 	t, e := i.config.Exchange(ctx, code, oauth2.SetAuthURLParam("code_verifier", verifier))
 	if e != nil {
-		return "", "", e
+		return IdentityClaims{}, e
 	}
 	req, e := http.NewRequestWithContext(ctx, http.MethodGet, i.userURL, nil)
 	if e != nil {
-		return "", "", e
+		return IdentityClaims{}, e
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	req.Header.Set("User-Agent", "Cellapp")
 	response, e := i.config.Client(ctx, t).Do(req)
 	if e != nil {
-		return "", "", e
+		return IdentityClaims{}, e
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return "", "", fmt.Errorf("github user API returned %s", response.Status)
+		return IdentityClaims{}, fmt.Errorf("github user API returned %s", response.Status)
 	}
 	var user struct {
-		ID int64 `json:"id"`
+		ID    int64  `json:"id"`
+		Login string `json:"login"`
 	}
-	if e = json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&user); e != nil || user.ID <= 0 {
-		return "", "", fail(401, "invalid_identity", "GitHub did not return a valid user")
+	if e = json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&user); e != nil || user.ID <= 0 || !githubLoginPattern.MatchString(user.Login) || strings.HasSuffix(user.Login, "-") {
+		return IdentityClaims{}, fail(401, "invalid_identity", "GitHub did not return a valid user")
 	}
-	return githubIssuer, strconv.FormatInt(user.ID, 10), nil
+	return IdentityClaims{githubIssuer, strconv.FormatInt(user.ID, 10), user.Login}, nil
 }
 func cookie(w http.ResponseWriter, name, value string, seconds int) {
 	http.SetCookie(w, &http.Cookie{Name: name, Value: value, Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: seconds})
@@ -85,7 +89,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) error {
 		if e := s.migrateDevelopmentOwner(r); e != nil {
 			return e
 		}
-		return s.finishLogin(w, r, "cellapp:development", "local-owner", safeControlReturn(r.URL.Query().Get("return")))
+		return s.finishLogin(w, r, IdentityClaims{Issuer: "cellapp:development", Subject: "local-owner"}, safeControlReturn(r.URL.Query().Get("return")))
 	}
 	state, verifier, browser := token(), token(), token()
 	h := sha256.Sum256([]byte(verifier))
@@ -111,11 +115,11 @@ func (s *Server) callback(w http.ResponseWriter, r *http.Request) error {
 	if json.Unmarshal(raw, &data) != nil || !equal(data["state"], r.URL.Query().Get("state")) {
 		return fail(401, "invalid_state", "Login state mismatch")
 	}
-	issuer, subject, e := s.Identity.Exchange(r.Context(), r.URL.Query().Get("code"), data["verifier"])
+	claims, e := s.Identity.Exchange(r.Context(), r.URL.Query().Get("code"), data["verifier"])
 	if e != nil {
 		return fail(401, "invalid_identity", "Identity verification failed")
 	}
-	return s.finishLogin(w, r, issuer, subject, safeControlReturn(data["return"]))
+	return s.finishLogin(w, r, claims, safeControlReturn(data["return"]))
 }
 
 // Preserve the owner ID so a brand rename cannot orphan existing apps or credentials.
@@ -141,9 +145,10 @@ func (s *Server) migrateDevelopmentOwner(r *http.Request) error {
 	})
 }
 
-func (s *Server) finishLogin(w http.ResponseWriter, r *http.Request, issuer, subject, returnTo string) error {
+func (s *Server) finishLogin(w http.ResponseWriter, r *http.Request, claims IdentityClaims, returnTo string) error {
 	var owner string
-	e := s.DB.QueryRow(r.Context(), `INSERT INTO owners(id,issuer,subject) VALUES($1,$2,$3) ON CONFLICT(issuer,subject) DO UPDATE SET subject=EXCLUDED.subject RETURNING id`, id(), issuer, subject).Scan(&owner)
+	e := s.DB.QueryRow(r.Context(), `INSERT INTO owners(id,issuer,subject,github_login) VALUES($1,$2,$3,$4)
+    ON CONFLICT(issuer,subject) DO UPDATE SET github_login=EXCLUDED.github_login RETURNING id`, id(), claims.Issuer, claims.Subject, claims.GitHubLogin).Scan(&owner)
 	if e != nil {
 		return e
 	}

@@ -8,13 +8,14 @@ import (
 )
 
 type webProfileData struct {
-	DisplayName string `json:"displayName"`
-	UserSlug    string `json:"userSlug"`
+	DisplayName    string `json:"displayName"`
+	UserSlug       string `json:"userSlug"`
+	GitHubUsername string `json:"githubUsername"`
 }
 
 func (s *Server) webProfile(w http.ResponseWriter, r *http.Request, owner string) error {
 	var profile webProfileData
-	if err := s.DB.QueryRow(r.Context(), `SELECT o.display_name,COALESCE(n.handle,'') FROM owners o LEFT JOIN app_namespaces n ON n.owner_id=o.id WHERE o.id=$1`, owner).Scan(&profile.DisplayName, &profile.UserSlug); err != nil {
+	if err := s.DB.QueryRow(r.Context(), `SELECT o.display_name,COALESCE(n.handle,''),o.github_login FROM owners o LEFT JOIN app_namespaces n ON n.owner_id=o.id WHERE o.id=$1`, owner).Scan(&profile.DisplayName, &profile.UserSlug, &profile.GitHubUsername); err != nil {
 		return err
 	}
 	jsonResponse(w, http.StatusOK, profile)

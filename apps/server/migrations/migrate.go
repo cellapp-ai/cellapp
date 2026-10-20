@@ -35,6 +35,9 @@ var monthlyVisitors string
 //go:embed 009_mcp_agent_access.sql
 var mcpAgentAccess string
 
+//go:embed 010_github_profile.sql
+var githubProfile string
+
 type migration struct {
 	version int
 	sql     string
@@ -49,6 +52,7 @@ var controlMigrations = []migration{
 	{version: 7, sql: appSlugHosts},
 	{version: 8, sql: monthlyVisitors},
 	{version: 9, sql: mcpAgentAccess},
+	{version: 10, sql: githubProfile},
 }
 
 // Run applies each control migration once, including the initial schema on

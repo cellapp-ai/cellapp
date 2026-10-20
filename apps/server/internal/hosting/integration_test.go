@@ -60,11 +60,11 @@ type identityStub struct{}
 func (identityStub) Start(state, challenge string) string {
 	return "https://identity.example/authorize?state=" + state + "&code_challenge=" + challenge
 }
-func (identityStub) Exchange(_ context.Context, code, verifier string) (string, string, error) {
+func (identityStub) Exchange(_ context.Context, code, verifier string) (IdentityClaims, error) {
 	if code != "valid" || verifier == "" {
-		return "", "", os.ErrPermission
+		return IdentityClaims{}, os.ErrPermission
 	}
-	return "https://identity.example", "owner", nil
+	return IdentityClaims{Issuer: "https://identity.example", Subject: "owner"}, nil
 }
 
 type fixture struct {

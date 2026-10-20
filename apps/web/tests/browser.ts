@@ -25,6 +25,8 @@ let mutations = 0;
 let sessionRequests = 0;
 let deviceDecision = '';
 let displayName = '';
+const githubUsername = 'Octocat';
+const avatarUrl = 'https://avatars.githubusercontent.com/u/123456?s=96';
 let userSlug = 'demo';
 let appSlug = 'shared-notes';
 let structureMode: 'valid' | 'pending' | 'empty' | 'malformed' | 'unavailable' | 'long' = 'valid';
@@ -37,7 +39,8 @@ try {
   const context = await browser.newContext();
   const page = await context.newPage();
   page.on('pageerror', error => failures.push(error.message));
-  page.on('request', request => { if (!request.url().startsWith(`${origin}/`)) failures.push(`External request: ${request.url()}`); if (request.url().includes('/rest/v1/')) failures.push('Dashboard fetched table rows'); });
+  page.on('request', request => { if (!request.url().startsWith(`${origin}/`) && request.url() !== avatarUrl) failures.push(`External request: ${request.url()}`); if (request.url().includes('/rest/v1/')) failures.push('Dashboard fetched table rows'); });
+  await page.route('https://avatars.githubusercontent.com/**', route => route.fulfill({status:200, contentType:'image/svg+xml', body:'<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96"><circle cx="48" cy="48" r="48" fill="#63788d"/></svg>'}));
   // UI fixtures only: actual authentication, transactions and HTTPS are checked separately.
   await page.route('**/api/console/**', async route => {
     const path = new URL(route.request().url()).pathname.slice('/api/console'.length);
@@ -50,12 +53,12 @@ try {
       if (path === '/logout') { loggedOut = true; await route.fulfill({json: {loggedOut:true}}); return; }
       if (path.endsWith('/key')) { await route.fulfill({json: {key}}); return; }
       if (path === '/device/decision') { deviceDecision = route.request().postDataJSON().decision; await route.fulfill({json: {status: deviceDecision}}); return; }
-      if (path === '/profile' && method === 'PUT') { displayName = route.request().postDataJSON().displayName; await route.fulfill({json: {displayName,userSlug}}); return; }
-      if (path === '/profile/slug' && method === 'PUT') { userSlug = route.request().postDataJSON().userSlug; await route.fulfill({json: {displayName,userSlug}}); return; }
+      if (path === '/profile' && method === 'PUT') { displayName = route.request().postDataJSON().displayName; await route.fulfill({json: {displayName,userSlug,githubUsername}}); return; }
+      if (path === '/profile/slug' && method === 'PUT') { userSlug = route.request().postDataJSON().userSlug; await route.fulfill({json: {displayName,userSlug,githubUsername}}); return; }
       if (path.endsWith('/slug') && method === 'PUT') { appSlug = route.request().postDataJSON().slug; await route.fulfill({json: {id:appID,name:'Shared notes',namespace:userSlug,slug:appSlug,aliasUrl:`https://control.localhost/a/${userSlug}/${appSlug}`,url:`https://${appSlug}-${userSlug}.apps.localhost`,activeDeployment:null,suspended:false,visibility:'restricted',dataState:'ready'}}); return; }
       await route.fulfill({json: {deleted: true, revoked: true, loggedOut: true}}); return;
     }
-    if (path === '/session') { sessionRequests++; await route.fulfill(loggedOut ? {status:401,json:{error:'login_required'}} : {json: {ownerId: ownerID, authMode: 'github'}}); return; }
+    if (path === '/session') { sessionRequests++; await route.fulfill(loggedOut ? {status:401,json:{error:'login_required'}} : {json: {ownerId: ownerID, authMode: 'github', username:displayName || githubUsername, avatarUrl}}); return; }
     if (mode === 'error') { await route.fulfill({status: 503, json: {message: 'Service temporarily unavailable.'}}); return; }
     const app = {id: appID, name: appName, namespace: userSlug, slug: appSlug, aliasUrl: `https://control.localhost/a/${userSlug}/${appSlug}`, url: `https://${appSlug}-${userSlug}.apps.localhost`, activeDeployment: appView === 'unpublished' ? null : credentialID, suspended: appView === 'suspended', visibility: 'restricted', dataState: 'ready'};
     if (path.endsWith('/data/structure')) {
@@ -64,7 +67,7 @@ try {
       const table = {name:structureMode === 'long' ? 'notes_'+'x'.repeat(50) : 'notes',columns:[{name:'id',type:'uuid'},{name:'owner_id',type:'text'},{name:'body',type:'text',nullable:true}],primaryKey:['id'],indexes:[{columns:['owner_id']}],policies:{select:'own-rows',insert:'own-rows',ownerColumn:'owner_id'}};
       await route.fulfill({json:{state:structureMode === 'pending' ? 'pending' : 'ready',version:structureMode === 'empty' ? 0 : 1,tables:structureMode === 'empty' ? [] : [table]}}); return;
     }
-    const value = path === '/apps' ? mode === 'empty' ? [] : [app] : path === '/credentials' ? mode === 'empty' ? [] : [{id: credentialID, createdAt:'2026-09-01T00:00:00Z', expiresAt:'2026-10-01T00:00:00Z'}] : path === '/profile' ? {displayName,userSlug} : path.endsWith('/access') ? {requests: [], grants: []} : path.endsWith('/data') ? {state:'ready',version:1,digest:'f'.repeat(64)} : {...app, release: null};
+    const value = path === '/apps' ? mode === 'empty' ? [] : [app] : path === '/credentials' ? mode === 'empty' ? [] : [{id: credentialID, createdAt:'2026-09-01T00:00:00Z', expiresAt:'2026-10-01T00:00:00Z'}] : path === '/profile' ? {displayName,userSlug,githubUsername} : path.endsWith('/access') ? {requests: [], grants: []} : path.endsWith('/data') ? {state:'ready',version:1,digest:'f'.repeat(64)} : {...app, release: null};
     await route.fulfill({json: value});
   });
   await page.goto(origin + '/dashboard/');
@@ -73,6 +76,8 @@ try {
   assert.equal(await page.locator('link[rel="icon"]').getAttribute('href'), '/dashboard/logos/cellapp-square.svg');
   assert((await page.locator('script[src]').first().getAttribute('src'))?.startsWith('/dashboard/assets/'));
   await page.getByRole('heading', {name: 'Shared notes'}).waitFor();
+  await page.locator('.account-username').getByText(githubUsername).waitFor();
+  assert.equal(await page.locator('.account-avatar img').getAttribute('src'), avatarUrl);
   await page.getByText('@demo/shared-notes').waitFor();
   assert.equal(await page.title(), 'Cellapp');
   await page.evaluate(() => document.fonts.ready);
@@ -174,6 +179,7 @@ try {
   await page.getByRole('button',{name:'Save name'}).click();
   await page.getByRole('status').filter({hasText:'Display name saved'}).waitFor();
   assert.equal(displayName,'Alice');
+  assert.equal(await page.locator('.account-username').textContent(), 'Alice');
   await page.reload();assert.equal(await page.getByLabel('Name',{exact:true}).inputValue(),'Alice');
   await page.getByLabel('Name',{exact:true}).fill(' changed ');
   assert(await page.getByRole('button',{name:'Save name'}).isDisabled());
@@ -207,7 +213,11 @@ try {
   assert.equal(new URL((await page.getByRole('link',{name:'Continue to sign in'}).getAttribute('href')) ?? '', origin).searchParams.get('return'), '/dashboard/device?code=ABC123');
   const disconnected = await browser.newContext();const disconnectedPage = await disconnected.newPage();await disconnectedPage.goto(origin+'/dashboard/');await disconnectedPage.getByRole('alert').filter({hasText:'Unable to connect'}).waitFor();await disconnected.close();
   const noScript=await browser.newContext({javaScriptEnabled:false,viewport:{width:320,height:800}});const plain=await noScript.newPage();await plain.goto(origin+'/dashboard/');assert(await plain.getByText(/Enable JavaScript/).isVisible());await noScript.close();
-  mode='normal';await page.goto(origin+'/dashboard/applications');await page.getByRole('heading',{name:'Applications',exact:true}).waitFor();await page.setViewportSize({width:1440,height:900});await page.getByRole('button',{name:'Sign out'}).click();await page.getByRole('link',{name:'Continue to sign in'}).waitFor();assert(loggedOut);
+  mode='normal';await page.goto(origin+'/dashboard/applications');await page.getByRole('heading',{name:'Applications',exact:true}).waitFor();await page.setViewportSize({width:1440,height:900});
+  await page.locator('.account-avatar img').evaluate(element => element.dispatchEvent(new Event('error')));
+  assert.equal(await page.locator('.account-avatar img').count(), 0);
+  assert.equal(await page.locator('.account-avatar').textContent(), 'A');
+  await page.getByRole('button',{name:'Sign out'}).click();await page.getByRole('link',{name:'Continue to sign in'}).waitFor();assert(loggedOut);
   checks.push('Session expiry, standalone unavailable service, meaningful no-script text');
   assert.deepEqual(failures,[]);
   await writeFile(`${artifacts}/report.json`,JSON.stringify({kind:'UI fixtures and standalone preview; not real control-domain acceptance',checks,failures},null,2));

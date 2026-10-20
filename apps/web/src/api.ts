@@ -1,5 +1,5 @@
-export type Session = { ownerId: string; authMode: 'dev' | 'github' };
-export type Profile = { displayName: string; userSlug: string };
+export type Session = { ownerId: string; authMode: 'dev' | 'github'; username: string; avatarUrl: string };
+export type Profile = { displayName: string; userSlug: string; githubUsername: string };
 export type Application = { id: string; name: string; namespace: string; slug: string; aliasUrl: string; activeDeployment: string | null; suspended: boolean; url: string; visibility: 'public' | 'restricted'; dataState: string };
 export type Release = { id: string; status: string; createdAt: string; publishedAt: string | null; spa: boolean; fileCount: number; bytes: number };
 export type ApplicationDetail = Application & { release: Release | null };
@@ -47,7 +47,11 @@ function identifier(value: unknown): string {
 export function session(value: unknown): Session {
   const data = record(value);
   if (data.authMode !== 'dev' && data.authMode !== 'github') throw new Error('Unexpected response. Try again.');
-  return { ownerId: identifier(data.ownerId), authMode: data.authMode };
+  const username = text(data.username);
+  const avatarUrl = text(data.avatarUrl);
+  if (Array.from(username).length > 80 || username !== username.trim()) throw new Error('Unexpected session response.');
+  if (avatarUrl !== '' && !/^https:\/\/avatars\.githubusercontent\.com\/u\/[1-9][0-9]*\?s=96$/.test(avatarUrl)) throw new Error('Unexpected avatar address.');
+  return { ownerId: identifier(data.ownerId), authMode: data.authMode, username, avatarUrl };
 }
 export function profile(value: unknown): Profile {
   const data = record(value);
@@ -55,7 +59,9 @@ export function profile(value: unknown): Profile {
   if (Array.from(displayName).length > 80 || displayName !== displayName.trim()) throw new Error('Unexpected profile response.');
   const userSlug = text(data.userSlug);
   if (userSlug !== '' && !/^[a-z][a-z0-9-]{0,62}$/.test(userSlug)) throw new Error('Unexpected user slug.');
-  return { displayName, userSlug };
+  const githubUsername = text(data.githubUsername);
+  if (githubUsername !== '' && !/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/.test(githubUsername)) throw new Error('Unexpected GitHub username.');
+  return { displayName, userSlug, githubUsername };
 }
 export function application(value: unknown): Application {
   const data = record(value);

@@ -14,9 +14,9 @@ GET `/auth/login?return=<本站管理路径>` 和 `/auth/callback` 保留现有�
 
 | 方法与路径 | 请求与成功响应 |
 | --- | --- |
-| GET `/api/console/session` | `{ownerId,authMode}`；模式为 `dev` 或 `github` |
-| GET `/api/console/profile` | `{displayName}`；仅返回当前登录账户的个人资料 |
-| PUT `/api/console/profile` | `{displayName}`；返回更新后的 `{displayName}`；允许空字符串清除，最多 80 个 Unicode 字符，不允许首尾空白或控制字符 |
+| GET `/api/console/session` | `{ownerId,authMode,username,avatarUrl}`；模式为 `dev` 或 `github`，用户名和头像可能为空 |
+| GET `/api/console/profile` | `{displayName,userSlug,githubUsername}`；仅返回当前登录账户的个人资料 |
+| PUT `/api/console/profile` | `{displayName}`；返回更新后的 Profile；允许空字符串清除，最多 80 个 Unicode 字符，不允许首尾空白或控制字符 |
 | POST `/api/console/logout` | 无请求体；`{loggedOut:true}`，删除当前会话并清除 Cookie |
 | GET `/api/console/apps` | 未删除自有应用数组，空时 `[]` |
 | GET `/api/console/apps/{app}` | 应用字段及可空 `release` |
@@ -33,6 +33,8 @@ GET `/auth/login?return=<本站管理路径>` 和 `/auth/callback` 保留现有�
 | POST `/api/console/device/decision` | `{code,decision}`；决策为 `approved` 或 `denied`；返回 `{status}` |
 
 应用字段为 `id,name,namespace,slug,aliasUrl,activeDeployment,suspended,url,visibility,dataState`，其中 `activeDeployment` 可空。当前发布字段为 `id,status,createdAt,publishedAt,spa,fileCount,bytes`，其中 `publishedAt` 可空，时间均为 RFC3339；详情不返回发布历史、存储凭证或密钥摘要。凭证列表不返回 token，也不存在设备名称或头像字段。
+
+浏览器 `GET /api/console/session` 额外返回 `username,avatarUrl`；它们来自当前所有者已验证的 GitHub 资料或手动显示名称，开发模式或旧会话可为空。头像地址仅为固定 GitHub 用户 ID 对应的 `avatars.githubusercontent.com` 图片。Profile 响应额外返回 `githubUsername`；`displayName` 仍是可清除的手动设置值，清除后界面默认显示 GitHub 用户名。
 
 表结构响应中的每个 `tables[]` 项包含 `name,columns,primaryKey,indexes,policies`。`columns[]` 为 `{name,type,nullable?}`，`indexes[]` 为 `{columns,unique?}`；`policies` 为可选的 `select,insert,update,delete,ownerColumn` 字段，未授予的操作在界面显示为无访问权。`state` 是应用数据服务的 `ready`、`pending` 或 `error` 状态；即使已经有已应用版本，非 `ready` 也不能被解释为当前可用。此 GET 使用浏览器所有者会话和逐应用鉴权，其他所有者的应用返回 404，无会话返回 401，独立应用数据库不可读时返回 `503 app_data_unavailable`，不把失败伪装成空表。返回数据私有且不缓存；访客域不能读取。原 `/data` 状态接口保持兼容。
 
@@ -53,3 +55,5 @@ GET `/auth/login?return=<本站管理路径>` 和 `/auth/callback` 保留现有�
 `/rest/v1/{table}` 支持 `supabase-js` 2.117.3 的表级 select、insert、update、delete、eq、order、range 与写后 select。每次请求重新检查登录、应用访问、表授权及行策略，浏览器提交的 Authorization 和 profile 不生效。Auth、Storage、Realtime、Functions、RPC 等路径返回 `501 unsupported_feature`；其他 Supabase API 不在本期范围内。所有者通过 Bearer CLI 的 `/api/control/v1/apps/{app}/data`、`/plan`、`/apply`、`/verify` 管理表；表版本和静态发布独立。
 
 应用显示名允许重复。`namespace` 是账户的用户 slug，`slug` 是应用 slug，新应用 URL 为 `https://{slug}-{namespace}.<APPS_DOMAIN>`，组合后的单个 DNS 标签最长 63 位。用户 slug 至少 3 位；两种 slug 均使用小写字母开头，后续可包含小写字母、数字、连字符，且拒绝 `accounts`、`cloud`、`login`、`app` 等平台保留词。组合域名全局唯一并在删除、改名后保留占用。控制域 `aliasUrl` 对应 `@namespace/slug`，临时重定向到当前 URL。内部 ID 仍用于登录授权、应用数据和部署隔离；旧 ID 域名及先前分配的组合域名可继续访问原应用。历史别名过长或冲突时保留旧 ID 域名，设置合规 slug 后启用组合域名。新所有者首次创建应用可通过 CLI 指定 `namespace` 和 `slug`，控制台的 Profile 与应用详情页可分别修改这两个值。
+
+GitHub 所有者未指定首个 `namespace` 时，默认使用已验证用户名的小写合法形式；无效或已占用时使用唯一回退值。已分配的用户 slug 不随 GitHub 改名自动改变，既有应用地址保持稳定。

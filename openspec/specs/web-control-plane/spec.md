@@ -181,7 +181,7 @@ Web SHALL 为所有者展示自有应用真实的公开/受限状态、待审申
 
 ### Requirement: Personal profile settings
 
-Web SHALL 提供当前登录账户的个人 Profile 页面，显示完整账户 ID 和当前登录模式，并允许设置或清除显示名称。资料读取与更新 MUST 以浏览器会话确定账户，不接受客户端指定账户 ID；显示名称更新 MUST 不改变账户身份、应用地址或访问权。
+Web SHALL 提供当前登录账户的个人 Profile 页面，显示完整账户 ID 和当前登录模式，并允许设置或清除显示名称。GitHub 账户未设置显示名称时，界面 SHALL 默认显示最近一次已验证的 GitHub 用户名。资料读取与更新 MUST 以浏览器会话确定账户，不接受客户端指定账户 ID；显示名称更新 MUST 不改变账户身份、应用地址或访问权。
 
 #### Scenario: Open profile and save a name
 - **WHEN** 已登录用户打开 `/profile` 并提交合法显示名称
@@ -189,7 +189,7 @@ Web SHALL 提供当前登录账户的个人 Profile 页面，显示完整账户 
 
 #### Scenario: Clear or reject a name
 - **WHEN** 用户提交空字符串，或提交超过 80 个字符、首尾空白、控制字符或无效 JSON
-- **THEN** 空字符串清除显示名称；无效输入返回明确错误且不修改已保存名称
+- **THEN** 空字符串清除设置的显示名称，并在可用时恢复 GitHub 用户名默认值；无效输入返回明确错误且不修改已保存名称
 
 #### Scenario: Authentication and origin boundaries
 - **WHEN** 无会话或跨站来源请求资料更新
@@ -278,3 +278,15 @@ The dashboard SHALL let an authenticated owner inspect the latest applied table 
 #### Scenario: Read-only boundary
 - **WHEN** the owner inspects or changes the selected table in the dashboard
 - **THEN** no data rows are fetched and no schema, policy, or row mutation is submitted; existing CLI or Agent table management remains the write path
+
+### Requirement: Verified GitHub account presentation
+
+The authenticated dashboard SHALL show a GitHub owner's latest verified username by default and an avatar tied to the immutable GitHub user ID. It SHALL keep the name readable when the image is unavailable and prefer an explicitly chosen display name.
+
+#### Scenario: Signed-in identity
+- **WHEN** a GitHub owner signs in and opens the console
+- **THEN** the account area shows the verified username and avatar without replacing the immutable account ID used for authorization
+
+#### Scenario: Missing avatar or chosen name
+- **WHEN** the GitHub avatar cannot load, or the owner chooses a display name
+- **THEN** the account area remains readable and shows the chosen display name when present

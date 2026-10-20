@@ -13,6 +13,7 @@ import (
 
 func TestGitHubOAuthPKCEAndUserIdentity(t *testing.T) {
 	var userID int64 = 123456
+	userLogin := "Alice-Dev"
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /login/oauth/access_token", func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
@@ -27,7 +28,7 @@ func TestGitHubOAuthPKCEAndUserIdentity(t *testing.T) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		jsonResponse(w, http.StatusOK, map[string]int64{"id": userID})
+		jsonResponse(w, http.StatusOK, map[string]any{"id": userID, "login": userLogin})
 	})
 	githubServer := httptest.NewServer(mux)
 	defer githubServer.Close()
@@ -47,13 +48,17 @@ func TestGitHubOAuthPKCEAndUserIdentity(t *testing.T) {
 	if auth.Query().Get("state") != "state" || auth.Query().Get("code_challenge") != "challenge" || auth.Query().Get("code_challenge_method") != "S256" {
 		t.Fatal("missing OAuth state or PKCE binding")
 	}
-	issuer, subject, e := identity.Exchange(ctx, "valid", "verifier")
-	if e != nil || issuer != githubIssuer || subject != "123456" {
-		t.Fatal(issuer, subject, e)
+	claims, e := identity.Exchange(ctx, "valid", "verifier")
+	if e != nil || claims.Issuer != githubIssuer || claims.Subject != "123456" || claims.GitHubLogin != userLogin {
+		t.Fatal(claims, e)
 	}
 	userID = 0
-	if _, _, e = identity.Exchange(ctx, "valid", "verifier"); e == nil {
+	if _, e = identity.Exchange(ctx, "valid", "verifier"); e == nil {
 		t.Fatal("invalid GitHub user ID accepted")
+	}
+	userID, userLogin = 123456, "bad_login"
+	if _, e = identity.Exchange(ctx, "valid", "verifier"); e == nil {
+		t.Fatal("invalid GitHub login accepted")
 	}
 }
 

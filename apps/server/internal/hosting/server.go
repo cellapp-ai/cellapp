@@ -20,7 +20,10 @@ import (
 
 type Identity interface {
 	Start(state, challenge string) string
-	Exchange(context.Context, string, string) (string, string, error)
+	Exchange(context.Context, string, string) (IdentityClaims, error)
+}
+type IdentityClaims struct {
+	Issuer, Subject, GitHubLogin string
 }
 type Server struct {
 	Web                   fs.FS
