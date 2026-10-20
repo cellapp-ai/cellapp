@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Provides task-oriented documentation that helps a new CellApp user move from installation to a first deployment, while keeping command reference and troubleshooting discoverable.
+Provides task-oriented documentation that helps a new Cellapp user move from installation to a first deployment, while keeping command reference and troubleshooting discoverable.
 
 ## ADDED Requirements
 

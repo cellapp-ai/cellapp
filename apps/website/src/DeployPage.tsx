@@ -1,6 +1,5 @@
 import React, { useRef, useState } from 'react';
-
-export const deploymentPrompt = 'Read https://cellapp.ai/deploy/AGENTS.md, build this project locally and deploy it; use its supported app database tables if needed, and give me the published URL.';
+import { deploymentPrompt } from './content';
 
 export default function DeployPage() {
   const [copyStatus, setCopyStatus] = useState('');
@@ -36,7 +35,7 @@ export default function DeployPage() {
     <section className="wrap deploy-hero">
       <div className="eyebrow">Build · deploy · share</div>
       <h1>From idea to<br /><em>a live app.</em></h1>
-      <p>Give one request to the AI tool already working on your project. It checks the code and publishes the finished site. You approve access in your browser.</p>
+      <p>Cellapp hosts your static frontend as a shareable HTTPS app with access controls. Give the coding Agent working on your project one request; it builds locally, you approve access in your browser, and it returns the published URL.</p>
     </section>
 
     <section className="wrap deploy-prompt" aria-labelledby="deploy-prompt-title">

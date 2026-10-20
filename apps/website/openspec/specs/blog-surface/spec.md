@@ -1,10 +1,9 @@
-# Spec Delta
+# Blog Surface Specification
 
 ## Purpose
+Creates a lightweight editorial surface where Cellapp can publish product updates, deployment practices, and technical notes that build trust and provide shareable entry points into the product.
 
-Creates a lightweight editorial surface where CellApp can publish product updates, deployment practices, and technical notes that build trust and provide shareable entry points into the product.
-
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Article discovery
 The blog surface SHALL show a featured article plus a browsable list of article cards containing title, summary, category or tag, publication date, and reading-time metadata.
@@ -26,4 +25,3 @@ Blog content SHALL be represented as local/static content for the initial releas
 #### Scenario: Maintainer adds an article
 - **WHEN** a maintainer adds a valid article entry to the static content source
 - **THEN** the article can appear in the listing and resolve to its detail URL using the existing presentation pattern
-

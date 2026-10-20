@@ -1,10 +1,9 @@
-# Spec Delta
+# Pricing Surface Specification
 
 ## Purpose
+Gives prospective users a fast, scannable way to understand Cellapp plan differences, estimate the right starting point, and continue toward deployment with a clear conversion path.
 
-Gives prospective users a fast, scannable way to understand CellApp plan differences, estimate the right starting point, and continue toward deployment with a clear conversion path.
-
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Plan comparison
 The pricing surface SHALL present the available plans in a comparable layout with plan name, intended audience, price or pricing label, billing cadence, included capabilities, and a primary action for each plan.
@@ -26,4 +25,3 @@ Each plan SHALL provide a clear next action, and the recommended plan SHALL be v
 #### Scenario: Visitor chooses a plan
 - **WHEN** a visitor activates a plan action
 - **THEN** the site routes them to the configured getting-started or contact destination and preserves the selected plan context where the destination supports it
-

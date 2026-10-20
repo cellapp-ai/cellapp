@@ -28,6 +28,6 @@
 - 本目录记录持续适用的工程与设计约定；根目录 [README](../../README.md) 提供运行入口。
 - OpenSpec `proposal.md`、`design.md`、`specs/**/spec.md`、`tasks.md` 记录具体变更的动机、决策、需求和任务。
 - [RELEASE_REVIEW.md](../../RELEASE_REVIEW.md) 记录公开发布前仍需确认的产品内容。
-- 已有变更 `expand-landing-page-product-surfaces` 的任务全部勾选完成，但尚未归档；`openspec/specs/` 当前没有正式能力规范。不能把“任务完成”写成“已归档”或“已公开上线”。
+- `expand-landing-page-product-surfaces` 已归档，`openspec/specs/` 已有官网、文档、价格和博客的正式能力规范；`clarify-website-value-and-guides` 的新增要求随后并入官网与文档规范。规格同步和归档不代表 Cloudflare Pages 已发布。
 
 更新其中一份文档时检查其他文档的引用和相同约定，避免重复维护出不同结论。新增工具、后端、CMS、支付、路由机制或品牌系统时应重新评估本目录的适用范围。

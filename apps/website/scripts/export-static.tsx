@@ -3,7 +3,7 @@ import { createElement } from 'react';
 import { readFile, writeFile, mkdir, cp } from 'node:fs/promises';
 import path from 'node:path';
 import App from '../src/App';
-import { metadata, routePaths } from '../src/content';
+import { metadata, routeLanguage, routePaths } from '../src/content';
 import { logo } from '../src/logo';
 
 const root = path.resolve(import.meta.dirname, '..');
@@ -14,7 +14,7 @@ if (!styles || !scripts || /<script[^>]+src=/.test(scripts)) throw new Error('Bu
 const escape = (value: string) => value.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 for (const route of routePaths) {
   const meta = metadata(route);
-  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="${escape(meta.description)}"><title>${escape(meta.title)}</title><link rel="icon" href="${logo}">${styles}</head><body><div id="root" data-route="${route}">${renderToString(createElement(App, { route }))}</div>${scripts}</body></html>`;
+  const html = `<!doctype html><html lang="${routeLanguage(route)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="${escape(meta.description)}"><title>${escape(meta.title)}</title><link rel="icon" href="${logo}">${styles}</head><body><div id="root" data-route="${route}">${renderToString(createElement(App, { route }))}</div>${scripts}</body></html>`;
   const folder = path.join(root, 'dist', route);
   await mkdir(folder, { recursive: true });
   await writeFile(path.join(folder, 'index.html'), html);
