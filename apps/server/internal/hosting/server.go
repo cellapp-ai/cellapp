@@ -95,6 +95,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/console/apps/{app}/key", s.webAPI(s.webResetKey))
 	mux.HandleFunc("GET /api/console/apps/{app}/access", s.webAPI(s.webAccess))
 	mux.HandleFunc("GET /api/console/apps/{app}/data", s.webAPI(s.webDataStatus))
+	mux.HandleFunc("GET /api/console/apps/{app}/data/structure", s.webAPI(s.webDataStructure))
 	mux.HandleFunc("POST /api/console/apps/{app}/visibility/{visibility}", s.webAPI(s.webVisibility))
 	mux.HandleFunc("POST /api/console/apps/{app}/requests/{user}/{decision}", s.webAPI(s.webAccessDecision))
 	mux.HandleFunc("POST /api/console/apps/{app}/grants/{user}/revoke", s.webAPI(s.webGrantRevoke))

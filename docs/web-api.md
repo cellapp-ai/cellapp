@@ -21,6 +21,7 @@ GET `/auth/login?return=<本站管理路径>` 和 `/auth/callback` 保留现有�
 | GET `/api/console/apps` | 未删除自有应用数组，空时 `[]` |
 | GET `/api/console/apps/{app}` | 应用字段及可空 `release` |
 | GET `/api/console/apps/{app}/data` | `{state,version,digest}`；应用数据库不可用返回 503，不显示为空表 |
+| GET `/api/console/apps/{app}/data/structure` | `{state,version,tables}`；仅返回最新已应用的表结构，不返回记录或数据库内部标识；无已应用版本时 `version:0,tables:[]` |
 | GET `/api/console/apps/{app}/access` | `{requests,grants}`；用户 ID 均为应用内随机 ID |
 | POST `/api/console/apps/{app}/visibility/{public|restricted}` | 无请求体；`{visibility}` |
 | POST `/api/console/apps/{app}/requests/{user}/{approve|deny}` | 无请求体；`{status}`；重复同决策可安全重试，反向决策返回 409 |
@@ -32,6 +33,8 @@ GET `/auth/login?return=<本站管理路径>` 和 `/auth/callback` 保留现有�
 | POST `/api/console/device/decision` | `{code,decision}`；决策为 `approved` 或 `denied`；返回 `{status}` |
 
 应用字段为 `id,name,namespace,slug,aliasUrl,activeDeployment,suspended,url,visibility,dataState`，其中 `activeDeployment` 可空。当前发布字段为 `id,status,createdAt,publishedAt,spa,fileCount,bytes`，其中 `publishedAt` 可空，时间均为 RFC3339；详情不返回发布历史、存储凭证或密钥摘要。凭证列表不返回 token，也不存在设备名称或头像字段。
+
+表结构响应中的每个 `tables[]` 项包含 `name,columns,primaryKey,indexes,policies`。`columns[]` 为 `{name,type,nullable?}`，`indexes[]` 为 `{columns,unique?}`；`policies` 为可选的 `select,insert,update,delete,ownerColumn` 字段，未授予的操作在界面显示为无访问权。`state` 是应用数据服务的 `ready`、`pending` 或 `error` 状态；即使已经有已应用版本，非 `ready` 也不能被解释为当前可用。此 GET 使用浏览器所有者会话和逐应用鉴权，其他所有者的应用返回 404，无会话返回 401，独立应用数据库不可读时返回 `503 app_data_unavailable`，不把失败伪装成空表。返回数据私有且不缓存；访客域不能读取。原 `/data` 状态接口保持兼容。
 
 ## 错误与操作结果
 

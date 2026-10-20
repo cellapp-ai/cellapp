@@ -27,13 +27,17 @@ let deviceDecision = '';
 let displayName = '';
 let userSlug = 'demo';
 let appSlug = 'shared-notes';
+let structureMode: 'valid' | 'pending' | 'empty' | 'malformed' | 'unavailable' | 'long' = 'valid';
+let appView: 'unpublished' | 'published' | 'suspended' = 'unpublished';
+let appName = 'Shared notes';
+let loggedOut = false;
 let browser;
 try {
   browser = await chromium.launch({ executablePath, headless: true });
   const context = await browser.newContext();
   const page = await context.newPage();
   page.on('pageerror', error => failures.push(error.message));
-  page.on('request', request => { if (!request.url().startsWith(`${origin}/`)) failures.push(`External request: ${request.url()}`); });
+  page.on('request', request => { if (!request.url().startsWith(`${origin}/`)) failures.push(`External request: ${request.url()}`); if (request.url().includes('/rest/v1/')) failures.push('Dashboard fetched table rows'); });
   // UI fixtures only: actual authentication, transactions and HTTPS are checked separately.
   await page.route('**/api/console/**', async route => {
     const path = new URL(route.request().url()).pathname.slice('/api/console'.length);
@@ -42,6 +46,8 @@ try {
     if (method !== 'GET') {
       mutations++;
       if (mode === 'lost') { await route.abort('failed'); return; }
+      if (mode === 'error') { await route.fulfill({status:503,json:{message:'Service temporarily unavailable.'}}); return; }
+      if (path === '/logout') { loggedOut = true; await route.fulfill({json: {loggedOut:true}}); return; }
       if (path.endsWith('/key')) { await route.fulfill({json: {key}}); return; }
       if (path === '/device/decision') { deviceDecision = route.request().postDataJSON().decision; await route.fulfill({json: {status: deviceDecision}}); return; }
       if (path === '/profile' && method === 'PUT') { displayName = route.request().postDataJSON().displayName; await route.fulfill({json: {displayName,userSlug}}); return; }
@@ -49,9 +55,15 @@ try {
       if (path.endsWith('/slug') && method === 'PUT') { appSlug = route.request().postDataJSON().slug; await route.fulfill({json: {id:appID,name:'Shared notes',namespace:userSlug,slug:appSlug,aliasUrl:`https://control.localhost/a/${userSlug}/${appSlug}`,url:`https://${appSlug}-${userSlug}.apps.localhost`,activeDeployment:null,suspended:false,visibility:'restricted',dataState:'ready'}}); return; }
       await route.fulfill({json: {deleted: true, revoked: true, loggedOut: true}}); return;
     }
-    if (path === '/session') { sessionRequests++; await route.fulfill({json: {ownerId: ownerID, authMode: 'github'}}); return; }
+    if (path === '/session') { sessionRequests++; await route.fulfill(loggedOut ? {status:401,json:{error:'login_required'}} : {json: {ownerId: ownerID, authMode: 'github'}}); return; }
     if (mode === 'error') { await route.fulfill({status: 503, json: {message: 'Service temporarily unavailable.'}}); return; }
-    const app = {id: appID, name: 'Shared notes', namespace: userSlug, slug: appSlug, aliasUrl: `https://control.localhost/a/${userSlug}/${appSlug}`, url: `https://${appSlug}-${userSlug}.apps.localhost`, activeDeployment: null, suspended: false, visibility: 'restricted', dataState: 'ready'};
+    const app = {id: appID, name: appName, namespace: userSlug, slug: appSlug, aliasUrl: `https://control.localhost/a/${userSlug}/${appSlug}`, url: `https://${appSlug}-${userSlug}.apps.localhost`, activeDeployment: appView === 'unpublished' ? null : credentialID, suspended: appView === 'suspended', visibility: 'restricted', dataState: 'ready'};
+    if (path.endsWith('/data/structure')) {
+      if (structureMode === 'unavailable') { await route.fulfill({status:503,json:{message:'Application table structure unavailable.'}}); return; }
+      if (structureMode === 'malformed') { await route.fulfill({json:{state:'ready',version:1,tables:[{name:'notes',rows:[{secret:'never show'}]}]}}); return; }
+      const table = {name:structureMode === 'long' ? 'notes_'+'x'.repeat(50) : 'notes',columns:[{name:'id',type:'uuid'},{name:'owner_id',type:'text'},{name:'body',type:'text',nullable:true}],primaryKey:['id'],indexes:[{columns:['owner_id']}],policies:{select:'own-rows',insert:'own-rows',ownerColumn:'owner_id'}};
+      await route.fulfill({json:{state:structureMode === 'pending' ? 'pending' : 'ready',version:structureMode === 'empty' ? 0 : 1,tables:structureMode === 'empty' ? [] : [table]}}); return;
+    }
     const value = path === '/apps' ? mode === 'empty' ? [] : [app] : path === '/credentials' ? mode === 'empty' ? [] : [{id: credentialID, createdAt:'2026-09-01T00:00:00Z', expiresAt:'2026-10-01T00:00:00Z'}] : path === '/profile' ? {displayName,userSlug} : path.endsWith('/access') ? {requests: [], grants: []} : path.endsWith('/data') ? {state:'ready',version:1,digest:'f'.repeat(64)} : {...app, release: null};
     await route.fulfill({json: value});
   });
@@ -79,7 +91,7 @@ try {
   assert.equal(await page.locator('main').evaluate(e => e === document.activeElement),true);
   await page.goBack();await page.getByRole('heading',{name:'Applications',exact:true}).waitFor();
   assert.equal(sessionRequests,1);
-  await page.locator('a.application-row').click();await page.getByRole('heading',{name:'Shared notes',exact:true}).waitFor();
+  await page.locator('a.manage-link').click();await page.getByRole('heading',{name:'Shared notes',exact:true}).waitFor();
   assert.equal(sessionRequests,1);
   await page.getByRole('link',{name:'Applications',exact:false}).last().click();
   await page.getByRole('heading',{name:'Applications',exact:true}).waitFor();
@@ -94,9 +106,11 @@ try {
   await page.setViewportSize({width:390,height:844});
   await page.getByRole('button',{name:'Open menu'}).focus();await page.keyboard.press('Enter');
   assert.equal(await page.getByRole('button',{name:'Close menu'}).getAttribute('aria-expanded'),'true');
+  assert(await page.getByRole('button',{name:'Sign out'}).isVisible());
   await page.getByRole('link',{name:'Deployment credentials',exact:true}).focus();await page.keyboard.press('Escape');
   assert(await page.getByRole('button',{name:'Open menu'}).evaluate(e => e === document.activeElement));
   assert(!(await page.getByRole('link',{name:'Deployment credentials',exact:true}).isVisible()));
+  assert(!(await page.getByRole('button',{name:'Sign out'}).isVisible()));
   await page.reload();await page.getByRole('heading',{name:'Applications',exact:true}).waitFor();await page.keyboard.press('Tab');
   assert(await page.getByRole('link',{name:'Skip to content'}).evaluate(e => e === document.activeElement));
   await page.keyboard.press('Enter');assert(await page.locator('main').evaluate(e => e === document.activeElement));
@@ -108,9 +122,22 @@ try {
   await page.getByLabel('Application slug').fill('notes');
   await page.getByRole('button',{name:'Save application slug'}).click();
   await page.getByRole('status').filter({hasText:'Application slug saved'}).waitFor();
-  await page.getByText('https://notes-demo.apps.localhost').waitFor();
+  await page.locator('.app-address').getByText('https://notes-demo.apps.localhost').waitFor();
   await page.getByText('No release has been published.',{exact:false}).waitFor();
-  await page.getByText('Table version').waitFor();
+  await page.getByText('Applied table version 1.',{exact:false}).waitFor();
+  await page.getByRole('button',{name:'notes 3 columns'}).waitFor();
+  await page.getByRole('table',{name:'Columns in notes'}).waitFor();
+  assert.equal(await page.getByText('never show').count(),0);
+  await page.setViewportSize({width:1440,height:1000});await page.evaluate(() => {window.scrollTo(0,0);(document.activeElement as HTMLElement)?.blur();});await page.screenshot({path:`${artifacts}/detail-1440.png`,fullPage:true});
+  await page.setViewportSize({width:390,height:844});await page.evaluate(() => window.scrollTo(0,0));await page.screenshot({path:`${artifacts}/detail-390.png`,fullPage:true});
+  structureMode='long';await page.getByRole('button',{name:'Refresh structure'}).click();await page.getByRole('button',{name:/notes_x+ 3 columns/}).focus();await page.keyboard.press('Enter');
+  assert(await page.evaluate(() => document.documentElement.scrollWidth<=innerWidth));
+  structureMode='valid';await page.getByRole('button',{name:'Refresh structure'}).click();await page.getByRole('table',{name:'Columns in notes'}).waitFor();
+  structureMode='pending';await page.getByRole('button',{name:'Refresh structure'}).click();await page.getByRole('status').filter({hasText:'Data service is pending'}).waitFor();
+  structureMode='empty';await page.getByRole('button',{name:'Refresh structure'}).click();await page.getByRole('heading',{name:'No tables defined'}).waitFor();
+  structureMode='malformed';await page.getByRole('button',{name:'Refresh structure'}).click();await page.getByRole('alert').filter({hasText:'Unexpected table structure response'}).waitFor();
+  structureMode='unavailable';await page.getByRole('button',{name:'Try again'}).click();await page.getByRole('alert').filter({hasText:'Application table structure unavailable'}).waitFor();
+  structureMode='valid';await page.getByRole('button',{name:'Try again'}).click();await page.getByRole('table',{name:'Columns in notes'}).waitFor();
   await page.reload();await page.getByRole('heading',{name:'Shared notes',exact:true}).waitFor();
   await page.getByRole('button',{name:'Rotate access key',exact:true}).click();
   await page.getByRole('dialog').waitFor();
@@ -127,16 +154,22 @@ try {
   assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa']).analyze()).violations,[]);
   await page.locator('a.back').click();await page.getByRole('heading',{name:'Applications',exact:true}).waitFor();
   assert.equal(await page.getByText(key,{exact:true}).count(),0);
-  await page.locator('a.application-row').click();await page.getByRole('heading',{name:'Shared notes',exact:true}).waitFor();
+  await page.locator('a.manage-link').click();await page.getByRole('heading',{name:'Shared notes',exact:true}).waitFor();
   assert.equal(await page.getByRole('heading',{name:'New access key'}).count(),0);
   mode='lost';await page.getByRole('button',{name:'Rotate access key',exact:true}).click();const sent=mutations;await page.getByRole('button',{name:'Confirm',exact:true}).click();
   await page.getByRole('alert').filter({hasText:'may already have taken effect'}).waitFor();assert.equal(mutations,sent+1);
   checks.push('Details deep link, unpublished state, confirmation/cancel focus, transient key and uncertain write without retry');
   mode='normal';await page.goto(origin+'/dashboard/credentials');await page.getByRole('button',{name:'Revoke',exact:true}).click();await page.getByRole('button',{name:'Confirm',exact:true}).click();await page.getByRole('status').filter({hasText:'credential revoked'}).waitFor();
+  mode='lost';const beforeRevoke=mutations;await page.getByRole('button',{name:'Revoke',exact:true}).click();await page.getByRole('button',{name:'Confirm',exact:true}).click();await page.getByRole('alert').filter({hasText:'may already have taken effect'}).waitFor();assert.equal(mutations,beforeRevoke+1);
+  mode='empty';await page.getByRole('button',{name:'Refresh credentials'}).click();await page.getByRole('heading',{name:'No active credentials'}).waitFor();
+  mode='error';await page.getByRole('button',{name:'Refresh credentials'}).click();await page.getByRole('alert').filter({hasText:'Service temporarily unavailable'}).waitFor();
+  mode='normal';await page.getByRole('button',{name:'Try again'}).click();await page.getByRole('heading',{name:credentialID}).waitFor();
   await page.goto(origin+'/dashboard/device?code=ABC123');await page.getByLabel('Authorization code').waitFor();assert.equal(await page.getByLabel('Authorization code').inputValue(),'ABC123');assert.equal(deviceDecision,'');
   await page.getByRole('button',{name:'Deny access'}).click();await page.getByRole('status').filter({hasText:'Authorization denied'}).waitFor();assert.equal(deviceDecision,'denied');
+  await page.goto(origin+'/dashboard/device?code=DEF456');await page.getByLabel('Authorization code').waitFor();mode='error';await page.getByRole('button',{name:'Approve access'}).click();await page.getByRole('alert').filter({hasText:'Service temporarily unavailable'}).waitFor();mode='normal';
   checks.push('Credential confirmation and explicit device decision with prefilled code');
-  await page.goto(origin+'/dashboard/profile');await page.getByRole('heading',{name:'Profile settings'}).waitFor();
+  mode='error';await page.goto(origin+'/dashboard/profile');await page.getByRole('alert').filter({hasText:'Service temporarily unavailable'}).waitFor();
+  mode='normal';await page.getByRole('button',{name:'Try again'}).click();await page.getByRole('heading',{name:'Profile settings'}).waitFor();
   await page.getByLabel('Name',{exact:true}).fill('Alice');
   await page.getByRole('button',{name:'Save name'}).click();
   await page.getByRole('status').filter({hasText:'Display name saved'}).waitFor();
@@ -161,6 +194,9 @@ try {
   mode='error';await page.getByRole('button',{name:'Refresh applications'}).click();await page.getByRole('alert').filter({hasText:'Service temporarily unavailable'}).waitFor();
   assert.equal(await page.getByRole('heading',{name:'No applications yet'}).count(),0);
   mode='normal';await page.getByRole('button',{name:'Try again'}).click();await page.getByRole('heading',{name:'Shared notes'}).waitFor();
+  appView='published';await page.getByRole('button',{name:'Refresh applications'}).click();await page.getByText('Published',{exact:true}).waitFor();assert.equal(await page.getByRole('link',{name:/Open app/}).count(),1);
+  appView='suspended';await page.getByRole('button',{name:'Refresh applications'}).click();await page.getByText('Suspended',{exact:true}).waitFor();assert.equal(await page.getByRole('link',{name:/Open app/}).count(),0);
+  appView='unpublished';appName='薄肌训练工作台';await page.getByRole('button',{name:'Refresh applications'}).click();await page.getByRole('heading',{name:appName}).waitFor();assert(await page.evaluate(() => document.documentElement.scrollWidth<=innerWidth));
   await page.locator('h2').evaluate(e => {e.textContent='A-very-long-application-name-'.repeat(15);});
   assert(await page.evaluate(() => document.documentElement.scrollWidth<=innerWidth));
   await page.emulateMedia({reducedMotion:'reduce'});assert.equal(await page.locator('button').first().evaluate(e => getComputedStyle(e).transitionDuration),'0s');
@@ -171,6 +207,7 @@ try {
   assert.equal(new URL((await page.getByRole('link',{name:'Continue to sign in'}).getAttribute('href')) ?? '', origin).searchParams.get('return'), '/dashboard/device?code=ABC123');
   const disconnected = await browser.newContext();const disconnectedPage = await disconnected.newPage();await disconnectedPage.goto(origin+'/dashboard/');await disconnectedPage.getByRole('alert').filter({hasText:'Unable to connect'}).waitFor();await disconnected.close();
   const noScript=await browser.newContext({javaScriptEnabled:false,viewport:{width:320,height:800}});const plain=await noScript.newPage();await plain.goto(origin+'/dashboard/');assert(await plain.getByText(/Enable JavaScript/).isVisible());await noScript.close();
+  mode='normal';await page.goto(origin+'/dashboard/applications');await page.getByRole('heading',{name:'Applications',exact:true}).waitFor();await page.setViewportSize({width:1440,height:900});await page.getByRole('button',{name:'Sign out'}).click();await page.getByRole('link',{name:'Continue to sign in'}).waitFor();assert(loggedOut);
   checks.push('Session expiry, standalone unavailable service, meaningful no-script text');
   assert.deepEqual(failures,[]);
   await writeFile(`${artifacts}/report.json`,JSON.stringify({kind:'UI fixtures and standalone preview; not real control-domain acceptance',checks,failures},null,2));

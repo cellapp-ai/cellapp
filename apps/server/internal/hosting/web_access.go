@@ -32,6 +32,53 @@ func (s *Server) webDataStatus(w http.ResponseWriter, r *http.Request, owner str
 	return nil
 }
 
+type webTableStructure struct {
+	Name       string           `json:"name"`
+	Columns    []appdata.Column `json:"columns"`
+	PrimaryKey []string         `json:"primaryKey"`
+	Indexes    []appdata.Index  `json:"indexes"`
+	Policies   appdata.Policies `json:"policies"`
+}
+
+func (s *Server) webDataStructure(w http.ResponseWriter, r *http.Request, owner string) error {
+	var app App
+	if err := s.transaction(r.Context(), func(tx pgx.Tx) error {
+		var err error
+		app, err = s.app(r.Context(), tx, r.PathValue("app"), owner)
+		return err
+	}); err != nil {
+		return err
+	}
+	if s.AppDataDB == nil {
+		return fail(503, "app_data_unavailable", "Application table structure unavailable")
+	}
+	manifest, _, err := appdata.Latest(r.Context(), s.AppDataDB, app.ID)
+	if err != nil {
+		return fail(503, "app_data_unavailable", "Application table structure unavailable")
+	}
+	tables := []webTableStructure{}
+	version := 0
+	if manifest != nil {
+		version = manifest.Version
+		for _, table := range manifest.Tables {
+			indexes := table.Indexes
+			if indexes == nil {
+				indexes = []appdata.Index{}
+			}
+			tables = append(tables, webTableStructure{
+				Name: table.Name, Columns: table.Columns, PrimaryKey: table.PrimaryKey,
+				Indexes: indexes, Policies: table.Policies,
+			})
+		}
+	}
+	jsonResponse(w, 200, struct {
+		State   string              `json:"state"`
+		Version int                 `json:"version"`
+		Tables  []webTableStructure `json:"tables"`
+	}{app.DataState, version, tables})
+	return nil
+}
+
 type webAccessRequest struct {
 	UserID      string    `json:"userId"`
 	Status      string    `json:"status"`

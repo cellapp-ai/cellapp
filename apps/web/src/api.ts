@@ -6,6 +6,14 @@ export type ApplicationDetail = Application & { release: Release | null };
 export type Credential = { id: string; createdAt: string; expiresAt: string };
 export type Access = { requests: { userId: string; status: 'pending' | 'approved' | 'denied'; requestedAt: string }[]; grants: { userId: string; source: string; grantedAt: string }[] };
 export type DataStatus = { state: string; version: number; digest: string };
+export type TableStructure = {
+  name: string;
+  columns: { name: string; type: 'text' | 'uuid' | 'bigint' | 'boolean' | 'timestamptz' | 'jsonb'; nullable: boolean }[];
+  primaryKey: string[];
+  indexes: { columns: string[]; unique: boolean }[];
+  policies: { select: string; insert: string; update: string; delete: string; ownerColumn: string };
+};
+export type DataStructure = { state: 'ready' | 'pending' | 'error'; version: number; tables: TableStructure[] };
 
 export class RequestError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -80,6 +88,60 @@ export function access(value: unknown): Access {
 export function dataStatus(value: unknown): DataStatus {
   const data = record(value);
   return { state: text(data.state), version: number(data.version), digest: text(data.digest) };
+}
+function keys(data: Record<string, unknown>, allowed: string[]) {
+  if (Object.keys(data).some(key => !allowed.includes(key))) throw new Error('Unexpected table structure response. Try again.');
+}
+function tableName(value: unknown): string {
+  const name = text(value);
+  if (!/^[a-z][a-z0-9_]{0,62}$/.test(name)) throw new Error('Unexpected table structure response. Try again.');
+  return name;
+}
+function names(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length > 30) throw new Error('Unexpected table structure response. Try again.');
+  return value.map(tableName);
+}
+export function dataStructure(value: unknown): DataStructure {
+  const data = record(value);
+  keys(data, ['state', 'version', 'tables']);
+  if (data.state !== 'ready' && data.state !== 'pending' && data.state !== 'error') throw new Error('Unexpected table structure response. Try again.');
+  const version = number(data.version);
+  if (!Array.isArray(data.tables) || data.tables.length > 20 || (version === 0 && data.tables.length > 0)) throw new Error('Unexpected table structure response. Try again.');
+  const tables = data.tables.map((value): TableStructure => {
+    const table = record(value);
+    keys(table, ['name', 'columns', 'primaryKey', 'indexes', 'policies']);
+    if (!Array.isArray(table.columns) || table.columns.length < 1 || table.columns.length > 30 || !Array.isArray(table.indexes) || table.indexes.length > 10) throw new Error('Unexpected table structure response. Try again.');
+    const columns = table.columns.map((value): TableStructure['columns'][number] => {
+      const column = record(value);
+      keys(column, ['name', 'type', 'nullable']);
+      const type = column.type;
+      if (type !== 'text' && type !== 'uuid' && type !== 'bigint' && type !== 'boolean' && type !== 'timestamptz' && type !== 'jsonb') throw new Error('Unexpected table structure response. Try again.');
+      if (column.nullable !== undefined && typeof column.nullable !== 'boolean') throw new Error('Unexpected table structure response. Try again.');
+      return { name: tableName(column.name), type, nullable: column.nullable === true };
+    });
+    const primaryKey = names(table.primaryKey);
+    if (primaryKey.length < 1 || primaryKey.length > 3 || primaryKey.some(name => !columns.some(column => column.name === name))) throw new Error('Unexpected table structure response. Try again.');
+    const indexes = table.indexes.map(value => {
+      const index = record(value);
+      keys(index, ['columns', 'unique']);
+      const indexColumns = names(index.columns);
+      if (indexColumns.length < 1 || indexColumns.length > 3 || indexColumns.some(name => !columns.some(column => column.name === name)) || (index.unique !== undefined && typeof index.unique !== 'boolean')) throw new Error('Unexpected table structure response. Try again.');
+      return { columns: indexColumns, unique: index.unique === true };
+    });
+    const policy = record(table.policies);
+    keys(policy, ['select', 'insert', 'update', 'delete', 'ownerColumn']);
+    const mode = (value: unknown) => {
+      if (value === undefined || value === 'none') return 'none';
+      if (value === 'all-admitted-users' || value === 'own-rows') return value;
+      throw new Error('Unexpected table structure response. Try again.');
+    };
+    const ownerColumn = policy.ownerColumn === undefined ? '' : tableName(policy.ownerColumn);
+    const policies = { select: mode(policy.select), insert: mode(policy.insert), update: mode(policy.update), delete: mode(policy.delete), ownerColumn };
+    if (ownerColumn && !columns.some(column => column.name === ownerColumn)) throw new Error('Unexpected table structure response. Try again.');
+    return { name: tableName(table.name), columns, primaryKey, indexes, policies };
+  });
+  if (new Set(tables.map(table => table.name)).size !== tables.length) throw new Error('Unexpected table structure response. Try again.');
+  return { state: data.state, version, tables };
 }
 export function detail(value: unknown): ApplicationDetail {
   const data = record(value);
