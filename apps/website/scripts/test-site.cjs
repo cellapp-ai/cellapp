@@ -67,7 +67,7 @@ const routes = ['/', '/deploy/', '/pricing/', '/docs/', '/docs/zh-CN/', '/blog/'
     await page.waitForURL('**/docs/#troubleshooting');
     results.push('Complete bilingual guides and section-preserving language switch');
     const deployRedirect = await context.request.get(targetUrl + '/deploy', { maxRedirects: 0 });
-    assert.equal(deployRedirect.status(), 301);
+    assert([301, 308].includes(deployRedirect.status()), `Expected permanent /deploy redirect, got ${deployRedirect.status()}`);
     assert.equal(deployRedirect.headers().location, '/deploy/');
     results.push('Bare /deploy redirects to the static deployment page');
     await page.goto(targetUrl + '/pricing/');
