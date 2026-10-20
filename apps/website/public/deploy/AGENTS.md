@@ -10,10 +10,6 @@ Work from the user's project directory. Read its package manifest, lockfile, bui
 
 Cellapp hosts static frontend files. It does not run Next.js SSR, a custom server, serverless functions or a private backend. If the project needs a server, explain the blocker or prepare a genuine static export when that preserves the intended behavior. Do not put private credentials in bundled frontend files; admitted visitors can read them.
 
-## Develop the interface when needed
-
-If the request includes developing or substantially redesigning an app and the user has not supplied UI direction, read the [user-app design guidance](https://cellapp.ai/deploy/app-design.md) and apply it as adaptable defaults without asking the user to opt in. Follow explicit user design instructions and the project's established conventions. Choose the framework and styling approach yourself from the app's needs; the guidance does not require a particular tool or Cellapp-branded look. If the request is only to deploy an existing app, continue the deployment flow without redesigning it. If the guidance is unavailable, use these precedence rules and continue the requested work.
-
 ## Run the published client on demand
 
 Check Node.js is at least 22.12 and npm is available. Verify the official published package from the project directory:
@@ -26,7 +22,21 @@ Use the same `npm exec --yes --package=@cellapp/cli@latest -- cellapp` prefix fo
 
 The client defaults to `https://cellapp.ai`. It migrates project associations at the exact retired origin `https://console.cellapp.ai` while preserving the application and pending deployment IDs. An explicit old origin is rejected; respect other custom origins supplied by the user or environment. The old credential is never copied: ask for browser approval once on this machine, then reuse the new user-level credential across the owner's projects. Keep credentials out of project files and logs.
 
-## Build, authorize and publish
+## Authorize before long work
+
+After verifying the client and selecting the project origin, check authorization before lengthy development or builds:
+
+```sh
+npm exec --yes --package=@cellapp/cli@latest -- cellapp apps --project .
+```
+
+This command reuses a saved credential or starts browser authorization when none exists. Send the verification URL and code to the user as soon as they appear, and keep the command running while they approve in the browser. If a saved credential is rejected with 401, run `cellapp login` with the same npm prefix and origin, then retry `cellapp apps`. If a code expires before approval, do not leave the old code as the next step: run login again when the user is ready and send the new URL and code. Never request a password, cookie, access key or deployment credential; a chat reply is not browser approval. Continue the long work after authorization succeeds.
+
+## Develop the interface when needed
+
+If the request includes developing or substantially redesigning an app and the user has not supplied UI direction, read the [user-app design guidance](https://cellapp.ai/deploy/app-design.md) and apply it as adaptable defaults without asking the user to opt in. Follow explicit user design instructions and the project's established conventions. Choose the framework and styling approach yourself from the app's needs; the guidance does not require a particular tool or Cellapp-branded look. If the request is only to deploy an existing app, continue the deployment flow without redesigning it. If the guidance is unavailable, use these precedence rules and continue the requested work.
+
+## Build and publish
 
 Use the project's actual output directory and build command. For example:
 
@@ -34,7 +44,7 @@ Use the project's actual output directory and build command. For example:
 npm exec --yes --package=@cellapp/cli@latest -- cellapp deploy --project . --output dist --build 'npm run build'
 ```
 
-Omit `--build` for plain HTML. The client builds locally, validates static files, uploads them and publishes atomically. If device authorization starts, send the verification URL and code to the user and keep the command running while the user approves in the browser. Never request a password, cookie, access key or deployment credential. A chat reply is not browser approval.
+Omit `--build` for plain HTML. The client builds locally, validates static files, uploads them and publishes atomically. If deployment still starts device authorization, send the new verification URL and code promptly and keep the command running while the user approves in the browser; if it expires, repeat authorization with a fresh code before retrying deployment.
 
 Report success only when the CLI returns `status: published`. Give the user the app URL and explain any remaining visitor access step. The first deployment may return an access key once: share it only with the requesting owner, never put it in a URL, repository, issue or project file. A public app still requires visitors to sign in to Cellapp; a restricted app also needs owner approval or key redemption.
 
