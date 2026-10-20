@@ -60,9 +60,7 @@ const routes = ['/', '/deploy/', '/pricing/', '/docs/', '/blog/', '/blog/ship-st
     await page.screenshot({ path: path.join(artifacts, 'cellapp-deploy-desktop.png'), fullPage: true });
     await page.getByRole('button', { name: 'Copy deployment prompt' }).click();
     const copiedPrompt = await page.evaluate(() => navigator.clipboard.readText());
-    assert.match(copiedPrompt, /https:\/\/cellapp\.ai\/deploy\/AGENTS\.md/);
-    assert.match(copiedPrompt, /log in to Cellapp first if needed/);
-    assert.match(copiedPrompt, /supported app database tables/);
+    assert.equal(copiedPrompt, 'Read https://cellapp.ai/deploy/AGENTS.md, build this project locally and deploy it; use its supported app database tables if needed, and give me the published URL.');
     const instructions = await context.request.get(targetUrl + '/deploy/AGENTS.md');
     assert.equal(instructions.status(), 200);
     assert.match(instructions.headers()['content-type'], /text\/markdown|text\/plain/);

@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 
-export const deploymentPrompt = 'Read https://cellapp.ai/deploy/AGENTS.md, log in to Cellapp first if needed, then build this project locally and deploy it; use its supported app database tables if needed, and give me the published URL.';
+export const deploymentPrompt = 'Read https://cellapp.ai/deploy/AGENTS.md, build this project locally and deploy it; use its supported app database tables if needed, and give me the published URL.';
 
 export default function DeployPage() {
   const [copyStatus, setCopyStatus] = useState('');
