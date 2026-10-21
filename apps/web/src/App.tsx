@@ -129,8 +129,8 @@ function AnonymousAccess({ id, visibility }: { id: string; visibility: 'public' 
     <LoadingError state={state} retry={reload} />
     {current && <><fieldset disabled={busy || visibility !== 'public'}><legend>Visitor permissions</legend>
       <label><input type="checkbox" checked={current.pages} onChange={event => setDraft({ pages: event.target.checked, read: event.target.checked ? current.read : false, write: event.target.checked ? current.write : false })} /> Open published pages</label>
-      <label><input type="checkbox" checked={current.read} disabled={!current.pages} onChange={event => setDraft({ ...current, read: event.target.checked })} /> Read permitted tables</label>
-      <label><input type="checkbox" checked={current.write} disabled={!current.pages} onChange={event => setDraft({ ...current, write: event.target.checked })} /> Submit to permitted tables</label>
+      <label><input type="checkbox" checked={current.read} disabled={!current.pages} onChange={event => setDraft({ pages: current.pages, read: event.target.checked, write: current.write })} /> Read permitted tables</label>
+      <label><input type="checkbox" checked={current.write} disabled={!current.pages} onChange={event => setDraft({ pages: current.pages, read: current.read, write: event.target.checked })} /> Submit to permitted tables</label>
     </fieldset><p role="status">{visibility !== 'public' ? 'Make this application public to enable anonymous access.' : saved?.write && !saved.operatorWritesEnabled ? 'Anonymous submissions are configured but disabled by operations.' : saved?.effectiveWrite ? 'Anonymous submissions are active for tables that allow them.' : 'Anonymous submissions are off.'}</p>
       <button disabled={busy || visibility !== 'public' || !draft || draft.pages === saved?.pages && draft.read === saved?.read && draft.write === saved?.write} onClick={() => setConfirm(true)}>Save anonymous access</button></>}
     {feedback && <Feedback>{feedback}</Feedback>}{error && <Feedback error>{error}</Feedback>}

@@ -54,7 +54,12 @@ try {
       if (mode === 'error') { await route.fulfill({status:503,json:{message:'Service temporarily unavailable.'}}); return; }
       if (path === '/logout') { loggedOut = true; await route.fulfill({json: {loggedOut:true}}); return; }
       if (path.endsWith('/key')) { await route.fulfill({json: {key}}); return; }
-      if (path.endsWith('/anonymous') && method === 'PUT') { const body = route.request().postDataJSON(); anonymous = {...body,operatorWritesEnabled:false,effectiveWrite:false}; await route.fulfill({json: anonymous}); return; }
+      if (path.endsWith('/anonymous') && method === 'PUT') {
+        const body = route.request().postDataJSON() as Record<string, unknown>;
+        if (Object.keys(body).sort().join(',') !== 'pages,read,write') { await route.fulfill({status:400,json:{error:'invalid_json'}}); return; }
+        anonymous = {pages:body.pages as boolean,read:body.read as boolean,write:body.write as boolean,operatorWritesEnabled:false,effectiveWrite:false};
+        await route.fulfill({json: anonymous}); return;
+      }
       if (path.endsWith('/visibility/public')) { appVisibility = 'public'; await route.fulfill({json: {visibility:appVisibility}}); return; }
       if (path.endsWith('/visibility/restricted')) { appVisibility = 'restricted'; anonymous = {pages:false,read:false,write:false,operatorWritesEnabled:false,effectiveWrite:false}; await route.fulfill({json: {visibility:appVisibility}}); return; }
       if (path === '/device/decision') { deviceDecision = route.request().postDataJSON().decision; await route.fulfill({json: {status: deviceDecision}}); return; }
@@ -145,6 +150,11 @@ try {
   await page.getByRole('button',{name:'Save anonymous access'}).click();
   await page.getByRole('dialog').getByRole('button',{name:'Confirm'}).click();
   await page.getByRole('status').filter({hasText:'Anonymous access updated'}).waitFor();
+  await page.getByRole('checkbox',{name:'Read permitted tables'}).check();
+  await page.getByRole('button',{name:'Save anonymous access'}).click();
+  await page.getByRole('dialog').getByRole('button',{name:'Confirm'}).click();
+  await page.getByRole('status').filter({hasText:'Anonymous access updated'}).waitFor();
+  assert.equal(anonymous.read,true);
   await page.getByText('Anonymous submissions are configured but disabled by operations.').waitFor();
   checks.push('Anonymous controls, confirmation and operator-off feedback');
   assert.equal(await page.getByText('never show').count(),0);
