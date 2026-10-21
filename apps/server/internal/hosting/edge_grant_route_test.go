@@ -40,6 +40,28 @@ func TestEdgeGrantRouteAdmissionAndState(t *testing.T) {
 	if w := request("", f.server.Config.EdgeOriginSecret); w.Code != 401 {
 		t.Fatalf("anonymous grant: %d", w.Code)
 	}
+	if _, err := f.db.Exec(context.Background(), `UPDATE apps SET visibility='public',anonymous_pages=true WHERE id=$1`, app.ID); err != nil {
+		t.Fatal(err)
+	}
+	anonymousGrant := request("", f.server.Config.EdgeOriginSecret)
+	if anonymousGrant.Code != 200 {
+		t.Fatalf("enabled anonymous grant: %d %s", anonymousGrant.Code, anonymousGrant.Body.String())
+	}
+	var anonymousIssued struct {
+		Grant string `json:"grant"`
+	}
+	if err := json.Unmarshal(anonymousGrant.Body.Bytes(), &anonymousIssued); err != nil {
+		t.Fatal(err)
+	}
+	if claims, err := verifyEdgeGrant(anonymousIssued.Grant, appHost.Host, "", map[string]ed25519.PublicKey{"test-key": public}, time.Now()); err != nil || claims.Mode != "anonymous" || claims.Deployment != deployment {
+		t.Fatalf("anonymous grant claims: %+v %v", claims, err)
+	}
+	if _, err := f.db.Exec(context.Background(), `UPDATE apps SET anonymous_pages=false,visibility='restricted' WHERE id=$1`, app.ID); err != nil {
+		t.Fatal(err)
+	}
+	if w := request("", f.server.Config.EdgeOriginSecret); w.Code != 401 {
+		t.Fatalf("revoked anonymous grant: %d", w.Code)
+	}
 	if w := request("", "forged"); w.Code != 404 {
 		t.Fatalf("forged edge proof: %d", w.Code)
 	}

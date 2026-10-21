@@ -230,6 +230,28 @@ test('renews once for a page and serves subsequent assets from private R2', asyn
   assert.equal(admissions, 1);
 });
 
+test('serves anonymous grants only without an app session and renews through origin', async () => {
+  const f = await edgeFixture();
+  const grant = await f.issue({m: 'anonymous', c: ''});
+  let admissions = 0;
+  globalThis.fetch = async request => {
+    assert.equal(new URL(request.url).pathname, '/_cellapp/edge-grant');
+    admissions++;
+    return Response.json({grant});
+  };
+  const first = await edgeFetch(new Request(`https://${f.host}/`, {headers: {Accept: 'text/html'}}), f.env);
+  assert.equal(first.status, 200);
+  assert.equal(await first.text(), 'hello');
+  const cookie = first.headers.get('Set-Cookie')?.split(';')[0];
+  assert.ok(cookie);
+  const renewed = await edgeFetch(new Request(`https://${f.host}/`, {headers: {Cookie: cookie, Accept: 'text/html'}}), f.env);
+  assert.equal(renewed.status, 200);
+  assert.equal(admissions, 1);
+  const session = await edgeFetch(new Request(`https://${f.host}/`, {headers: {Cookie: `${cookie}; __Host-cellapp=${f.session}`}}), f.env);
+  assert.equal(session.status, 503);
+  assert.equal(admissions, 2);
+});
+
 test('rejects host/session replay, expired grants and unlisted objects before R2 bytes', async () => {
   const f = await edgeFixture();
   const token = await f.issue();

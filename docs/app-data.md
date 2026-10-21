@@ -15,3 +15,5 @@ Cellapp 为每个应用在独立的应用数据 PostgreSQL 数据库中建立独
 [完整静态示例](../skills/skills/cellapp-deploy/examples/notes/README.md)使用 `@supabase/supabase-js@2.117.3`、当前应用 origin 和公开标识 `cellapp-public`。此标识不是密钥。当前支持 `.from(table).select()`、`.insert()`、`.update()`、`.delete()`、`.eq()`、`.order()`、`.range()` 和写操作后 `.select()` 返回行；其他 Supabase Auth、Realtime、Storage、RPC、函数、关联查询和任意过滤器不在本期范围内。应用调用 `/_cellapp/me` 获取应用内用户 ID；未登录为 401，受限应用未获准为 403，数据服务未就绪为 503。
 
 单请求体最多 1 MiB、单响应最多 2 MiB，PostgREST 单次最多 1000 行，应用数据请求 10 秒超时，数据库语句 5 秒超时，锁等待 1 秒；所有者表变更总计 30 秒、单语句 10 秒、锁等待 2 秒。应用存储默认上限 50,000,000 字节，由数据库事务账本约束。达到限制时客户端必须显示错误并缩小查询或联系管理员；不要在浏览器中无限重试。生产部署、凭证、备份和删除清理见 [应用数据运维](app-data-operations.md)。
+
+匿名访问需要应用公开并分别开启页面、读取或提交；表清单还须将 `policies.anonymousSelect` 或 `policies.anonymousInsert` 明确设为 `all`。匿名提交另受运维开关控制，缺省关闭。未登录仅支持 `GET`、`HEAD` 和 `POST` 新增，`PATCH`、`DELETE` 要求登录。仅允许新增的表会强制最小响应，不返回新增行。匿名读取每来源每应用每分钟限 60 次，写入限 20 次，同时最多 8 个匿名数据请求；超限返回 `429`，请求体过大返回 `413`，来源不符返回 `403`。未登录请求不写入按用户计数的月访客表；IP 仅用于限流，不作为访客身份或独立访客数。

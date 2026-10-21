@@ -35,6 +35,8 @@ func TestManifestValidationAndPlan(t *testing.T) {
 		func(m *Manifest) { m.Tables[0].Indexes[0].Columns = []string{"missing"} },
 		func(m *Manifest) { m.Tables[0].Name = "rpc" },
 		func(m *Manifest) { m.Tables[0].Columns[0].Name = "xmin" },
+		func(m *Manifest) { m.Tables[0].Policies.AnonymousSelect = "own-rows" },
+		func(m *Manifest) { m.Tables[0].Policies.AnonymousInsert = "public" },
 		func(m *Manifest) {
 			m.Tables = append(m.Tables, Table{Name: indexName("notes", 0), Columns: []Column{{Name: "id", Type: "uuid"}}, PrimaryKey: []string{"id"}})
 		},
@@ -73,6 +75,76 @@ func TestManifestValidationAndPlan(t *testing.T) {
 	dropped.AllowDestructive = true
 	if plan, err := PlanManifest(&valid, dropped); err != nil || !plan.RequiresDestructive {
 		t.Fatalf("explicit drop plan: %+v %v", plan, err)
+	}
+}
+
+func TestAnonymousPoliciesUseSeparateRole(t *testing.T) {
+	provisioner, admin := provisionPools(t)
+	appID, otherID := randomAppID(t), randomAppID(t)
+	cleanupApp(t, admin, appID)
+	cleanupApp(t, admin, otherID)
+	ctx := context.Background()
+	for _, id := range []string{appID, otherID} {
+		if err := Provision(ctx, provisioner, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	names, _ := AppNames(appID)
+	otherNames, _ := AppNames(otherID)
+	manifest := Manifest{Version: 1, Tables: []Table{{
+		Name: "forms", Columns: []Column{{Name: "id", Type: "uuid"}, {Name: "body", Type: "text"}},
+		PrimaryKey: []string{"id"}, Policies: Policies{Select: "all-admitted-users", Insert: "all-admitted-users"},
+	}}}
+	if _, err := Apply(ctx, provisioner, appID, manifest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Apply(ctx, provisioner, otherID, manifest); err != nil {
+		t.Fatal(err)
+	}
+	var anonymousRead, signedInRead, crossSchema, controlSchema bool
+	if err := admin.QueryRow(ctx, `SELECT has_table_privilege($1,$2,'SELECT'),has_table_privilege($3,$2,'SELECT'),
+		has_schema_privilege($1,$4,'USAGE'),has_schema_privilege($1,'cellapp_internal','USAGE')`,
+		names.AnonymousRole, names.Schema+".forms", names.APIRole, otherNames.Schema).Scan(&anonymousRead, &signedInRead, &crossSchema, &controlSchema); err != nil {
+		t.Fatal(err)
+	}
+	if anonymousRead || !signedInRead || crossSchema || !controlSchema {
+		t.Fatalf("unexpected initial privileges anonymous=%t signed-in=%t cross=%t internal-usage=%t", anonymousRead, signedInRead, crossSchema, controlSchema)
+	}
+	manifest.Version = 2
+	manifest.Tables[0].Policies.AnonymousSelect = "all"
+	manifest.Tables[0].Policies.AnonymousInsert = "all"
+	if _, err := Apply(ctx, provisioner, appID, manifest); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := admin.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `SET LOCAL ROLE `+quoted(names.AnonymousRole)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO `+quoted(names.Schema)+`.forms(id,body) VALUES('00000000-0000-0000-0000-000000000001','anonymous')`); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM `+quoted(names.Schema)+`.forms`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("anonymous row read: %d %v", count, err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := admin.Exec(ctx, `SELECT 1 FROM `+quoted(otherNames.Schema)+`.forms`); err != nil {
+		t.Fatal(err)
+	}
+	manifest.Version = 3
+	manifest.Tables[0].Policies.AnonymousSelect = "none"
+	manifest.Tables[0].Policies.AnonymousInsert = "none"
+	if _, err := Apply(ctx, provisioner, appID, manifest); err != nil {
+		t.Fatal(err)
+	}
+	if err := admin.QueryRow(ctx, `SELECT has_table_privilege($1,$2,'SELECT')`, names.AnonymousRole, names.Schema+".forms").Scan(&anonymousRead); err != nil || anonymousRead {
+		t.Fatalf("anonymous revoke failed: %t %v", anonymousRead, err)
 	}
 }
 

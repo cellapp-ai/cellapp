@@ -23,6 +23,7 @@ GET `/auth/login?return=<本站管理路径>` 和 `/auth/callback` 保留现有�
 | GET `/api/console/apps/{app}/data` | `{state,version,digest}`；应用数据库不可用返回 503，不显示为空表 |
 | GET `/api/console/apps/{app}/data/structure` | `{state,version,tables}`；仅返回最新已应用的表结构，不返回记录或数据库内部标识；无已应用版本时 `version:0,tables:[]` |
 | GET `/api/console/apps/{app}/access` | `{requests,grants}`；用户 ID 均为应用内随机 ID |
+| GET/PUT `/api/console/apps/{app}/anonymous` | GET 返回 `{pages,read,write,operatorWritesEnabled,effectiveWrite}`；PUT 必须提交三个布尔字段并返回相同结构，仅公开应用可开启，写入需要控制域 Origin |
 | POST `/api/console/apps/{app}/visibility/{public|restricted}` | 无请求体；`{visibility}` |
 | POST `/api/console/apps/{app}/requests/{user}/{approve|deny}` | 无请求体；`{status}`；重复同决策可安全重试，反向决策返回 409 |
 | POST `/api/console/apps/{app}/grants/{user}/revoke` | 无请求体；`{revoked:true}`；撤销后旧密钥不能让该用户自行重新授权 |

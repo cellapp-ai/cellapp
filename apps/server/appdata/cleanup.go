@@ -25,7 +25,7 @@ func CleanupApp(ctx context.Context, pool *pgxpool.Pool, appID string) error {
 	if _, err := tx.Exec(ctx, `DROP SCHEMA IF EXISTS `+quoted(names.Schema)+` CASCADE`); err != nil {
 		return fmt.Errorf("drop application schema: %w", err)
 	}
-	for _, role := range []string{names.APIRole, names.DDLRole} {
+	for _, role := range []string{names.APIRole, names.AnonymousRole, names.DDLRole} {
 		var exists bool
 		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname=$1)`, role).Scan(&exists); err != nil {
 			return err

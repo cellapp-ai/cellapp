@@ -15,6 +15,7 @@
   "scheduler_job": "cellapp-cleanup-trigger",
   "scheduler_region": "us-west1",
   "publication_paused": false,
+  "allow_anonymous_app_data_writes": false,
   "limits": {
     "MAX_APPS": 10,
     "MAX_FILES": 1000,

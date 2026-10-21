@@ -43,6 +43,11 @@ func Apply(ctx context.Context, pool *pgxpool.Pool, appID string, next Manifest)
 	if err := next.Validate(); err != nil {
 		return Plan{}, err
 	}
+	// Existing ready applications may predate the anonymous role. Provision is
+	// idempotent and grants no table access, so repair it before applying DDL.
+	if err := Provision(ctx, pool, appID); err != nil {
+		return Plan{}, err
+	}
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return Plan{}, err
@@ -155,12 +160,24 @@ func Apply(ctx context.Context, pool *pgxpool.Pool, appID string, next Manifest)
 		if _, err := tx.Exec(ctx, `REVOKE ALL ON TABLE `+qualified+` FROM `+quoted(names.APIRole)); err != nil {
 			return Plan{}, err
 		}
+		if _, err := tx.Exec(ctx, `REVOKE ALL ON TABLE `+qualified+` FROM `+quoted(names.AnonymousRole)); err != nil {
+			return Plan{}, err
+		}
 		for _, operation := range []struct{ mode, privilege string }{
 			{table.Policies.Select, "SELECT"}, {table.Policies.Insert, "INSERT"},
 			{table.Policies.Update, "UPDATE"}, {table.Policies.Delete, "DELETE"},
 		} {
 			if operation.mode != "" && operation.mode != "none" {
 				if _, err := tx.Exec(ctx, `GRANT `+operation.privilege+` ON TABLE `+qualified+` TO `+quoted(names.APIRole)); err != nil {
+					return Plan{}, err
+				}
+			}
+		}
+		for _, operation := range []struct{ mode, privilege string }{
+			{table.Policies.AnonymousSelect, "SELECT"}, {table.Policies.AnonymousInsert, "INSERT"},
+		} {
+			if operation.mode == "all" {
+				if _, err := tx.Exec(ctx, `GRANT `+operation.privilege+` ON TABLE `+qualified+` TO `+quoted(names.AnonymousRole)); err != nil {
 					return Plan{}, err
 				}
 			}
@@ -256,7 +273,7 @@ func applyDDL(ctx context.Context, tx pgx.Tx, names Names, previous *Manifest, n
 				return err
 			}
 		}
-		if err := setPolicies(ctx, tx, qualified, table.Policies); err != nil {
+		if err := setPolicies(ctx, tx, qualified, names, table.Policies); err != nil {
 			return err
 		}
 	}
@@ -283,16 +300,18 @@ func indexName(table string, position int) string {
 	return "i_" + table[:min(len(table), 40)] + "_" + hex.EncodeToString(sum[:4])
 }
 
-func setPolicies(ctx context.Context, tx pgx.Tx, qualified string, p Policies) error {
+func setPolicies(ctx context.Context, tx pgx.Tx, qualified string, names Names, p Policies) error {
 	if _, err := tx.Exec(ctx, `ALTER TABLE `+qualified+` ENABLE ROW LEVEL SECURITY`); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `ALTER TABLE `+qualified+` FORCE ROW LEVEL SECURITY`); err != nil {
 		return err
 	}
-	for _, item := range []struct{ name, operation, mode string }{
-		{"_cellapp_select", "SELECT", p.Select}, {"_cellapp_insert", "INSERT", p.Insert},
-		{"_cellapp_update", "UPDATE", p.Update}, {"_cellapp_delete", "DELETE", p.Delete},
+	for _, item := range []struct{ name, operation, mode, role string }{
+		{"_cellapp_select", "SELECT", p.Select, names.APIRole}, {"_cellapp_insert", "INSERT", p.Insert, names.APIRole},
+		{"_cellapp_update", "UPDATE", p.Update, names.APIRole}, {"_cellapp_delete", "DELETE", p.Delete, names.APIRole},
+		{"_cellapp_anonymous_select", "SELECT", p.AnonymousSelect, names.AnonymousRole},
+		{"_cellapp_anonymous_insert", "INSERT", p.AnonymousInsert, names.AnonymousRole},
 	} {
 		if _, err := tx.Exec(ctx, `DROP POLICY IF EXISTS `+quoted(item.name)+` ON `+qualified); err != nil {
 			return err
@@ -304,7 +323,7 @@ func setPolicies(ctx context.Context, tx pgx.Tx, qualified string, p Policies) e
 		if item.mode == "own-rows" {
 			expression = quoted(p.OwnerColumn) + ` = (NULLIF(current_setting('request.jwt.claims',true),'')::jsonb ->> 'app_user_id')`
 		}
-		statement := `CREATE POLICY ` + quoted(item.name) + ` ON ` + qualified + ` FOR ` + item.operation
+		statement := `CREATE POLICY ` + quoted(item.name) + ` ON ` + qualified + ` FOR ` + item.operation + ` TO ` + quoted(item.role)
 		if item.operation != "INSERT" {
 			statement += ` USING (` + expression + `)`
 		}

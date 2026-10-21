@@ -15,16 +15,17 @@ const provisionerRole = "cellapp_appdata_provisioner"
 const authenticatorRole = "cellapp_appdata_authenticator"
 
 type Names struct {
-	Schema  string
-	APIRole string
-	DDLRole string
+	Schema        string
+	APIRole       string
+	AnonymousRole string
+	DDLRole       string
 }
 
 func AppNames(appID string) (Names, error) {
 	if !appIDPattern.MatchString(appID) {
 		return Names{}, fmt.Errorf("invalid application ID")
 	}
-	return Names{Schema: "app_" + appID, APIRole: "app_api_" + appID, DDLRole: "app_ddl_" + appID}, nil
+	return Names{Schema: "app_" + appID, APIRole: "app_api_" + appID, AnonymousRole: "app_anon_" + appID, DDLRole: "app_ddl_" + appID}, nil
 }
 
 func quoted(name string) string { return pgx.Identifier{name}.Sanitize() }
@@ -44,7 +45,7 @@ func Provision(ctx context.Context, pool *pgxpool.Pool, appID string) error {
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 784233))`, appID); err != nil {
 		return err
 	}
-	for _, name := range []string{names.DDLRole, names.APIRole} {
+	for _, name := range []string{names.DDLRole, names.APIRole, names.AnonymousRole} {
 		var exists bool
 		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname=$1)`, name).Scan(&exists); err != nil {
 			return err
@@ -59,6 +60,9 @@ func Provision(ctx context.Context, pool *pgxpool.Pool, appID string) error {
 		return err
 	}
 	if _, err = tx.Exec(ctx, `GRANT `+quoted(names.APIRole)+` TO `+quoted(authenticatorRole)); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `GRANT `+quoted(names.AnonymousRole)+` TO `+quoted(authenticatorRole)); err != nil {
 		return err
 	}
 	if _, err = tx.Exec(ctx, `CREATE SCHEMA IF NOT EXISTS `+quoted(names.Schema)+` AUTHORIZATION `+quoted(names.DDLRole)); err != nil {
@@ -77,10 +81,19 @@ func Provision(ctx context.Context, pool *pgxpool.Pool, appID string) error {
 	if _, err = tx.Exec(ctx, `GRANT USAGE ON SCHEMA `+quoted(names.Schema)+` TO `+quoted(names.APIRole)); err != nil {
 		return err
 	}
+	if _, err = tx.Exec(ctx, `GRANT USAGE ON SCHEMA `+quoted(names.Schema)+` TO `+quoted(names.AnonymousRole)); err != nil {
+		return err
+	}
 	if _, err = tx.Exec(ctx, `GRANT USAGE ON SCHEMA cellapp_internal TO `+quoted(names.APIRole)); err != nil {
 		return err
 	}
 	if _, err = tx.Exec(ctx, `GRANT EXECUTE ON FUNCTION cellapp_internal.pre_request() TO `+quoted(names.APIRole)); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `GRANT USAGE ON SCHEMA cellapp_internal TO `+quoted(names.AnonymousRole)); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `GRANT EXECUTE ON FUNCTION cellapp_internal.pre_request() TO `+quoted(names.AnonymousRole)); err != nil {
 		return err
 	}
 	if _, err = tx.Exec(ctx, `GRANT USAGE ON SCHEMA cellapp_internal TO `+quoted(names.DDLRole)); err != nil {
@@ -132,6 +145,9 @@ func VerifyProvisioned(ctx context.Context, pool *pgxpool.Pool, appID string) er
 	var allowed bool
 	if err = pool.QueryRow(ctx, `SELECT has_schema_privilege($1,$2,'USAGE')`, names.APIRole, names.Schema).Scan(&allowed); err != nil || !allowed {
 		return fmt.Errorf("application API role lacks schema access: %w", err)
+	}
+	if err = pool.QueryRow(ctx, `SELECT has_schema_privilege($1,$2,'USAGE')`, names.AnonymousRole, names.Schema).Scan(&allowed); err != nil || !allowed {
+		return fmt.Errorf("application anonymous role lacks schema access: %w", err)
 	}
 	return nil
 }

@@ -151,6 +151,45 @@ func TestRunFromLegacySchema(t *testing.T) {
 	}
 }
 
+func TestAnonymousAppAccessMigration(t *testing.T) {
+	pool, _ := migrationDatabase(t)
+	ctx := context.Background()
+	if err := Run(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO owners(id,issuer,subject) VALUES('owner','test','owner')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO app_namespaces(id,owner_id,handle) VALUES('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','owner','owner-test')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO apps(id,owner_id,name,key_hash,create_key,create_digest,namespace_id,slug)
+		VALUES('anonymous-test','owner','Anonymous test','hash','request','digest','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','anonymous-test')`); err != nil {
+		t.Fatal(err)
+	}
+	var pages, read, write bool
+	if err := pool.QueryRow(ctx, `SELECT anonymous_pages,anonymous_read,anonymous_write FROM apps WHERE id='anonymous-test'`).Scan(&pages, &read, &write); err != nil || pages || read || write {
+		t.Fatalf("anonymous defaults: %t %t %t, %v", pages, read, write, err)
+	}
+	for _, statement := range []string{
+		`UPDATE apps SET anonymous_pages=true WHERE id='anonymous-test'`,
+		`UPDATE apps SET visibility='public',anonymous_read=true WHERE id='anonymous-test'`,
+	} {
+		if _, err := pool.Exec(ctx, statement); err == nil {
+			t.Fatalf("invalid anonymous setting accepted: %s", statement)
+		}
+	}
+	if _, err := pool.Exec(ctx, `UPDATE apps SET visibility='public',anonymous_pages=true,anonymous_read=true,anonymous_write=true WHERE id='anonymous-test'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE apps SET visibility='restricted' WHERE id='anonymous-test'`); err == nil {
+		t.Fatal("restricted app retained anonymous access")
+	}
+	if err := Run(ctx, pool); err != nil {
+		t.Fatal("repeated migration", err)
+	}
+}
+
 func TestRunFromAppSessionsSchema(t *testing.T) {
 	pool, _ := migrationDatabase(t)
 	ctx := context.Background()

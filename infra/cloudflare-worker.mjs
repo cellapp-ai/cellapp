@@ -49,7 +49,7 @@ async function sha256(value) {
 }
 
 async function verifyGrant(value, host, session, env, now = Math.floor(Date.now() / 1000)) {
-  if (!value || value.length > 4096 || !session) return null;
+  if (!value || value.length > 4096) return null;
   try {
     const parts = value.split('.');
     if (parts.length !== 4 || parts[0] !== 'v1') return null;
@@ -60,7 +60,9 @@ async function verifyGrant(value, host, session, env, now = Math.floor(Date.now(
     if (!valid) return null;
     const claims = JSON.parse(new TextDecoder().decode(unbase64url(parts[2])));
     const digest = base64url(await sha256(session));
-    if (claims.h !== host || claims.c !== digest || !/^[a-f0-9]{32}$/.test(claims.a) || !/^[a-f0-9]{32}$/.test(claims.d) ||
+    const validSession = claims.m === 'anonymous' ? !session && claims.c === '' :
+      (claims.m === 'session' || claims.m === undefined) && !!session && claims.c === digest;
+    if (claims.h !== host || !validSession || !/^[a-f0-9]{32}$/.test(claims.a) || !/^[a-f0-9]{32}$/.test(claims.d) ||
         !Number.isInteger(claims.i) || !Number.isInteger(claims.e) || claims.i > now || claims.e <= now || claims.e - claims.i > 60) return null;
     return claims;
   } catch {

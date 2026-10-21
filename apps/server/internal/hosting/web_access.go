@@ -151,7 +151,11 @@ func (s *Server) webVisibility(w http.ResponseWriter, r *http.Request, owner str
 		if _, err := s.app(r.Context(), tx, r.PathValue("app"), owner); err != nil {
 			return err
 		}
-		_, err := tx.Exec(r.Context(), `UPDATE apps SET visibility=$2 WHERE id=$1`, r.PathValue("app"), visibility)
+		_, err := tx.Exec(r.Context(), `UPDATE apps SET visibility=$2,
+			anonymous_pages=CASE WHEN $2='restricted' THEN false ELSE anonymous_pages END,
+			anonymous_read=CASE WHEN $2='restricted' THEN false ELSE anonymous_read END,
+			anonymous_write=CASE WHEN $2='restricted' THEN false ELSE anonymous_write END
+			WHERE id=$1`, r.PathValue("app"), visibility)
 		return err
 	})
 	if err != nil {

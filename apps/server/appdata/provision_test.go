@@ -54,8 +54,9 @@ func cleanupApp(t *testing.T, admin *pgxpool.Pool, appID string) {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		for _, statement := range []string{
-			`DROP OWNED BY ` + quoted(names.APIRole) + `,` + quoted(names.DDLRole) + ` CASCADE`,
+			`DROP OWNED BY ` + quoted(names.APIRole) + `,` + quoted(names.AnonymousRole) + `,` + quoted(names.DDLRole) + ` CASCADE`,
 			`DROP ROLE IF EXISTS ` + quoted(names.APIRole),
+			`DROP ROLE IF EXISTS ` + quoted(names.AnonymousRole),
 			`DROP ROLE IF EXISTS ` + quoted(names.DDLRole),
 		} {
 			if _, err := admin.Exec(ctx, statement); err != nil {

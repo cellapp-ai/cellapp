@@ -55,8 +55,8 @@ func TestRealPostgRESTProvisioning(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		defer admin.Close()
-		_, _ = admin.Exec(ctx, `DROP OWNED BY `+names.APIRole+`,`+names.DDLRole+` CASCADE`)
-		_, _ = admin.Exec(ctx, `DROP ROLE IF EXISTS `+names.APIRole+`,`+names.DDLRole)
+		_, _ = admin.Exec(ctx, `DROP OWNED BY `+names.APIRole+`,`+names.AnonymousRole+`,`+names.DDLRole+` CASCADE`)
+		_, _ = admin.Exec(ctx, `DROP ROLE IF EXISTS `+names.APIRole+`,`+names.AnonymousRole+`,`+names.DDLRole)
 		_, _ = admin.Exec(ctx, `DELETE FROM cellapp_internal.app_storage_tables WHERE app_id=$1`, appID)
 		_, _ = admin.Exec(ctx, `DELETE FROM cellapp_internal.app_storage WHERE app_id=$1`, appID)
 		_, _ = admin.Exec(ctx, `DELETE FROM cellapp_internal.app_versions WHERE app_id=$1`, appID)

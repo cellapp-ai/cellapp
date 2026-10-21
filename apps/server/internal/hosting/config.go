@@ -31,6 +31,7 @@ type Config struct {
 	WebRoot                                                                              string
 	Production                                                                           bool
 	PublicationPaused                                                                    bool
+	AllowAnonymousAppDataWrites                                                          bool
 	Address, ControlOrigin, AppsDomain, AppPort, Secret, DatabaseURL, AppDataDatabaseURL string
 	EdgeOriginHost, EdgeOriginSecret                                                     string
 	EdgeGrantKeyID                                                                       string
@@ -51,6 +52,13 @@ func LoadConfig(get func(string) string) (c Config, err error) {
 		c.PublicationPaused = true
 	default:
 		return c, fmt.Errorf("PUBLICATION_PAUSED must be true or false")
+	}
+	switch get("ALLOW_ANONYMOUS_APP_DATA_WRITES") {
+	case "", "false":
+	case "true":
+		c.AllowAnonymousAppDataWrites = true
+	default:
+		return c, fmt.Errorf("ALLOW_ANONYMOUS_APP_DATA_WRITES must be true or false")
 	}
 	value := func(key, fallback string) string {
 		v := get(key)

@@ -19,6 +19,7 @@ type edgeGrant struct {
 	App        string `json:"a"`
 	Deployment string `json:"d"`
 	SPA        bool   `json:"s"`
+	Mode       string `json:"m"`
 	Session    string `json:"c"`
 	IssuedAt   int64  `json:"i"`
 	ExpiresAt  int64  `json:"e"`
@@ -30,7 +31,8 @@ func appCookieDigest(value string) string {
 }
 
 func signEdgeGrant(keyID string, private ed25519.PrivateKey, claims edgeGrant) (string, error) {
-	if len(private) != ed25519.PrivateKeySize || keyID == "" || claims.Host == "" || claims.App == "" || claims.Deployment == "" || claims.Session == "" ||
+	if len(private) != ed25519.PrivateKeySize || keyID == "" || claims.Host == "" || claims.App == "" || claims.Deployment == "" ||
+		(claims.Mode == "anonymous" && claims.Session != "" || claims.Mode != "anonymous" && claims.Session == "") ||
 		claims.ExpiresAt <= claims.IssuedAt || claims.ExpiresAt-claims.IssuedAt > int64(edgeGrantLifetime/time.Second) {
 		return "", errors.New("invalid edge grant")
 	}
@@ -59,7 +61,8 @@ func verifyEdgeGrant(value, host, session string, keys map[string]ed25519.Public
 		return claims, errors.New("invalid edge grant payload")
 	}
 	current := now.UTC().Unix()
-	if claims.Host != host || claims.Session != appCookieDigest(session) || session == "" || claims.App == "" || claims.Deployment == "" ||
+	validSession := claims.Mode == "anonymous" && session == "" && claims.Session == "" || claims.Mode != "anonymous" && session != "" && claims.Session == appCookieDigest(session)
+	if claims.Host != host || !validSession || claims.App == "" || claims.Deployment == "" ||
 		claims.IssuedAt > current || claims.ExpiresAt <= current || claims.ExpiresAt-claims.IssuedAt > int64(edgeGrantLifetime/time.Second) {
 		return claims, errors.New("edge grant expired or bound to another request")
 	}

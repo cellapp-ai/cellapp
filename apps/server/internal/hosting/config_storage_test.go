@@ -5,6 +5,36 @@ import (
 	"testing"
 )
 
+func TestAnonymousAppDataWriteConfig(t *testing.T) {
+	for _, tc := range []struct {
+		value   string
+		enabled bool
+		bad     bool
+	}{
+		{"", false, false},
+		{"false", false, false},
+		{"true", true, false},
+		{"TRUE", false, true},
+		{"1", false, true},
+	} {
+		c, err := LoadConfig(func(key string) string {
+			if key == "ALLOW_ANONYMOUS_APP_DATA_WRITES" {
+				return tc.value
+			}
+			return ""
+		})
+		if tc.bad {
+			if err == nil || !strings.Contains(err.Error(), "ALLOW_ANONYMOUS_APP_DATA_WRITES") {
+				t.Fatalf("value %q: expected configuration error, got %v", tc.value, err)
+			}
+			continue
+		}
+		if err != nil || c.AllowAnonymousAppDataWrites != tc.enabled {
+			t.Fatalf("value %q: enabled=%t error=%v", tc.value, c.AllowAnonymousAppDataWrites, err)
+		}
+	}
+}
+
 func TestS3CredentialGroups(t *testing.T) {
 	for _, tc := range []struct {
 		name                    string

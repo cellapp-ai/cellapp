@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -97,6 +98,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/console/apps/{app}", s.webAPI(s.webDeleteApp))
 	mux.HandleFunc("POST /api/console/apps/{app}/key", s.webAPI(s.webResetKey))
 	mux.HandleFunc("GET /api/console/apps/{app}/access", s.webAPI(s.webAccess))
+	mux.HandleFunc("GET /api/console/apps/{app}/anonymous", s.webAPI(s.webAnonymousSettings))
+	mux.HandleFunc("PUT /api/console/apps/{app}/anonymous", s.webAPI(s.webAnonymousSettings))
 	mux.HandleFunc("GET /api/console/apps/{app}/data", s.webAPI(s.webDataStatus))
 	mux.HandleFunc("GET /api/console/apps/{app}/data/structure", s.webAPI(s.webDataStructure))
 	mux.HandleFunc("POST /api/console/apps/{app}/visibility/{visibility}", s.webAPI(s.webVisibility))
@@ -128,6 +131,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/control/v1/apps", s.wrap(s.createApp))
 	mux.HandleFunc("DELETE /api/control/v1/apps/{app}", s.wrap(s.deleteApp))
 	mux.HandleFunc("POST /api/control/v1/apps/{app}/key", s.wrap(s.resetKey))
+	mux.HandleFunc("GET /api/control/v1/apps/{app}/anonymous", s.wrap(s.controlAnonymousSettings))
+	mux.HandleFunc("PUT /api/control/v1/apps/{app}/anonymous", s.wrap(s.controlAnonymousSettings))
 	mux.HandleFunc("GET /api/control/v1/apps/{app}/data", s.wrap(s.dataStatus))
 	mux.HandleFunc("POST /api/control/v1/apps/{app}/data/reconcile", s.wrap(s.dataReconcile))
 	mux.HandleFunc("POST /api/control/v1/apps/{app}/data/plan", s.wrap(s.dataPlan))
@@ -141,6 +146,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /apps", s.wrap(s.createApp))
 	mux.HandleFunc("DELETE /apps/{app}", s.wrap(s.deleteApp))
 	mux.HandleFunc("POST /apps/{app}/key", s.wrap(s.resetKey))
+	mux.HandleFunc("GET /apps/{app}/anonymous", s.wrap(s.controlAnonymousSettings))
+	mux.HandleFunc("PUT /apps/{app}/anonymous", s.wrap(s.controlAnonymousSettings))
 	mux.HandleFunc("GET /apps/{app}/data", s.wrap(s.dataStatus))
 	mux.HandleFunc("POST /apps/{app}/data/reconcile", s.wrap(s.dataReconcile))
 	mux.HandleFunc("POST /apps/{app}/data/plan", s.wrap(s.dataPlan))
@@ -208,7 +215,7 @@ func (s *Server) Handler() http.Handler {
 				return
 			}
 		}
-		if e := s.rate(r.Context(), "app:"+app+":"+remoteIP(r), s.Config.Limits.Requests); e != nil {
+		if e := s.rate(r.Context(), "app:"+app+":"+s.rateSource(r), s.Config.Limits.Requests); e != nil {
 			errorResponse(w, e)
 			return
 		}
@@ -235,6 +242,14 @@ func remoteIP(r *http.Request) string { // Reverse proxy is local; do not trust 
 		host = host[:i]
 	}
 	return host
+}
+func (s *Server) rateSource(r *http.Request) string {
+	if s.requestHost(r) != r.Host {
+		if source := r.Header.Get("CF-Connecting-IP"); net.ParseIP(source) != nil {
+			return source
+		}
+	}
+	return remoteIP(r)
 }
 func (s *Server) rate(ctx context.Context, key string, limit int64) error {
 	var count int64

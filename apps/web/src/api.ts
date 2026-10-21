@@ -5,13 +5,14 @@ export type Release = { id: string; status: string; createdAt: string; published
 export type ApplicationDetail = Application & { release: Release | null };
 export type Credential = { id: string; createdAt: string; expiresAt: string };
 export type Access = { requests: { userId: string; status: 'pending' | 'approved' | 'denied'; requestedAt: string }[]; grants: { userId: string; source: string; grantedAt: string }[] };
+export type AnonymousSettings = { pages: boolean; read: boolean; write: boolean; operatorWritesEnabled: boolean; effectiveWrite: boolean };
 export type DataStatus = { state: string; version: number; digest: string };
 export type TableStructure = {
   name: string;
   columns: { name: string; type: 'text' | 'uuid' | 'bigint' | 'boolean' | 'timestamptz' | 'jsonb'; nullable: boolean }[];
   primaryKey: string[];
   indexes: { columns: string[]; unique: boolean }[];
-  policies: { select: string; insert: string; update: string; delete: string; ownerColumn: string };
+  policies: { select: string; insert: string; update: string; delete: string; ownerColumn: string; anonymousSelect: string; anonymousInsert: string };
 };
 export type DataStructure = { state: 'ready' | 'pending' | 'error'; version: number; tables: TableStructure[] };
 
@@ -52,6 +53,11 @@ export function session(value: unknown): Session {
   if (Array.from(username).length > 80 || username !== username.trim()) throw new Error('Unexpected session response.');
   if (avatarUrl !== '' && !/^https:\/\/avatars\.githubusercontent\.com\/u\/[1-9][0-9]*\?s=96$/.test(avatarUrl)) throw new Error('Unexpected avatar address.');
   return { ownerId: identifier(data.ownerId), authMode: data.authMode, username, avatarUrl };
+}
+export function anonymousSettings(value: unknown): AnonymousSettings {
+  const data = record(value);
+  return { pages: boolean(data.pages), read: boolean(data.read), write: boolean(data.write),
+    operatorWritesEnabled: boolean(data.operatorWritesEnabled), effectiveWrite: boolean(data.effectiveWrite) };
 }
 export function profile(value: unknown): Profile {
   const data = record(value);
@@ -135,14 +141,20 @@ export function dataStructure(value: unknown): DataStructure {
       return { columns: indexColumns, unique: index.unique === true };
     });
     const policy = record(table.policies);
-    keys(policy, ['select', 'insert', 'update', 'delete', 'ownerColumn']);
+    keys(policy, ['select', 'insert', 'update', 'delete', 'ownerColumn', 'anonymousSelect', 'anonymousInsert']);
     const mode = (value: unknown) => {
       if (value === undefined || value === 'none') return 'none';
       if (value === 'all-admitted-users' || value === 'own-rows') return value;
       throw new Error('Unexpected table structure response. Try again.');
     };
     const ownerColumn = policy.ownerColumn === undefined ? '' : tableName(policy.ownerColumn);
-    const policies = { select: mode(policy.select), insert: mode(policy.insert), update: mode(policy.update), delete: mode(policy.delete), ownerColumn };
+    const anonymousMode = (value: unknown) => {
+      if (value === undefined || value === 'none') return 'none';
+      if (value === 'all') return 'all';
+      throw new Error('Unexpected table structure response. Try again.');
+    };
+    const policies = { select: mode(policy.select), insert: mode(policy.insert), update: mode(policy.update), delete: mode(policy.delete), ownerColumn,
+      anonymousSelect: anonymousMode(policy.anonymousSelect), anonymousInsert: anonymousMode(policy.anonymousInsert) };
     if (ownerColumn && !columns.some(column => column.name === ownerColumn)) throw new Error('Unexpected table structure response. Try again.');
     return { name: tableName(table.name), columns, primaryKey, indexes, policies };
   });

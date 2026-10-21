@@ -21,7 +21,8 @@ func (s *Server) webAPI(h webHandler) http.HandlerFunc {
 			}
 			if r.ContentLength != 0 {
 				appSlugPath := idPattern.MatchString(r.PathValue("app")) && r.URL.Path == "/api/console/apps/"+r.PathValue("app")+"/slug"
-				if r.URL.Path != "/api/console/device/decision" && r.URL.Path != "/api/console/profile" && r.URL.Path != "/api/console/profile/slug" && !appSlugPath {
+				anonymousPath := idPattern.MatchString(r.PathValue("app")) && r.URL.Path == "/api/console/apps/"+r.PathValue("app")+"/anonymous"
+				if r.URL.Path != "/api/console/device/decision" && r.URL.Path != "/api/console/profile" && r.URL.Path != "/api/console/profile/slug" && !appSlugPath && !anonymousPath {
 					return fail(400, "invalid_json", "This operation does not accept a request body")
 				}
 				kind, _, e := mime.ParseMediaType(r.Header.Get("Content-Type"))

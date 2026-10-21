@@ -20,6 +20,7 @@ import (
 )
 
 var tablePath = regexp.MustCompile(`^/rest/v1/([a-z][a-z0-9_]{0,62})$`)
+var anonymousDataSlots = make(chan struct{}, 8)
 
 var dataHTTP = &http.Client{
 	Timeout: 10 * time.Second,
@@ -33,7 +34,11 @@ var dataHTTP = &http.Client{
 
 func (s *Server) dataToken(role, appUserID string) string {
 	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"HS256","typ":"JWT"}`))
-	claims, _ := json.Marshal(map[string]any{"role": role, "app_user_id": appUserID, "exp": time.Now().Add(30 * time.Second).Unix()})
+	claimsMap := map[string]any{"role": role, "exp": time.Now().Add(30 * time.Second).Unix()}
+	if appUserID != "" {
+		claimsMap["app_user_id"] = appUserID
+	}
+	claims, _ := json.Marshal(claimsMap)
 	payload := base64.RawURLEncoding.EncodeToString(claims)
 	message := header + "." + payload
 	mac := hmac.New(sha256.New, []byte(s.Config.AppDataJWTSecret))
@@ -146,9 +151,31 @@ func (s *Server) serveData(w http.ResponseWriter, r *http.Request, appID string)
 	if len(requestBody) > 1<<20 {
 		return fail(413, "request_too_large", "Data request is too large")
 	}
-	platformUser, err := s.appSession(r, appID)
-	if err != nil {
-		return err
+	anonymous := cookieValue(r, "__Host-cellapp") == ""
+	var platformUser string
+	if !anonymous {
+		platformUser, err = s.appSession(r, appID)
+		if err != nil {
+			return err
+		}
+	} else {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodPost {
+			return fail(401, "login_required", "Sign in to Cellapp")
+		}
+		operation := "read"
+		limit := int64(60)
+		if r.Method == http.MethodPost {
+			operation, limit = "write", 20
+		}
+		if err := s.rate(r.Context(), "anonymous-data:"+operation+":"+appID+":"+s.rateSource(r), limit); err != nil {
+			return err
+		}
+		select {
+		case anonymousDataSlots <- struct{}{}:
+			defer func() { <-anonymousDataSlots }()
+		default:
+			return fail(429, "anonymous_concurrency_limit", "Too many anonymous data requests")
+		}
 	}
 	names, err := appdata.AppNames(appID)
 	if err != nil {
@@ -158,26 +185,57 @@ func (s *Server) serveData(w http.ResponseWriter, r *http.Request, appID string)
 	var resultHeader http.Header
 	var resultBody []byte
 	err = s.transaction(r.Context(), func(tx pgx.Tx) error {
-		var dataState string
-		if err := tx.QueryRow(r.Context(), `SELECT data_state FROM apps WHERE id=$1 AND NOT deleted AND NOT suspended FOR SHARE`, appID).Scan(&dataState); err != nil {
+		var dataState, visibility string
+		var pages, read, write bool
+		if err := tx.QueryRow(r.Context(), `SELECT data_state,visibility,anonymous_pages,anonymous_read,anonymous_write FROM apps WHERE id=$1 AND NOT deleted AND NOT suspended FOR SHARE`, appID).Scan(&dataState, &visibility, &pages, &read, &write); err != nil {
 			return fail(404, "app_not_found", "Application not found")
 		}
 		if dataState != "ready" {
 			return fail(503, "app_data_not_ready", "Application data is not ready")
 		}
-		access, err := appAccess(r, tx, appID, platformUser)
-		if err != nil {
-			return err
-		}
-		if !access.allowed() {
-			return fail(403, "access_required", "Application access required")
-		}
-		if err := admitVisitor(r.Context(), tx, appID, platformUser, access.Owner, s.Config.Limits.MonthlyVisitors, time.Now()); err != nil {
-			return err
-		}
-		appUserID, err := s.appUser(r, tx, appID, platformUser)
-		if err != nil {
-			return err
+		role, appUserID := names.APIRole, ""
+		minimalInsert := false
+		if anonymous {
+			if visibility != "public" || !pages {
+				return fail(401, "login_required", "Sign in to Cellapp")
+			}
+			if r.Method == http.MethodPost && (!write || !s.Config.AllowAnonymousAppDataWrites) || r.Method != http.MethodPost && !read {
+				return fail(403, "anonymous_data_disabled", "Anonymous data access is disabled")
+			}
+			manifest, _, err := appdata.Latest(r.Context(), s.AppDataDB, appID)
+			if err != nil {
+				return err
+			}
+			var policy appdata.Policies
+			found := false
+			if manifest != nil {
+				for _, table := range manifest.Tables {
+					if table.Name == match[1] {
+						policy, found = table.Policies, true
+						break
+					}
+				}
+			}
+			if !found || r.Method == http.MethodPost && policy.AnonymousInsert != "all" || r.Method != http.MethodPost && policy.AnonymousSelect != "all" {
+				return fail(403, "anonymous_table_denied", "Table does not allow anonymous access")
+			}
+			minimalInsert = r.Method == http.MethodPost && (!read || policy.AnonymousSelect != "all")
+			role = names.AnonymousRole
+		} else {
+			access, err := appAccess(r, tx, appID, platformUser)
+			if err != nil {
+				return err
+			}
+			if !access.allowed() {
+				return fail(403, "access_required", "Application access required")
+			}
+			if err := admitVisitor(r.Context(), tx, appID, platformUser, access.Owner, s.Config.Limits.MonthlyVisitors, time.Now()); err != nil {
+				return err
+			}
+			appUserID, err = s.appUser(r, tx, appID, platformUser)
+			if err != nil {
+				return err
+			}
 		}
 		target, err := url.Parse(s.Config.PostgRESTURL)
 		if err != nil {
@@ -194,7 +252,10 @@ func (s *Server) serveData(w http.ResponseWriter, r *http.Request, appID string)
 				upstream.Header.Set(name, value)
 			}
 		}
-		upstream.Header.Set("Authorization", "Bearer "+s.dataToken(names.APIRole, appUserID))
+		if minimalInsert {
+			upstream.Header.Set("Prefer", "return=minimal")
+		}
+		upstream.Header.Set("Authorization", "Bearer "+s.dataToken(role, appUserID))
 		if r.Method == http.MethodPost || r.Method == http.MethodPatch || r.Method == http.MethodDelete {
 			upstream.Header.Set("Content-Profile", names.Schema)
 		} else {

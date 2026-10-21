@@ -34,11 +34,13 @@ type Index struct {
 }
 
 type Policies struct {
-	Select      string `json:"select,omitempty"`
-	Insert      string `json:"insert,omitempty"`
-	Update      string `json:"update,omitempty"`
-	Delete      string `json:"delete,omitempty"`
-	OwnerColumn string `json:"ownerColumn,omitempty"`
+	Select          string `json:"select,omitempty"`
+	Insert          string `json:"insert,omitempty"`
+	Update          string `json:"update,omitempty"`
+	Delete          string `json:"delete,omitempty"`
+	AnonymousSelect string `json:"anonymousSelect,omitempty"`
+	AnonymousInsert string `json:"anonymousInsert,omitempty"`
+	OwnerColumn     string `json:"ownerColumn,omitempty"`
 }
 
 var identifier = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
@@ -99,6 +101,11 @@ func (m Manifest) Validate() error {
 			}
 		}
 		p := table.Policies
+		for _, mode := range []string{p.AnonymousSelect, p.AnonymousInsert} {
+			if mode != "" && mode != "none" && mode != "all" {
+				return fmt.Errorf("invalid anonymous policy mode in %q", table.Name)
+			}
+		}
 		modes := []string{p.Select, p.Insert, p.Update, p.Delete}
 		ownRows := false
 		for _, mode := range modes {

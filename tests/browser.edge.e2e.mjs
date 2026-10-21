@@ -118,6 +118,20 @@ try {
   assert.equal((await nativeFetch(control + '/_test/public-edge', { method: 'POST' })).status, 204);
   cookies = await context.cookies(appURL);
   session = cookies.find(cookie => cookie.name === '__Host-cellapp');
+  assert.equal((await nativeFetch(control + '/_test/anonymous-edge', { method: 'POST' })).status, 204);
+  await context.clearCookies();
+  await page.goto(appURL + '/deep/link');
+  await page.getByRole('heading', { name: 'Edge app' }).waitFor();
+  assert.ok((await context.cookies(appURL)).some(cookie => cookie.name === '__Host-cellapp-grant'));
+  assert.ok(!(await context.cookies(appURL)).some(cookie => cookie.name === '__Host-cellapp'));
+  const anonymousAsset = await page.evaluate(async () => (await fetch('/main.js')).text());
+  assert.equal(anonymousAsset, 'x');
+  assert.equal((await page.evaluate(async () => (await fetch('/rest/v1/notes')).status)), 403);
+  assert.equal((await nativeFetch(control + '/_test/anonymous-off-edge', { method: 'POST' })).status, 204);
+  assert.equal(await page.evaluate(async () => (await fetch('/main.js')).status), 200);
+  Date.now = () => realNow() + 61_000;
+  assert.equal(await page.evaluate(async () => (await fetch('/main.js')).status), 401);
+  Date.now = realNow;
   await context.clearCookies();
   await context.addCookies([session]);
   assert.equal(await page.evaluate(async () => (await fetch('/main.js')).status), 200);
@@ -130,7 +144,7 @@ try {
   });
   assert.equal(afterSuspension[0], 403);
   assert.notEqual(afterSuspension[1], 'x');
-  console.log('Edge browser: handoff, private R2-binding stub, data forwarding, renewal, revocation and 60-second suspension bound passed.');
+  console.log('Edge browser: handoff, private R2-binding stub, anonymous deep link and asset, data forwarding, renewal, revocation and 60-second bounds passed.');
 } finally {
   Date.now = realNow;
   globalThis.fetch = nativeFetch;

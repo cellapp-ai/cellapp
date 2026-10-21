@@ -3,8 +3,8 @@ package hosting
 import (
 	"context"
 	"crypto"
-	"crypto/rand"
 	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/tls"
@@ -52,6 +52,7 @@ func TestBrowserEndToEnd(t *testing.T) {
 	f.server.AppDataDB = appDB
 	f.server.Config.PostgRESTURL = os.Getenv("TEST_POSTGREST_URL")
 	f.server.Config.AppDataJWTSecret = "local-development-postgrest-jwt-secret-32-bytes"
+	f.server.Config.AllowAnonymousAppDataWrites = true
 	f.server.AppDataProbe = f.server.DataProbe
 	// Browser acceptance uses real S3 so a storage substitute cannot mask release failures.
 	storageConfig, e := LoadConfig(os.Getenv)
@@ -85,11 +86,13 @@ func TestBrowserEndToEnd(t *testing.T) {
 	handler := f.server.Handler()
 	server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Only this test fixture exposes a simulated identity provider; production has no bypass.
-		if r.Method == http.MethodPost && edgeAppID != "" && (r.URL.Path == "/_test/suspend-edge" || r.URL.Path == "/_test/restrict-edge" || r.URL.Path == "/_test/public-edge") {
+		if r.Method == http.MethodPost && edgeAppID != "" && (r.URL.Path == "/_test/suspend-edge" || r.URL.Path == "/_test/restrict-edge" || r.URL.Path == "/_test/public-edge" || r.URL.Path == "/_test/anonymous-edge" || r.URL.Path == "/_test/anonymous-off-edge") {
 			statement := map[string]string{
-				"/_test/suspend-edge":  `UPDATE apps SET suspended=true WHERE id=$1`,
-				"/_test/restrict-edge": `UPDATE apps SET visibility='restricted' WHERE id=$1`,
-				"/_test/public-edge":   `UPDATE apps SET visibility='public' WHERE id=$1`,
+				"/_test/suspend-edge":       `UPDATE apps SET suspended=true WHERE id=$1`,
+				"/_test/restrict-edge":      `UPDATE apps SET visibility='restricted' WHERE id=$1`,
+				"/_test/public-edge":        `UPDATE apps SET visibility='public' WHERE id=$1`,
+				"/_test/anonymous-edge":     `UPDATE apps SET visibility='public',anonymous_pages=true WHERE id=$1`,
+				"/_test/anonymous-off-edge": `UPDATE apps SET anonymous_pages=false WHERE id=$1`,
 			}[r.URL.Path]
 			if _, err := f.db.Exec(r.Context(), statement, edgeAppID); err != nil {
 				t.Error(err)

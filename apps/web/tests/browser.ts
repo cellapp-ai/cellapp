@@ -32,6 +32,8 @@ let appSlug = 'shared-notes';
 let structureMode: 'valid' | 'pending' | 'empty' | 'malformed' | 'unavailable' | 'long' = 'valid';
 let appView: 'unpublished' | 'published' | 'suspended' = 'unpublished';
 let appName = 'Shared notes';
+let appVisibility: 'public' | 'restricted' = 'restricted';
+let anonymous = {pages:false,read:false,write:false,operatorWritesEnabled:false,effectiveWrite:false};
 let loggedOut = false;
 let browser;
 try {
@@ -52,6 +54,9 @@ try {
       if (mode === 'error') { await route.fulfill({status:503,json:{message:'Service temporarily unavailable.'}}); return; }
       if (path === '/logout') { loggedOut = true; await route.fulfill({json: {loggedOut:true}}); return; }
       if (path.endsWith('/key')) { await route.fulfill({json: {key}}); return; }
+      if (path.endsWith('/anonymous') && method === 'PUT') { const body = route.request().postDataJSON(); anonymous = {...body,operatorWritesEnabled:false,effectiveWrite:false}; await route.fulfill({json: anonymous}); return; }
+      if (path.endsWith('/visibility/public')) { appVisibility = 'public'; await route.fulfill({json: {visibility:appVisibility}}); return; }
+      if (path.endsWith('/visibility/restricted')) { appVisibility = 'restricted'; anonymous = {pages:false,read:false,write:false,operatorWritesEnabled:false,effectiveWrite:false}; await route.fulfill({json: {visibility:appVisibility}}); return; }
       if (path === '/device/decision') { deviceDecision = route.request().postDataJSON().decision; await route.fulfill({json: {status: deviceDecision}}); return; }
       if (path === '/profile' && method === 'PUT') { displayName = route.request().postDataJSON().displayName; await route.fulfill({json: {displayName,userSlug,githubUsername}}); return; }
       if (path === '/profile/slug' && method === 'PUT') { userSlug = route.request().postDataJSON().userSlug; await route.fulfill({json: {displayName,userSlug,githubUsername}}); return; }
@@ -60,14 +65,14 @@ try {
     }
     if (path === '/session') { sessionRequests++; await route.fulfill(loggedOut ? {status:401,json:{error:'login_required'}} : {json: {ownerId: ownerID, authMode: 'github', username:displayName || githubUsername, avatarUrl}}); return; }
     if (mode === 'error') { await route.fulfill({status: 503, json: {message: 'Service temporarily unavailable.'}}); return; }
-    const app = {id: appID, name: appName, namespace: userSlug, slug: appSlug, aliasUrl: `https://control.localhost/a/${userSlug}/${appSlug}`, url: `https://${appSlug}-${userSlug}.apps.localhost`, activeDeployment: appView === 'unpublished' ? null : credentialID, suspended: appView === 'suspended', visibility: 'restricted', dataState: 'ready'};
+    const app = {id: appID, name: appName, namespace: userSlug, slug: appSlug, aliasUrl: `https://control.localhost/a/${userSlug}/${appSlug}`, url: `https://${appSlug}-${userSlug}.apps.localhost`, activeDeployment: appView === 'unpublished' ? null : credentialID, suspended: appView === 'suspended', visibility: appVisibility, dataState: 'ready'};
     if (path.endsWith('/data/structure')) {
       if (structureMode === 'unavailable') { await route.fulfill({status:503,json:{message:'Application table structure unavailable.'}}); return; }
       if (structureMode === 'malformed') { await route.fulfill({json:{state:'ready',version:1,tables:[{name:'notes',rows:[{secret:'never show'}]}]}}); return; }
       const table = {name:structureMode === 'long' ? 'notes_'+'x'.repeat(50) : 'notes',columns:[{name:'id',type:'uuid'},{name:'owner_id',type:'text'},{name:'body',type:'text',nullable:true}],primaryKey:['id'],indexes:[{columns:['owner_id']}],policies:{select:'own-rows',insert:'own-rows',ownerColumn:'owner_id'}};
       await route.fulfill({json:{state:structureMode === 'pending' ? 'pending' : 'ready',version:structureMode === 'empty' ? 0 : 1,tables:structureMode === 'empty' ? [] : [table]}}); return;
     }
-    const value = path === '/apps' ? mode === 'empty' ? [] : [app] : path === '/credentials' ? mode === 'empty' ? [] : [{id: credentialID, createdAt:'2026-09-01T00:00:00Z', expiresAt:'2026-10-01T00:00:00Z'}] : path === '/profile' ? {displayName,userSlug,githubUsername} : path.endsWith('/access') ? {requests: [], grants: []} : path.endsWith('/data') ? {state:'ready',version:1,digest:'f'.repeat(64)} : {...app, release: null};
+    const value = path === '/apps' ? mode === 'empty' ? [] : [app] : path === '/credentials' ? mode === 'empty' ? [] : [{id: credentialID, createdAt:'2026-09-01T00:00:00Z', expiresAt:'2026-10-01T00:00:00Z'}] : path === '/profile' ? {displayName,userSlug,githubUsername} : path.endsWith('/access') ? {requests: [], grants: []} : path.endsWith('/anonymous') ? anonymous : path.endsWith('/data') ? {state:'ready',version:1,digest:'f'.repeat(64)} : {...app, release: null};
     await route.fulfill({json: value});
   });
   await page.goto(origin + '/dashboard/');
@@ -132,6 +137,16 @@ try {
   await page.getByText('Applied table version 1.',{exact:false}).waitFor();
   await page.getByRole('button',{name:'notes 3 columns'}).waitFor();
   await page.getByRole('table',{name:'Columns in notes'}).waitFor();
+  assert(await page.getByRole('checkbox',{name:'Open published pages'}).isDisabled());
+  await page.getByRole('button',{name:'Make public'}).click();await page.getByRole('dialog').getByRole('button',{name:'Confirm'}).click();
+  await page.getByRole('checkbox',{name:'Open published pages'}).waitFor();
+  await page.getByRole('checkbox',{name:'Open published pages'}).check();
+  await page.getByRole('checkbox',{name:'Submit to permitted tables'}).check();
+  await page.getByRole('button',{name:'Save anonymous access'}).click();
+  await page.getByRole('dialog').getByRole('button',{name:'Confirm'}).click();
+  await page.getByRole('status').filter({hasText:'Anonymous access updated'}).waitFor();
+  await page.getByText('Anonymous submissions are configured but disabled by operations.').waitFor();
+  checks.push('Anonymous controls, confirmation and operator-off feedback');
   assert.equal(await page.getByText('never show').count(),0);
   await page.setViewportSize({width:1440,height:1000});await page.evaluate(() => {window.scrollTo(0,0);(document.activeElement as HTMLElement)?.blur();});await page.screenshot({path:`${artifacts}/detail-1440.png`,fullPage:true});
   await page.setViewportSize({width:390,height:844});await page.evaluate(() => window.scrollTo(0,0));await page.screenshot({path:`${artifacts}/detail-390.png`,fullPage:true});

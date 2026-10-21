@@ -53,7 +53,8 @@ func (s *Server) serveApp(w http.ResponseWriter, r *http.Request, appID string) 
 	var redirect string
 	e := s.transaction(r.Context(), func(tx pgx.Tx) error {
 		var a App
-		e := tx.QueryRow(r.Context(), `SELECT id,active_deployment,key_hash,generation,deleted,suspended FROM apps WHERE id=$1 FOR UPDATE`, appID).Scan(&a.ID, &a.Active, &a.KeyHash, &a.Generation, &a.Deleted, &a.Suspended)
+		var anonymousPages bool
+		e := tx.QueryRow(r.Context(), `SELECT id,active_deployment,key_hash,generation,deleted,suspended,visibility='public' AND anonymous_pages FROM apps WHERE id=$1 FOR UPDATE`, appID).Scan(&a.ID, &a.Active, &a.KeyHash, &a.Generation, &a.Deleted, &a.Suspended, &anonymousPages)
 		if e != nil || a.Deleted {
 			return fail(404, "app_not_found", "Application not found")
 		}
@@ -95,25 +96,31 @@ func (s *Server) serveApp(w http.ResponseWriter, r *http.Request, appID string) 
 		}
 		navigation := strings.Contains(r.Header.Get("Accept"), "text/html") && (r.Header.Get("Sec-Fetch-Dest") == "" || r.Header.Get("Sec-Fetch-Dest") == "document")
 		user, sessionError := s.appSession(r, appID)
-		if sessionError != nil {
-			if r.Method == "GET" && navigation {
-				label := strings.TrimSuffix(strings.TrimSuffix(s.requestHost(r), ":"+s.Config.AppPort), "."+s.Config.AppsDomain)
-				redirect = s.Config.ControlOrigin + "/auth/app?" + url.Values{"app": {appID}, "host": {label}, "return": {appReturn(r.URL.RequestURI())}}.Encode()
-				return nil
+		anonymous := cookieValue(r, "__Host-cellapp") == "" && anonymousPages
+		var access appAdmission
+		if !anonymous {
+			if sessionError != nil {
+				if r.Method == "GET" && navigation {
+					label := strings.TrimSuffix(strings.TrimSuffix(s.requestHost(r), ":"+s.Config.AppPort), "."+s.Config.AppsDomain)
+					redirect = s.Config.ControlOrigin + "/auth/app?" + url.Values{"app": {appID}, "host": {label}, "return": {appReturn(r.URL.RequestURI())}}.Encode()
+					return nil
+				}
+				return sessionError
 			}
-			return sessionError
-		}
-		access, accessError := appAccess(r, tx, appID, user)
-		if accessError != nil {
-			return accessError
-		}
-		if !access.allowed() {
-			if r.Method == "GET" && navigation {
-				showPage = true
-				requestState = access.Request
-				return nil
+			access, e = appAccess(r, tx, appID, user)
+			if e != nil {
+				return e
 			}
-			return fail(403, "access_required", "Request access or enter an access key")
+			if !access.allowed() {
+				if r.Method == "GET" && navigation {
+					showPage = true
+					requestState = access.Request
+					return nil
+				}
+				return fail(403, "access_required", "Request access or enter an access key")
+			}
+		} else if e := s.rate(r.Context(), "anonymous-page:"+appID+":"+s.rateSource(r), 120); e != nil {
+			return e
 		}
 		if a.Active == nil {
 			return fail(404, "not_published", "Application has not been published")
@@ -154,8 +161,10 @@ func (s *Server) serveApp(w http.ResponseWriter, r *http.Request, appID string) 
 		if !found {
 			return fail(404, "not_found", "File not found")
 		}
-		if e = admitVisitor(r.Context(), tx, appID, user, access.Owner, s.Config.Limits.MonthlyVisitors, time.Now()); e != nil {
-			return e
+		if !anonymous {
+			if e = admitVisitor(r.Context(), tx, appID, user, access.Owner, s.Config.Limits.MonthlyVisitors, time.Now()); e != nil {
+				return e
+			}
 		}
 		if r.Method != "HEAD" {
 			content, e = s.Storage.Get(r.Context(), objectKey(*a.Active, file.Path))

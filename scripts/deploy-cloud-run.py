@@ -17,7 +17,7 @@ NAME = re.compile(r"^[a-z][a-z0-9-]{1,61}[a-z0-9]$")
 DOMAIN = re.compile(r"^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$")
 DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 SECRET_KEYS = ("SECRET", "DATABASE_URL", "APP_DATA_DATABASE_URL", "APP_DATA_JWT_SECRET", "PGRST_DB_URI", "PGRST_JWT_SECRET", "GITHUB_CLIENT_SECRET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY")
-PUBLIC_ENV = ("NODE_ENV", "AUTH_MODE", "CONTROL_ORIGIN", "APPS_DOMAIN", "GITHUB_CLIENT_ID", "S3_ENDPOINT", "S3_REGION", "S3_BUCKET", "POSTGREST_URL", "PGRST_SERVER_HOST", "PGRST_SERVER_PORT", "PGRST_DB_SCHEMAS", "PGRST_DB_PRE_CONFIG", "PGRST_DB_ANON_ROLE", "PGRST_OPENAPI_MODE", "PGRST_DB_POOL", "PGRST_DB_MAX_ROWS", "PGRST_DB_PRE_REQUEST", "MAX_APPS", "MAX_FILES", "MAX_FILE_BYTES", "MAX_DEPLOYMENT_BYTES", "MAX_STORAGE_BYTES", "MAX_MONTHLY_VISITORS", "MAX_REQUESTS_PER_MINUTE", "UPLOAD_TTL_SECONDS", "RETENTION_SECONDS", "PUBLICATION_PAUSED")
+PUBLIC_ENV = ("NODE_ENV", "AUTH_MODE", "CONTROL_ORIGIN", "APPS_DOMAIN", "GITHUB_CLIENT_ID", "S3_ENDPOINT", "S3_REGION", "S3_BUCKET", "POSTGREST_URL", "PGRST_SERVER_HOST", "PGRST_SERVER_PORT", "PGRST_DB_SCHEMAS", "PGRST_DB_PRE_CONFIG", "PGRST_DB_ANON_ROLE", "PGRST_OPENAPI_MODE", "PGRST_DB_POOL", "PGRST_DB_MAX_ROWS", "PGRST_DB_PRE_REQUEST", "MAX_APPS", "MAX_FILES", "MAX_FILE_BYTES", "MAX_DEPLOYMENT_BYTES", "MAX_STORAGE_BYTES", "MAX_MONTHLY_VISITORS", "MAX_REQUESTS_PER_MINUTE", "UPLOAD_TTL_SECONDS", "RETENTION_SECONDS", "PUBLICATION_PAUSED", "ALLOW_ANONYMOUS_APP_DATA_WRITES")
 LIMIT_KEYS = ("MAX_APPS", "MAX_FILES", "MAX_FILE_BYTES", "MAX_DEPLOYMENT_BYTES", "MAX_STORAGE_BYTES", "MAX_MONTHLY_VISITORS", "MAX_REQUESTS_PER_MINUTE", "UPLOAD_TTL_SECONDS", "RETENTION_SECONDS")
 
 
@@ -105,6 +105,8 @@ def load_config(path):
             raise DeploymentError("edge_delivery requires retention longer than grant lifetime")
     if not isinstance(config.get("publication_paused", False), bool):
         raise DeploymentError("publication_paused must be a boolean")
+    if not isinstance(config.get("allow_anonymous_app_data_writes", False), bool):
+        raise DeploymentError("allow_anonymous_app_data_writes must be a boolean")
     if secrets["APP_DATA_JWT_SECRET"] != secrets["PGRST_JWT_SECRET"]:
         raise DeploymentError("APP_DATA_JWT_SECRET and PGRST_JWT_SECRET must reference the same secret version")
     if "cloudsql_instance" in config and not re.fullmatch(r"[a-z][a-z0-9-]+:[a-z0-9-]+:[a-z][a-z0-9-]+", config["cloudsql_instance"]):
@@ -182,6 +184,7 @@ def settings(c):
     }
     env.update({key: str(c["limits"][key]) for key in LIMIT_KEYS})
     env["PUBLICATION_PAUSED"] = str(c.get("publication_paused", False)).lower()
+    env["ALLOW_ANONYMOUS_APP_DATA_WRITES"] = str(c.get("allow_anonymous_app_data_writes", False)).lower()
     for key in PUBLIC_ENV:
         if "," in env[key] or "=" in env[key]:
             raise DeploymentError(f"unsupported character in configuration: {key}")
