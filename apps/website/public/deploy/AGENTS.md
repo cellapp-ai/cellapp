@@ -2,6 +2,8 @@
 
 [简体中文版](./AGENTS.zh-CN.md)
 
+When building a static app that uses Cellapp identity or tables, read the [application API version guide](./api-versions.md) and [changelog](./api-changelog.md). Use `@cellapp/sdk` for identity and tables. Public app APIs live under `/_cellapp/`, including `/_cellapp/me` and `/_cellapp/db/{table}`; do not call `/rest/v1` from app code. New SDK builds pin the platform's default stable contract unless the project selects another supported contract; an unversioned direct request follows latest.
+
 The user wants the current project developed and deployed to Cellapp. Run the official published client yourself for building, upload and verification. The user only needs to approve device authorization in the browser. Do not implement Cellapp's upload protocol yourself or ask the user to install a CLI.
 
 ## Inspect the project

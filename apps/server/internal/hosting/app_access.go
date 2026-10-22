@@ -36,6 +36,10 @@ func (s *Server) appUser(r *http.Request, tx pgx.Tx, appID, platformUser string)
 }
 
 func (s *Server) appMe(w http.ResponseWriter, r *http.Request, appID string) error {
+	contract, err := selectAppAPIContract(r)
+	if err != nil {
+		return err
+	}
 	user, err := s.appSession(r, appID)
 	if err != nil {
 		return err
@@ -62,7 +66,11 @@ func (s *Server) appMe(w http.ResponseWriter, r *http.Request, appID string) err
 	if err != nil {
 		return err
 	}
-	jsonResponse(w, 200, map[string]string{"id": appUserID, "access": "admitted"})
+	payload, err := appAPIIdentityResponse(contract, appUserID)
+	if err != nil {
+		return err
+	}
+	jsonResponse(w, 200, payload)
 	return nil
 }
 

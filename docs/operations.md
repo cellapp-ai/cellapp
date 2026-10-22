@@ -67,7 +67,7 @@ docker compose -f infra/compose.yaml exec -T postgres psql -U cellapp_rename_adm
 
 `npm run build` 生成服务端和完整 Web 静态产物。将两者放在同一版本的发布目录，正常服务显式设置 `WEB_ROOT=/absolute/release/web`；默认目录仅适用于仓库开发。启动时检查 index 和 assets，缺失则失败，不回退到旧首页。数据库迁移、清理、暂停和统计维护命令独立于静态目录。
 
-控制域提供 `/dashboard/login`、`/dashboard/applications`、`/dashboard/applications/<id>`、`/dashboard/credentials` 和 `/dashboard/device`，有效深链可刷新。`/api/console/*` 使用浏览器会话和严格 Origin。CLI 使用 `/auth/device`、`/auth/device/poll` 登录，使用 `DELETE /auth/credentials/current` 撤销当前 Bearer 凭证；额度、应用、部署和数据管理位于 `/api/control/v1/*`，要求 Bearer。旧 `/device-authorizations*`、`/credentials/current`、`/limits` 与 `/apps*` 保留兼容，不经重定向。应用域 `/_cellapp/*` 与 `/rest/v1/*` 继续逐次检查访客会话和应用授权。未知资源/API 返回 404，API 与 HTML 不缓存，带指纹资源可长期缓存。CSP 限制资源来自本站并禁止嵌入；不放宽访客网关边界。
+控制域提供 `/dashboard/login`、`/dashboard/applications`、`/dashboard/applications/<id>`、`/dashboard/credentials` 和 `/dashboard/device`，有效深链可刷新。`/api/console/*` 使用浏览器会话和严格 Origin。CLI 使用 `/auth/device`、`/auth/device/poll` 登录，使用 `DELETE /auth/credentials/current` 撤销当前 Bearer 凭证；额度、应用、部署和数据管理位于 `/api/control/v1/*`，要求 Bearer。旧 `/device-authorizations*`、`/credentials/current`、`/limits` 与 `/apps*` 保留兼容，不经重定向。应用域 `/_cellapp/*`（包括 `/_cellapp/db/{table}`）继续逐次检查访客会话和应用授权。未知资源/API 返回 404，API 与 HTML 不缓存，带指纹资源可长期缓存。CSP 限制资源来自本站并禁止嵌入；不放宽访客网关边界。
 
 部署后检查登录、应用列表、深链与资源加载，并回归 CLI 与访客域。回滚恢复配套的前一版可执行文件和 Web 目录，不恢复已重置的密钥、已撤销凭证或已删除应用。浏览器接口字段及失败恢复见 [Web API](web-api.md)，本轮验收见 [Web 控制面验收](web-control-plane-verification.md)。
 

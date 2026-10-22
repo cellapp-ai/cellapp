@@ -96,11 +96,17 @@ func TestAppScopedUserAndSignedInAdmission(t *testing.T) {
 	aCookie := signedInApp(t, f, a, platform)
 	bCookie := signedInApp(t, f, b, platform)
 	first := response[map[string]string](t, f.request(t, "GET", "/_cellapp/me", nil, "", appHost.Host, aCookie), 200)
-	again := response[map[string]string](t, f.request(t, "GET", "/_cellapp/me", nil, "", appHost.Host, aCookie), 200)
+	again := response[map[string]string](t, f.request(t, "GET", "/_cellapp/me?v=1.1", nil, "", appHost.Host, aCookie), 200)
 	other := response[map[string]string](t, f.request(t, "GET", "/_cellapp/me", nil, "", bHost.Host, bCookie), 200)
 	if first["id"] == "" || first["id"] != again["id"] || first["id"] == other["id"] || first["id"] == f.owner || len(first) != 2 {
 		t.Fatalf("app identity leaked or unstable: %v %v %v", first, again, other)
 	}
+	dateAlias := response[map[string]string](t, f.request(t, "GET", "/_cellapp/me?v=261022", nil, "", appHost.Host, aCookie), 200)
+	if dateAlias["id"] != first["id"] {
+		t.Fatal("date alias selected a different identity")
+	}
+	response[any](t, f.request(t, "GET", "/_cellapp/me?v=1.1", nil, "", appHost.Host, ""), 401)
+	response[any](t, f.request(t, "GET", "/_cellapp/me?v=1.1", nil, "", bHost.Host, aCookie), 401)
 	visitor := id()
 	_, err := f.db.Exec(newAppRequest(appHost.Host, "").Context(), `INSERT INTO owners(id,issuer,subject) VALUES($1,'test','visitor')`, visitor)
 	if err != nil {
@@ -113,6 +119,7 @@ func TestAppScopedUserAndSignedInAdmission(t *testing.T) {
 	}
 	visitorCookie := signedInApp(t, f, a, visitorPlatform)
 	response[any](t, f.request(t, "GET", "/_cellapp/me", nil, "", appHost.Host, visitorCookie), 403)
+	response[any](t, f.request(t, "GET", "/_cellapp/me?v=1.1", nil, "", appHost.Host, visitorCookie), 403)
 	if _, err := f.db.Exec(newAppRequest(appHost.Host, "").Context(), `UPDATE apps SET visibility='public' WHERE id=$1`, a.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -161,6 +168,7 @@ func TestAccessRequestApprovalRevokeAndOwnerScope(t *testing.T) {
 	if len(list.Requests) != 1 || list.Requests[0].Status != "pending" || len(list.Grants) != 0 {
 		t.Fatalf("unexpected access list: %+v", list)
 	}
+	response[any](t, f.request(t, "GET", "/_cellapp/me?v=1.1", nil, "", host.Host, appCookie), 403)
 	userID := list.Requests[0].UserID
 	endpoint := "/apps/" + a.ID + "/requests/" + userID + "/approve"
 	response[any](t, f.webRequest(t, "POST", endpoint, nil, ownerSession, f.server.Config.ControlOrigin), 200)
@@ -171,6 +179,7 @@ func TestAccessRequestApprovalRevokeAndOwnerScope(t *testing.T) {
 	}
 	response[any](t, f.webRequest(t, "POST", "/apps/"+a.ID+"/grants/"+userID+"/revoke", nil, ownerSession, f.server.Config.ControlOrigin), 200)
 	response[any](t, f.request(t, "GET", "/_cellapp/me", nil, "", host.Host, appCookie), 403)
+	response[any](t, f.request(t, "GET", "/_cellapp/me?v=261022", nil, "", host.Host, appCookie), 403)
 	response[any](t, f.webRequest(t, "POST", endpoint, nil, ownerSession, f.server.Config.ControlOrigin), 409)
 	response[any](t, f.request(t, "GET", "/_cellapp/me", nil, "", host.Host, appCookie), 403)
 	response[any](t, f.webRequest(t, "POST", "/apps/"+a.ID+"/visibility/public", nil, ownerSession, ""), 403)

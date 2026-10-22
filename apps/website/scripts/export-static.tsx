@@ -22,7 +22,7 @@ for (const route of routePaths) {
 }
 await writeFile(path.join(root, 'dist/bundle.html'), await readFile(path.join(root, 'dist/index.html')));
 await cp(path.join(root, 'public/logos'), path.join(root, 'dist/logos'), { recursive: true });
-for (const guide of ['AGENTS.md', 'AGENTS.zh-CN.md', 'app-design.md', 'app-design.zh-CN.md']) {
+for (const guide of ['AGENTS.md', 'AGENTS.zh-CN.md', 'app-design.md', 'app-design.zh-CN.md', 'api-versions.md', 'api-versions.zh-CN.md', 'api-changelog.md']) {
   await cp(path.join(root, 'public/deploy', guide), path.join(root, 'dist/deploy', guide));
 }
 for (const icon of ['favicon.svg', 'icons.svg']) {

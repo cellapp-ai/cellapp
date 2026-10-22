@@ -82,30 +82,36 @@ func TestRealPostgRESTProvisioning(t *testing.T) {
 	appHost, _ := url.Parse(f.server.Config.AppURL(appID))
 	appCookie := signedInApp(t, f, App{ID: appID, URL: appHost.String()}, f.webSessionCookie(t))
 	rowID := "00000000-0000-0000-0000-000000000010"
-	if w := f.request(t, "POST", "/rest/v1/notes", map[string]string{"id": rowID, "body": "hello"}, "", appHost.Host, appCookie); w.Code != 201 {
+	if w := f.request(t, "GET", "/rest/v1/notes?select=id", nil, "", appHost.Host, appCookie); w.Code != 404 {
+		t.Fatalf("old table route remained active or fell back to static content: %d %s", w.Code, w.Body.String())
+	}
+	if w := f.request(t, "POST", "/_cellapp/db/notes?v=1.1", map[string]string{"id": rowID, "body": "hello"}, "", appHost.Host, appCookie); w.Code != 201 {
 		t.Fatalf("data insert: %d %s", w.Code, w.Body.String())
 	}
-	if w := f.request(t, "GET", "/rest/v1/notes?select=id,body&body=eq.hello", nil, "", appHost.Host, appCookie); w.Code != 200 || !strings.Contains(w.Body.String(), "hello") {
+	if w := f.request(t, "GET", "/_cellapp/db/notes?select=id,body&body=eq.hello&v=261022", nil, "", appHost.Host, appCookie); w.Code != 200 || !strings.Contains(w.Body.String(), "hello") {
 		t.Fatalf("data select: %d %s", w.Code, w.Body.String())
 	}
-	if w := f.request(t, "PATCH", "/rest/v1/notes?id=eq."+rowID, map[string]string{"body": "updated"}, "", appHost.Host, appCookie); w.Code != 204 {
+	if w := f.request(t, "PATCH", "/_cellapp/db/notes?id=eq."+rowID+"&v=1.1", map[string]string{"body": "updated"}, "", appHost.Host, appCookie); w.Code != 204 {
 		t.Fatalf("data update: %d %s", w.Code, w.Body.String())
 	}
-	if w := f.request(t, "GET", "/rest/v1/notes?select=id,body&order=body.desc&limit=1&offset=0", nil, "", appHost.Host, appCookie); w.Code != 200 || !strings.Contains(w.Body.String(), "updated") {
+	if w := f.request(t, "GET", "/_cellapp/db/notes?select=id,body&order=body.desc&limit=1&offset=0&v=1.1", nil, "", appHost.Host, appCookie); w.Code != 200 || !strings.Contains(w.Body.String(), "updated") {
 		t.Fatalf("data order/page: %d %s", w.Code, w.Body.String())
 	}
-	if w := f.request(t, "POST", "/rest/v1/notes", map[string]string{"id": id(), "body": strings.Repeat("x", 1<<20)}, "", appHost.Host, appCookie); w.Code != 413 {
+	if w := f.request(t, "GET", "/_cellapp/db/notes?select=id&v=1.2", nil, "", appHost.Host, appCookie); w.Code != 400 || !strings.Contains(w.Body.String(), "unsupported_api_version") {
+		t.Fatalf("unsupported data API version: %d %s", w.Code, w.Body.String())
+	}
+	if w := f.request(t, "POST", "/_cellapp/db/notes", map[string]string{"id": id(), "body": strings.Repeat("x", 1<<20)}, "", appHost.Host, appCookie); w.Code != 413 {
 		t.Fatalf("oversized data request accepted: %d", w.Code)
 	}
 	for range 3 {
-		if w := f.request(t, "POST", "/rest/v1/notes", map[string]string{"id": id(), "body": strings.Repeat("x", 780000)}, "", appHost.Host, appCookie); w.Code != 201 {
+		if w := f.request(t, "POST", "/_cellapp/db/notes", map[string]string{"id": id(), "body": strings.Repeat("x", 780000)}, "", appHost.Host, appCookie); w.Code != 201 {
 			t.Fatalf("bounded data insert failed: %d %s", w.Code, w.Body.String()[:min(w.Body.Len(), 200)])
 		}
 	}
-	if w := f.request(t, "GET", "/rest/v1/notes?select=id,body", nil, "", appHost.Host, appCookie); w.Code != 413 {
+	if w := f.request(t, "GET", "/_cellapp/db/notes?select=id,body", nil, "", appHost.Host, appCookie); w.Code != 413 {
 		t.Fatalf("oversized data response accepted: %d", w.Code)
 	}
-	badOrigin := httptest.NewRequest(http.MethodDelete, "https://"+appHost.Host+"/rest/v1/notes?id=eq."+rowID, nil)
+	badOrigin := httptest.NewRequest(http.MethodDelete, "https://"+appHost.Host+"/_cellapp/db/notes?id=eq."+rowID, nil)
 	badOrigin.Host = appHost.Host
 	badOrigin.Header.Set("Cookie", appCookie)
 	denied := httptest.NewRecorder()
@@ -113,7 +119,7 @@ func TestRealPostgRESTProvisioning(t *testing.T) {
 	if denied.Code != 403 {
 		t.Fatalf("cross-origin write accepted: %d", denied.Code)
 	}
-	forged := httptest.NewRequest(http.MethodGet, "https://"+appHost.Host+"/rest/v1/notes?select=id", nil)
+	forged := httptest.NewRequest(http.MethodGet, "https://"+appHost.Host+"/_cellapp/db/notes?select=id&v=261022", nil)
 	forged.Host = appHost.Host
 	forged.Header.Set("Cookie", appCookie)
 	forged.Header.Set("Authorization", "Bearer forged")
@@ -126,18 +132,18 @@ func TestRealPostgRESTProvisioning(t *testing.T) {
 	}
 	visitorCookie := f.unlock(t, App{ID: appID, URL: appHost.String()}, accessKey)
 	visitor := response[map[string]string](t, f.request(t, "GET", "/_cellapp/me", nil, "", appHost.Host, visitorCookie), 200)
-	if w := f.request(t, "GET", "/rest/v1/notes?select=id", nil, "", appHost.Host, visitorCookie); w.Code != 200 {
+	if w := f.request(t, "GET", "/_cellapp/db/notes?select=id&v=1.1", nil, "", appHost.Host, visitorCookie); w.Code != 200 {
 		t.Fatalf("granted visitor denied: %d %s", w.Code, w.Body.String())
 	}
 	ownerSession := f.webSessionCookie(t)
 	response[any](t, f.webRequest(t, "POST", "/apps/"+appID+"/grants/"+visitor["id"]+"/revoke", nil, ownerSession, f.server.Config.ControlOrigin), 200)
-	if w := f.request(t, "GET", "/rest/v1/notes?select=id", nil, "", appHost.Host, visitorCookie); w.Code != 403 {
+	if w := f.request(t, "GET", "/_cellapp/db/notes?select=id&v=1.1", nil, "", appHost.Host, visitorCookie); w.Code != 403 {
 		t.Fatalf("revoked visitor data access survived: %d", w.Code)
 	}
-	if w := f.request(t, "DELETE", "/rest/v1/notes?id=eq."+rowID, nil, "", appHost.Host, appCookie); w.Code != 204 {
+	if w := f.request(t, "DELETE", "/_cellapp/db/notes?id=eq."+rowID+"&v=1.1", nil, "", appHost.Host, appCookie); w.Code != 204 {
 		t.Fatalf("data delete: %d %s", w.Code, w.Body.String())
 	}
-	if w := f.request(t, "GET", "/rest/v1/notes", nil, "", strings.Repeat("f", 32)+".apps.localhost:8443", appCookie); w.Code != 401 {
+	if w := f.request(t, "GET", "/_cellapp/db/notes", nil, "", strings.Repeat("f", 32)+".apps.localhost:8443", appCookie); w.Code != 401 {
 		t.Fatalf("app cookie crossed host: %d", w.Code)
 	}
 	direct, err := http.Get(apiURL + "/notes?select=id")

@@ -2,6 +2,8 @@
 
 [English version](./AGENTS.md)
 
+开发使用 Cellapp 身份或数据表的静态应用时，先读[应用 API 版本说明](./api-versions.zh-CN.md)与[版本记录](./api-changelog.md)。应用代码使用 `@cellapp/sdk`；公开应用接口统一在 `/_cellapp/` 下，包括 `/_cellapp/me` 和 `/_cellapp/db/{table}`，不要直接请求 `/rest/v1`。新 SDK 构建默认固化平台当前稳定契约；项目可选择其他受支持契约，不带版本的直接请求则使用最新版。
+
 用户希望把当前项目开发并部署到 Cellapp。由你自行运行官方已发布的客户端，完成构建、上传和验证。用户只需在浏览器中批准设备授权。不要自行实现 Cellapp 的上传协议，也不要让用户安装 CLI。
 
 ## 检查项目

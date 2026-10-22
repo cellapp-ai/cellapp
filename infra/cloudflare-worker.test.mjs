@@ -341,14 +341,14 @@ test('parallel assets reuse one grant while application data reaches Cloud Run',
   let forwarded = 0;
   globalThis.fetch = async request => {
     forwarded++;
-    assert.equal(new URL(request.url).pathname, '/rest/v1/notes');
+    assert.equal(new URL(request.url).pathname, '/_cellapp/db/notes');
     return Response.json([{ id: 1 }]);
   };
   const cookie = `__Host-cellapp=${f.session}; __Host-cellapp-grant=${token}`;
   const assets = await Promise.all(Array.from({ length: 8 }, () => edgeFetch(new Request(`https://${f.host}/index.html`, { headers: { Cookie: cookie } }), f.env)));
   assert.deepEqual(assets.map(response => response.status), Array(8).fill(200));
   assert.equal(forwarded, 0);
-  const data = await edgeFetch(new Request(`https://${f.host}/rest/v1/notes`, { headers: { Cookie: cookie } }), f.env);
+  const data = await edgeFetch(new Request(`https://${f.host}/_cellapp/db/notes`, { headers: { Cookie: cookie } }), f.env);
   assert.equal(data.status, 200);
   assert.equal(forwarded, 1);
 });

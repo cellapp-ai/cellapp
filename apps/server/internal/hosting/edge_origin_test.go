@@ -108,7 +108,7 @@ func TestEdgeAppHandoffAndSameOriginRequests(t *testing.T) {
 	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "ready") {
 		t.Fatalf("app page: %d %s", page.Code, page.Body.String())
 	}
-	for path, expected := range map[string]int{"/_cellapp/request": http.StatusOK, "/_cellapp/redeem": http.StatusUnauthorized, "/rest/v1/notes": http.StatusServiceUnavailable} {
+	for path, expected := range map[string]int{"/_cellapp/request": http.StatusOK, "/_cellapp/redeem": http.StatusUnauthorized, "/_cellapp/db/notes": http.StatusServiceUnavailable} {
 		allowed := request("POST", path, appURL.Host, cookie, app.URL, f.server.Config.EdgeOriginSecret)
 		if allowed.Code != expected {
 			t.Fatalf("same-origin request on %s: %d %s", path, allowed.Code, allowed.Body.String())

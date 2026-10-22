@@ -97,7 +97,7 @@ func TestDataOnlyAdmissionAndUnauthorizedExclusion(t *testing.T) {
 	defer data.Close()
 	f.server.Config.PostgRESTURL = data.URL
 	host, _ := url.Parse(app.URL)
-	if w := f.request(t, "GET", "/rest/v1/notes", nil, "", host.Host, ""); w.Code != 401 {
+	if w := f.request(t, "GET", "/_cellapp/db/notes", nil, "", host.Host, ""); w.Code != 401 {
 		t.Fatalf("anonymous data request=%d", w.Code)
 	}
 	var count int
@@ -106,7 +106,7 @@ func TestDataOnlyAdmissionAndUnauthorizedExclusion(t *testing.T) {
 	}
 	cookie := f.unlock(t, app, key)
 	for range 2 {
-		if w := f.request(t, "GET", "/rest/v1/notes", nil, "", host.Host, cookie); w.Code != 200 {
+		if w := f.request(t, "GET", "/_cellapp/db/notes", nil, "", host.Host, cookie); w.Code != 200 {
 			t.Fatalf("authorized data request=%d %s", w.Code, w.Body.String())
 		}
 	}

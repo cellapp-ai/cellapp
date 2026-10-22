@@ -1,6 +1,6 @@
 # 边缘静态分发与回滚
 
-访客静态 GET/HEAD 在独立候选环境验收后由 Worker 和私有 R2 提供；登录、授权变更、`/_cellapp/*` 和 `/rest/v1/*` 仍进 Cloud Run。根域名的 Dashboard 与控制 API 使用同一 Worker 的独立路径路由，公开官网仍由 Pages 提供；根域名切换见[切换清单](root-domain-cutover.md)。以下历史记录描述 2026-10-14 的访客边缘交付，不代表根域名迁移已上线。
+访客静态 GET/HEAD 在独立候选环境验收后由 Worker 和私有 R2 提供；登录、授权变更和 `/_cellapp/*`（包括 `/_cellapp/db/{table}`）仍进 Cloud Run。根域名的 Dashboard 与控制 API 使用同一 Worker 的独立路径路由，公开官网仍由 Pages 提供；根域名切换见[切换清单](root-domain-cutover.md)。以下历史记录描述 2026-10-14 的访客边缘交付，不代表根域名迁移已上线。
 
 ## 内部授权协议
 
@@ -32,7 +32,7 @@ R2 对象沿用 `releases/<deployment>/<SHA-256(path)>` 布局；同版本新增
 1. 暂停新建部署、上传和发布：在待部署的服务配置中设置 `publication_paused=true`，在正式 Worker 配置中设置 `PUBLICATION_PAUSED="true"`。两层都阻止发布 API，返回 `503 publication_paused`；控制台及数据 API 继续可用。整个回滚窗口保持 Worker 的暂停开关，旧 Cloud Run 修订版不识别服务端开关，单靠它无法阻止旧版发布。
 2. 用 `go run ./apps/server/cmd/copy-releases` 从 GCS 复制当前和保留期内的已发布版本。工具需要 `DATABASE_URL`、`COPY_SOURCE_{ENDPOINT,REGION,BUCKET,ACCESS_KEY_ID,SECRET_ACCESS_KEY}`、`COPY_DEST_{ENDPOINT,REGION,BUCKET,ACCESS_KEY_ID,SECRET_ACCESS_KEY}` 与 `ROLLBACK_RETENTION_SECONDS`，后者不小于实际 `RETENTION_SECONDS`。工具按数据库清单核对源对象路径、长度和 SHA-256，逐个复制并复验目标；重复执行会跳过已验证对象。完成后再以 `--verify-only` 运行一次。任何缺失或摘要不一致均停止切换；测试只用隔离 Bucket，不触及生产对象。
 3. 先参考 [Cloud Run 边缘配置样例](../infra/cloudrun.edge.example.json)部署候选修订版本，再将 Worker 候选版本挂在隔离测试路由。候选应配置上述 Secret Manager 私钥引用和相同的公钥 key ID；不要先切正式访客路由。按[部署运维说明](operations.md)检查候选健康、未知 Host 和回源证明。
-4. 用真实测试账号验收首次登录、受限/公开应用、直接资源、并行资源、超过一分钟后的无感续签、数据读写、撤销后数据立即拒绝及静态访问 60 秒内终止、超限 `429`、未知 Host、匿名 R2 GET 拒绝、R2 故障和 Worker 限速。另用明确开启匿名页面的公开应用验证未登录深链接、资源读取、匿名授权续签以及关闭页面开关后最长 60 秒失效；未开启的旧应用仍须登录。确认静态资源未逐个调用 Cloud Run，`/rest/v1` 仍调用 Cloud Run。记录候选 Worker 版本、Cloud Run revision、签名 key ID、R2 Bucket 与镜像 digest。
+4. 用真实测试账号验收首次登录、受限/公开应用、直接资源、并行资源、超过一分钟后的无感续签、数据读写、撤销后数据立即拒绝及静态访问 60 秒内终止、超限 `429`、未知 Host、匿名 R2 GET 拒绝、R2 故障和 Worker 限速。另用明确开启匿名页面的公开应用验证未登录深链接、资源读取、匿名授权续签以及关闭页面开关后最长 60 秒失效；未开启的旧应用仍须登录。确认静态资源未逐个调用 Cloud Run，`/_cellapp/db` 仍调用 Cloud Run。记录候选 Worker 版本、Cloud Run revision、签名 key ID、R2 Bucket 与镜像 digest。
 5. 上述检查通过后才将访客路由切向候选 Worker；控制域先保持原路由也可独立验收。Cloudflare 正式 Worker 的配置文件应使用既有名称 `cellapp-edge`，并保留两条正式路由。部署前记录 `wrangler deployments list --name cellapp-edge` 的当前版本；用 `wrangler deploy --config <正式配置文件>` 切换（该命令立即让新版本服务正式路由）。监测 `grant_issued`、`grant_denied`、`visitor_limit`、`r2_error`、`edge_rate_limited` 日志事件，以及 Workers 每日请求、CPU、R2 读写、Cloud Run 请求和出网。事件不含 Cookie、签名或存储凭证。
 
 回滚时先将**同一 Worker 代码**的 `EDGE_STATIC_MODE` 改为 `origin`，保持 `PUBLICATION_PAUSED="true"`，发布并确认静态 GET 走 GCS 回源、部署创建/上传/发布返回 `503 publication_paused`。再执行 `gcloud run services update-traffic cellapp --to-revisions=<旧 Cloud Run revision>=100 --project=<项目> --region=us-west1`。不要直接恢复不认识发布暂停开关的旧 Worker 版本；那会让旧服务继续写 GCS 而不写 R2。旧服务继续从未删除的 GCS 读对象。数据库迁移、GCS/R2 对象和 Secret 版本不随服务回滚。回滚结束后若重新允许发布，下次切向 R2 前必须重新复制并校验新增对象。只有确认不再需要旧版本后，才能规划 GCS 退役。Cloudflare 版本切换和绑定限制见[官方说明](https://developers.cloudflare.com/workers/versions-and-deployments/rollbacks/)。

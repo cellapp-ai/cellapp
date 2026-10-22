@@ -116,6 +116,15 @@ const routes = ['/', '/deploy/', '/pricing/', '/docs/', '/docs/zh-CN/', '/blog/'
     assert.equal(designGuideChinese.status(), 200);
     assert.match(designGuideChinese.headers()['content-type'], /text\/markdown|text\/plain/);
     assert.match(await designGuideChinese.text(), /\(\.\/app-design\.md\)/);
+    const versionGuide = await context.request.get(targetUrl + '/deploy/api-versions.md');
+    assert.equal(versionGuide.status(), 200);
+    assert.match(await versionGuide.text(), /1\.1 = 261022/);
+    const versionGuideChinese = await context.request.get(targetUrl + '/deploy/api-versions.zh-CN.md');
+    assert.equal(versionGuideChinese.status(), 200);
+    assert.match(await versionGuideChinese.text(), /1\.1 = 261022/);
+    const changelog = await context.request.get(targetUrl + '/deploy/api-changelog.md');
+    assert.equal(changelog.status(), 200);
+    assert.match(await changelog.text(), /## 1\.1 = 261022/);
     assert.equal(await page.getByRole('navigation', { name: 'Primary navigation' }).getByRole('link', { name: 'Dashboard' }).getAttribute('href'), '/dashboard');
     results.push('Deployment prompt copy and public Agent Markdown guides');
     await page.setViewportSize({ width: 390, height: 844 });

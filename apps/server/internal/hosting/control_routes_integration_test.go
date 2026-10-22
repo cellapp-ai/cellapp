@@ -9,6 +9,11 @@ import (
 func TestIntegrationCanonicalControlPathCompatibility(t *testing.T) {
 	f := setup(t)
 	const host = "control.localhost:8443"
+	versions := response[map[string]any](t, f.request(t, "GET", "/api/control/v1/app-api/versions", nil, f.token, host, ""), 200)
+	if versions["stable"] != "1.1" || versions["latest"] != "1.1" || len(versions["versions"].([]any)) != 1 {
+		t.Fatalf("unexpected API versions: %v", versions)
+	}
+	response[any](t, f.request(t, "GET", "/api/control/v1/app-api/versions", nil, "", host, ""), 401)
 	requestID := id()
 	input := map[string]any{"name": "Canonical routes", "key": token(), "requestId": requestID}
 	created := response[App](t, f.request(t, "POST", "/api/control/v1/apps", input, f.token, host, ""), 201)

@@ -97,12 +97,12 @@ try {
   assert.deepEqual(renewed, [200, 'x']);
   assert.equal(new URL(page.url()).hostname, appHost, 'renewal redirected browser to login');
 
-  const data = await page.evaluate(async () => (await fetch('/rest/v1/notes')).status);
+  const data = await page.evaluate(async () => (await fetch('/_cellapp/db/notes')).status);
   assert.ok(data >= 400);
-  assert.ok(originCalls.includes('/rest/v1/notes'), 'data API did not reach Cloud Run');
+  assert.ok(originCalls.includes('/_cellapp/db/notes'), 'data API did not reach Cloud Run');
 
   assert.equal((await nativeFetch(control + '/_test/restrict-edge', { method: 'POST' })).status, 204);
-  const immediateData = await page.evaluate(async () => (await fetch('/rest/v1/notes')).status);
+  const immediateData = await page.evaluate(async () => (await fetch('/_cellapp/db/notes')).status);
   assert.equal(immediateData, 403);
   const stillGranted = await page.evaluate(async () => (await fetch('/main.js')).status);
   assert.equal(stillGranted, 200);
@@ -126,7 +126,7 @@ try {
   assert.ok(!(await context.cookies(appURL)).some(cookie => cookie.name === '__Host-cellapp'));
   const anonymousAsset = await page.evaluate(async () => (await fetch('/main.js')).text());
   assert.equal(anonymousAsset, 'x');
-  assert.equal((await page.evaluate(async () => (await fetch('/rest/v1/notes')).status)), 403);
+  assert.equal((await page.evaluate(async () => (await fetch('/_cellapp/db/notes')).status)), 403);
   assert.equal((await nativeFetch(control + '/_test/anonymous-off-edge', { method: 'POST' })).status, 204);
   assert.equal(await page.evaluate(async () => (await fetch('/main.js')).status), 200);
   Date.now = () => realNow() + 61_000;

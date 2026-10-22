@@ -126,6 +126,7 @@ func (s *Server) Handler() http.Handler {
 		return nil
 	})
 	mux.HandleFunc("GET /api/control/v1/limits", limits)
+	mux.HandleFunc("GET /api/control/v1/app-api/versions", s.wrap(s.appAPIVersions))
 	mux.HandleFunc("GET /limits", limits)
 	mux.HandleFunc("GET /api/control/v1/apps", s.wrap(s.listApps))
 	mux.HandleFunc("POST /api/control/v1/apps", s.wrap(s.createApp))

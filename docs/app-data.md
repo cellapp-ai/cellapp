@@ -1,6 +1,6 @@
 # 应用数据与表策略
 
-Cellapp 为每个应用在独立的应用数据 PostgreSQL 数据库中建立独立 schema 与角色。控制库保存平台用户、应用、发布及授权关系，应用数据库保存应用自己的表。应用只上传前端代码；本阶段不能部署自定义服务端，也不能从前端直连 PostgreSQL。应用域 `/rest/v1/{table}` 使用真实 PostgREST 执行受限的 Supabase 表级操作。
+Cellapp 为每个应用在独立的应用数据 PostgreSQL 数据库中建立独立 schema 与角色。控制库保存平台用户、应用、发布及授权关系，应用数据库保存应用自己的表。应用只上传前端代码；本阶段不能部署自定义服务端，也不能从前端直连 PostgreSQL。应用域 `/_cellapp/db/{table}` 使用真实 PostgREST 执行受限的表级操作。
 
 ## 创建与变更表
 
@@ -12,7 +12,9 @@ Cellapp 为每个应用在独立的应用数据 PostgreSQL 数据库中建立独
 
 ## 前端调用与限制
 
-[完整静态示例](../skills/skills/cellapp-deploy/examples/notes/README.md)使用 `@supabase/supabase-js@2.117.3`、当前应用 origin 和公开标识 `cellapp-public`。此标识不是密钥。当前支持 `.from(table).select()`、`.insert()`、`.update()`、`.delete()`、`.eq()`、`.order()`、`.range()` 和写操作后 `.select()` 返回行；其他 Supabase Auth、Realtime、Storage、RPC、函数、关联查询和任意过滤器不在本期范围内。应用调用 `/_cellapp/me` 获取应用内用户 ID；未登录为 401，受限应用未获准为 403，数据服务未就绪为 503。
+应用 SDK 的表请求携带运行时 API 版本 `v`；`major.minor` 和 `yymmdd` 是同一固定契约的两个别名，和 `/_cellapp/db` 路径、表清单版本不同。无 `v` 的直接请求走最新版。具体规则见[应用 API 版本说明](../apps/website/public/deploy/api-versions.zh-CN.md)及[changelog](../apps/website/public/deploy/api-changelog.md)。
+
+[完整静态示例](../skills/skills/cellapp-deploy/examples/notes/README.md)使用 `@cellapp/sdk`。它在运行时读取部署 HTML 中固定的版本标记，给身份和表请求附上 `v`，并使用当前应用 origin 与同源访客会话。底层表客户端依赖 `@supabase/supabase-js@2.117.3`；公开标识 `cellapp-public` 不是密钥。当前支持 `.from(table).select()`、`.insert()`、`.update()`、`.delete()`、`.eq()`、`.order()`、`.range()` 和写操作后 `.select()` 返回行；其他 Supabase Auth、Realtime、Storage、RPC、函数、关联查询和任意过滤器不在本期范围内。`currentUser()` 获取应用内用户 ID；未登录为 401，受限应用未获准为 403，数据服务未就绪为 503。
 
 单请求体最多 1 MiB、单响应最多 2 MiB，PostgREST 单次最多 1000 行，应用数据请求 10 秒超时，数据库语句 5 秒超时，锁等待 1 秒；所有者表变更总计 30 秒、单语句 10 秒、锁等待 2 秒。应用存储默认上限 50,000,000 字节，由数据库事务账本约束。达到限制时客户端必须显示错误并缩小查询或联系管理员；不要在浏览器中无限重试。生产部署、凭证、备份和删除清理见 [应用数据运维](app-data-operations.md)。
 

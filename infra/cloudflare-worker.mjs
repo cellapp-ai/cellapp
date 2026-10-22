@@ -96,6 +96,7 @@ async function forward(request, env, host) {
 }
 
 function dynamicRoute(path) {
+  // Reserve the former table path so it reaches the origin's 404 instead of static fallback.
   return path.startsWith('/_cellapp/') || path.startsWith('/_hosting/') || path.startsWith('/rest/v1') ||
     path.startsWith('/auth/v1') || path.startsWith('/storage/v1') || path.startsWith('/functions/v1') || path.startsWith('/realtime/v1');
 }

@@ -150,7 +150,7 @@ func (f *fixture) request(t *testing.T, method, path string, body any, credentia
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/html")
-	if strings.HasPrefix(path, "/rest/v1/") {
+	if strings.HasPrefix(path, "/_cellapp/db/") {
 		req.Header.Set("Accept", "application/json")
 		if method == http.MethodPost || method == http.MethodPatch || method == http.MethodDelete {
 			req.Header.Set("Origin", "https://"+host)

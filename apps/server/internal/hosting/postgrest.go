@@ -19,7 +19,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-var tablePath = regexp.MustCompile(`^/rest/v1/([a-z][a-z0-9_]{0,62})$`)
+var tablePath = regexp.MustCompile(`^/_cellapp/db/([a-z][a-z0-9_]{0,62})$`)
 var anonymousDataSlots = make(chan struct{}, 8)
 
 var dataHTTP = &http.Client{
@@ -124,6 +124,10 @@ func (s *Server) dataTableProbe(ctx context.Context, names appdata.Names, manife
 }
 
 func (s *Server) serveData(w http.ResponseWriter, r *http.Request, appID string) error {
+	contract, err := selectAppAPIContract(r)
+	if err != nil {
+		return err
+	}
 	match := tablePath.FindStringSubmatch(r.URL.Path)
 	if match == nil || strings.HasPrefix(match[1], "_cellapp_") {
 		return fail(404, "not_found", "Data resource not found")
@@ -242,7 +246,10 @@ func (s *Server) serveData(w http.ResponseWriter, r *http.Request, appID string)
 			return err
 		}
 		target.Path = "/" + match[1]
-		target.RawQuery = r.URL.RawQuery
+		target.RawQuery, err = appAPIDataQuery(contract, r.URL.Query())
+		if err != nil {
+			return err
+		}
 		upstream, err := http.NewRequestWithContext(r.Context(), r.Method, target.String(), bytes.NewReader(requestBody))
 		if err != nil {
 			return err

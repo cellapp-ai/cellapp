@@ -10,10 +10,12 @@ Cellapp 的控制入口位于 HTTPS 控制域（默认 `https://cellapp.ai`）�
 | MCP 授权 | `/.well-known/oauth-protected-resource/mcp`、`/.well-known/oauth-authorization-server`、`/oauth/*` | 远程 MCP 客户端与浏览器 | 发现、注册、授权码交换和撤销；令牌只用于 MCP |
 | MCP | `/mcp` | Codex、豆包等兼容客户端，独立 OAuth Bearer | 查询应用、部署静态产物、管理版本化应用表 |
 | 控制台 | `/api/console/*` | 浏览器，所有者 Cookie 与同源校验 | 应用、访问授权、凭证和资料管理 |
-| 程序管理 | `/api/control/v1/limits`、`/api/control/v1/apps*` | CLI 或其他程序客户端，Bearer 部署凭证 | 额度、应用、部署、数据管理；URL 的 `v1` 与契约文件版本分别演进 |
-| 应用内部 | `/_cellapp/*`、`/rest/v1/*` | 应用访客，应用域会话与访问检查 | 登录交接、申请/兑换访问、应用内身份与受管表数据 |
+| 程序管理 | `/api/control/v1/limits`、`/api/control/v1/apps*`、`/api/control/v1/app-api/versions` | CLI 或其他程序客户端，Bearer 部署凭证 | 额度、应用、部署、数据管理及应用 API 稳定版发现；URL 的 `v1` 与契约文件版本分别演进 |
+| 应用内部 | `/_cellapp/*`（含 `/_cellapp/db/{table}`） | 应用访客，应用域会话与访问检查 | 登录交接、申请/兑换访问、应用内身份与受管表数据 |
 
 `/_cellapp/*` 不提供 CLI 或 MCP 管理接口；可用路径和响应按[浏览器 API 的应用访问章节](web-api.md#应用访问与数据接口)执行。MCP 协议、权限与工具见[Agent 连接说明](mcp-agent.md)及[授权说明](mcp-auth.md)。公开环境是否已部署仍以候选验收记录为准。
+
+`GET /api/control/v1/app-api/versions` 返回 `stable`、`latest` 和含 `version`、`date`、`status` 的 `versions` 列表。CLI 在构建前读取稳定版，并把选中的 `major.minor` 写入静态 HTML。应用 API 版本 `v` 规则见[公开版本说明](../apps/website/public/deploy/api-versions.zh-CN.md)；部署者可通过 `APP_API_STABLE_VERSION` 配置默认稳定版，配置值必须在服务端注册且处于支持状态。
 
 ## 兼容期
 

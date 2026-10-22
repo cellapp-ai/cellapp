@@ -49,11 +49,13 @@ GET `/auth/login?return=<本站管理路径>` 和 `/auth/callback` 保留现有�
 
 ## 应用访问与数据接口
 
-应用域的静态页面与资源先检查主站登录和应用授权。未登录的导航跳转至主站登录并通过一次性票据回到原路径；非导航请求返回 `401 login_required`。受限应用已登录但未授权时显示申请或输入密钥页面；待审核和已拒绝分别显示状态及重新申请入口，`/_cellapp/me` 分别返回 `403 access_pending` 与 `403 access_denied` 且不暴露用户 ID，资源和 `/rest/v1` 返回 403。`/_cellapp/me` 返回稳定的应用内随机 `{id,access}`，不暴露平台用户 ID 或 OAuth subject。应用域 `__Host-cellapp` Cookie 仅属于当前 host，并受主站会话有效性约束。
+应用运行时接口的固定契约使用等价的 `major.minor` 与 `yymmdd` 别名（如 `1.1 = 261022`）；`?v=1.1` 与 `?v=261022` 选择同一契约，不带 `v` 使用最新版。默认稳定版只用于新构建，SDK 把所选 `major.minor` 固化在静态 HTML 中，回滚静态产物也会恢复其版本选择。详见公开的[版本说明](../apps/website/public/deploy/api-versions.zh-CN.md)和[changelog](../apps/website/public/deploy/api-changelog.md)。
+
+应用域的静态页面与资源先检查主站登录和应用授权。未登录的导航跳转至主站登录并通过一次性票据回到原路径；非导航请求返回 `401 login_required`。受限应用已登录但未授权时显示申请或输入密钥页面；待审核和已拒绝分别显示状态及重新申请入口，`/_cellapp/me` 分别返回 `403 access_pending` 与 `403 access_denied` 且不暴露用户 ID，资源和 `/_cellapp/db` 返回 403。`/_cellapp/me` 返回稳定的应用内随机 `{id,access}`，不暴露平台用户 ID 或 OAuth subject。应用域 `__Host-cellapp` Cookie 仅属于当前 host，并受主站会话有效性约束。
 
 `POST /_cellapp/request` 和 `POST /_cellapp/redeem` 只接受本应用 Origin。访问密钥明文只用于该次兑换，不放入 URL、持久状态或日志。公开应用仍要求登录；从公开切回受限时，只有已有授权的用户继续访问。
 
-`/rest/v1/{table}` 支持 `supabase-js` 2.117.3 的表级 select、insert、update、delete、eq、order、range 与写后 select。每次请求重新检查登录、应用访问、表授权及行策略，浏览器提交的 Authorization 和 profile 不生效。Auth、Storage、Realtime、Functions、RPC 等路径返回 `501 unsupported_feature`；其他 Supabase API 不在本期范围内。所有者通过 Bearer CLI 的 `/api/control/v1/apps/{app}/data`、`/plan`、`/apply`、`/verify` 管理表；表版本和静态发布独立。
+`/_cellapp/db/{table}` 支持 SDK 内部 `supabase-js` 2.117.3 的表级 select、insert、update、delete、eq、order、range 与写后 select。每次请求重新检查登录、应用访问、表授权及行策略，浏览器提交的 Authorization 和 profile 不生效。旧 `/rest/v1/{table}` 不再提供表操作，也不会回退到静态应用。Auth、Storage、Realtime、Functions、RPC 等路径返回 `501 unsupported_feature`；其他 Supabase API 不在本期范围内。所有者通过 Bearer CLI 的 `/api/control/v1/apps/{app}/data`、`/plan`、`/apply`、`/verify` 管理表；表版本和静态发布独立。
 
 应用显示名允许重复。`namespace` 是账户的用户 slug，`slug` 是应用 slug，新应用 URL 为 `https://{slug}-{namespace}.<APPS_DOMAIN>`，组合后的单个 DNS 标签最长 63 位。用户 slug 至少 3 位；两种 slug 均使用小写字母开头，后续可包含小写字母、数字、连字符，且拒绝 `accounts`、`cloud`、`login`、`app` 等平台保留词。组合域名全局唯一并在删除、改名后保留占用。控制域 `aliasUrl` 对应 `@namespace/slug`，临时重定向到当前 URL。内部 ID 仍用于登录授权、应用数据和部署隔离；旧 ID 域名及先前分配的组合域名可继续访问原应用。历史别名过长或冲突时保留旧 ID 域名，设置合规 slug 后启用组合域名。新所有者首次创建应用可通过 CLI 指定 `namespace` 和 `slug`，控制台的 Profile 与应用详情页可分别修改这两个值。
 

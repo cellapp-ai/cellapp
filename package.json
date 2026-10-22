@@ -18,7 +18,8 @@
     "build:website": "cd apps/website && corepack pnpm run build",
     "lint:website": "cd apps/website && corepack pnpm run lint",
     "preview:website": "cd apps/website && corepack pnpm run preview",
-    "test:website": "cd apps/website && corepack pnpm run test"
+    "test:website": "cd apps/website && corepack pnpm run test",
+    "check:app-api-versions": "node scripts/check-app-api-versions.mjs"
   },
   "devDependencies": {
     "@supabase/supabase-js": "2.117.3",

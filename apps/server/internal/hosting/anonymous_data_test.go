@@ -71,21 +71,21 @@ func TestAnonymousDataWithRealPostgREST(t *testing.T) {
 	}
 	rowID := "00000000-0000-0000-0000-000000000123"
 	insert := func() *httptest.ResponseRecorder {
-		return request("POST", "/rest/v1/forms", `{"id":"`+rowID+`","body":"hello"}`, app.URL, "", map[string]string{"Prefer": "return=representation", "Content-Profile": "cellapp_internal", "Authorization": "Bearer forged"})
+		return request("POST", "/_cellapp/db/forms", `{"id":"`+rowID+`","body":"hello"}`, app.URL, "", map[string]string{"Prefer": "return=representation", "Content-Profile": "cellapp_internal", "Authorization": "Bearer forged"})
 	}
-	if w := request("GET", "/rest/v1/forms", "", "", "", nil); w.Code != 403 {
+	if w := request("GET", "/_cellapp/db/forms", "", "", "", nil); w.Code != 403 {
 		t.Fatalf("anonymous read initially %d", w.Code)
 	}
 	if w := insert(); w.Code != 201 || strings.Contains(w.Body.String(), "hello") {
 		t.Fatalf("insert-only response %d %s", w.Code, w.Body.String())
 	}
-	if w := request("PATCH", "/rest/v1/forms?id=eq."+rowID, `{"body":"changed"}`, app.URL, "", nil); w.Code != 401 {
+	if w := request("PATCH", "/_cellapp/db/forms?id=eq."+rowID, `{"body":"changed"}`, app.URL, "", nil); w.Code != 401 {
 		t.Fatalf("anonymous update %d", w.Code)
 	}
-	if w := request("POST", "/rest/v1/forms", `{}`, "https://other.example", "", nil); w.Code != 403 {
+	if w := request("POST", "/_cellapp/db/forms", `{}`, "https://other.example", "", nil); w.Code != 403 {
 		t.Fatalf("foreign origin %d", w.Code)
 	}
-	if w := request("POST", "/rest/v1/forms", strings.Repeat("x", 1<<20+1), app.URL, "", nil); w.Code != 413 {
+	if w := request("POST", "/_cellapp/db/forms", strings.Repeat("x", 1<<20+1), app.URL, "", nil); w.Code != 413 {
 		t.Fatalf("oversized anonymous request %d", w.Code)
 	}
 	manifest.Version = 2
@@ -96,7 +96,7 @@ func TestAnonymousDataWithRealPostgREST(t *testing.T) {
 	if _, err := f.db.Exec(ctx, `UPDATE apps SET anonymous_read=true WHERE id=$1`, app.ID); err != nil {
 		t.Fatal(err)
 	}
-	if w := request("GET", "/rest/v1/forms?select=id,body", "", "", "", map[string]string{"Accept-Profile": "cellapp_internal", "Authorization": "Bearer forged"}); w.Code != 200 || !strings.Contains(w.Body.String(), "hello") {
+	if w := request("GET", "/_cellapp/db/forms?select=id,body", "", "", "", map[string]string{"Accept-Profile": "cellapp_internal", "Authorization": "Bearer forged"}); w.Code != 200 || !strings.Contains(w.Body.String(), "hello") {
 		t.Fatalf("anonymous read %d %s", w.Code, w.Body.String())
 	}
 	blocked := make(chan struct{})
@@ -113,7 +113,7 @@ func TestAnonymousDataWithRealPostgREST(t *testing.T) {
 	results := make(chan int, cap(anonymousDataSlots))
 	for range cap(anonymousDataSlots) {
 		group.Add(1)
-		go func() { defer group.Done(); results <- request("GET", "/rest/v1/forms", "", "", "", nil).Code }()
+		go func() { defer group.Done(); results <- request("GET", "/_cellapp/db/forms", "", "", "", nil).Code }()
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	for len(anonymousDataSlots) < cap(anonymousDataSlots) && time.Now().Before(deadline) {
@@ -130,14 +130,14 @@ func TestAnonymousDataWithRealPostgREST(t *testing.T) {
 		}
 		t.Fatalf("anonymous requests did not reach concurrency cap: %d, results %v", len(anonymousDataSlots), statuses)
 	}
-	if w := request("GET", "/rest/v1/forms", "", "", "", nil); w.Code != 429 {
+	if w := request("GET", "/_cellapp/db/forms", "", "", "", nil); w.Code != 429 {
 		t.Errorf("concurrent anonymous request %d", w.Code)
 	}
 	close(blocked)
 	group.Wait()
 	backend.Close()
 	f.server.Config.PostgRESTURL = "http://127.0.0.1:1"
-	if w := request("GET", "/rest/v1/forms", "", "", "", nil); w.Code != 503 {
+	if w := request("GET", "/_cellapp/db/forms", "", "", "", nil); w.Code != 503 {
 		t.Fatalf("anonymous backend failure %d", w.Code)
 	}
 	f.server.Config.PostgRESTURL = apiURL

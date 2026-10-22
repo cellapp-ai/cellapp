@@ -37,6 +37,7 @@ type Config struct {
 	EdgeGrantKeyID                                                                       string
 	EdgeGrantSigningKey                                                                  ed25519.PrivateKey
 	PostgRESTURL, AppDataJWTSecret                                                       string
+	AppAPIStableVersion                                                                  string
 	AuthMode                                                                             string
 	GitHubClientID, GitHubClientSecret                                                   string
 	S3Endpoint, S3Region, S3Bucket, S3AccessKeyID, S3SecretAccessKey                     string
@@ -109,6 +110,13 @@ func LoadConfig(get func(string) string) (c Config, err error) {
 	c.DatabaseURL = value("DATABASE_URL", "postgres://cellapp:development@localhost:5432/cellapp")
 	c.AppDataDatabaseURL = value("APP_DATA_DATABASE_URL", "postgres://cellapp_appdata_provisioner:development@localhost:5432/cellapp_data")
 	c.PostgRESTURL = value("POSTGREST_URL", "http://127.0.0.1:3001")
+	c.AppAPIStableVersion = get("APP_API_STABLE_VERSION")
+	if c.AppAPIStableVersion == "" {
+		c.AppAPIStableVersion = appAPILatest
+	}
+	if e := validateAppAPIContracts(appAPIContracts, appAPILatest, c.AppAPIStableVersion); e != nil {
+		return c, fmt.Errorf("APP_API_STABLE_VERSION: %w", e)
+	}
 	c.AppDataJWTSecret = value("APP_DATA_JWT_SECRET", "local-development-postgrest-jwt-secret-32-bytes")
 	c.AuthMode = get("AUTH_MODE")
 	if c.AuthMode == "" {

@@ -21,7 +21,10 @@ func (s *Server) serveApp(w http.ResponseWriter, r *http.Request, appID string) 
 			return fail(501, "unsupported_feature", "This Supabase feature is not supported")
 		}
 	}
-	if strings.HasPrefix(r.URL.Path, "/rest/v1") {
+	if r.URL.Path == "/rest/v1" || strings.HasPrefix(r.URL.Path, "/rest/v1/") {
+		return fail(404, "not_found", "Data resource not found")
+	}
+	if r.URL.Path == "/_cellapp/db" || strings.HasPrefix(r.URL.Path, "/_cellapp/db/") {
 		return s.serveData(w, r, appID)
 	}
 	if r.Method == http.MethodGet && r.URL.Path == "/_cellapp/handoff" {

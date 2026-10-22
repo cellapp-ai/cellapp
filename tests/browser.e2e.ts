@@ -58,6 +58,14 @@ try {
   await copyFile(join(demo, 'cellapp.data.json'), join(project, 'cellapp.data.json'));
   await promisify(execFile)('node_modules/.bin/esbuild', [join(demo, 'app.ts'), '--bundle', '--format=esm', '--platform=browser', '--target=es2022', `--outfile=${join(project, 'dist', 'app.js')}`]);
   const first = await deploy(client, project, {output: 'dist', spa: true}, () => {});
+  assert.equal(first.apiVersion, '1.1');
+  assert.equal(first.apiDate, '261022');
+  assert.match(await readFile(join(project, 'dist', 'index.html'), 'utf8'), /<meta name="cellapp-api-version" content="1\.1">/);
+  const sdkRequests: string[] = [];
+  ownerPage.on('request', request => {
+    const url = new URL(request.url());
+    if (url.pathname === '/_cellapp/me' || url.pathname.startsWith('/_cellapp/db/')) sdkRequests.push(request.url());
+  });
   assert.ok('accessKey' in first && first.accessKey && /^[a-f0-9]{64}$/.test(first.accessKey));
   const accessKey = first.accessKey;
   assert.match(first.aliasUrl, /^https:\/\/cellapp\.localhost:\d+\/a\/[a-z][a-z0-9-]+\/[a-z][a-z0-9-]+$/);
@@ -92,6 +100,10 @@ try {
   await ownerPage.getByText('还没有笔记。').waitFor();
   await ownerPage.getByRole('button', {name: 'Run CRUD'}).click();
   await ownerPage.getByText('CRUD passed').waitFor();
+  assert.ok(sdkRequests.some(value => new URL(value).pathname === '/_cellapp/me'));
+  assert.ok(sdkRequests.some(value => new URL(value).pathname === '/_cellapp/db/notes'));
+  assert.ok(sdkRequests.every(value => new URL(value).searchParams.get('v') === '1.1'));
+  assert.equal((await ownerContext.request.get(first.url + '/rest/v1/notes', {headers: {Accept: 'text/html'}})).status(), 404);
   const ownerAppID = await ownerPage.locator('body').getAttribute('data-user');
   assert.ok(ownerAppID && /^[a-f0-9]{32}$/.test(ownerAppID));
   assert.ok((await ownerContext.cookies()).every(c => c.httpOnly && c.secure && !c.domain.startsWith('.')));
@@ -121,8 +133,8 @@ try {
   const visitorCookie = (await visitorContext.cookies(first.url)).find(c => c.name === '__Host-cellapp')!;
   assert.notEqual(ownerCookie.value, visitorCookie.value);
   const privateRow = crypto.randomUUID();
-  assert.equal((await ownerContext.request.post(first.url + '/rest/v1/notes', {headers: {Origin: first.url}, data: {id: privateRow, owner_id: ownerAppID, body: 'private'}})).status(), 201);
-  const invisible = await visitorContext.request.get(first.url + '/rest/v1/notes?select=id&id=eq.' + privateRow);
+  assert.equal((await ownerContext.request.post(first.url + '/_cellapp/db/notes', {headers: {Origin: first.url}, data: {id: privateRow, owner_id: ownerAppID, body: 'private'}})).status(), 201);
+  const invisible = await visitorContext.request.get(first.url + '/_cellapp/db/notes?select=id&id=eq.' + privateRow);
   assert.equal(invisible.status(), 200);
   assert.deepEqual(await invisible.json(), []);
   await ownerPage.getByRole('button', {name: 'Revoke', exact: true}).click();
@@ -160,7 +172,7 @@ try {
   assert.equal((await anotherContext.request.get(first.url + '/app.js')).status(), 200);
   const formProject = join(root, 'anonymous-form');
   await mkdir(join(formProject, 'dist'), {recursive: true});
-  await writeFile(join(formProject, 'dist', 'index.html'), `<h1>Public form</h1><form><label>Message<input name="body"></label><button>Send</button></form><p id="result"></p><script>document.querySelector('form').addEventListener('submit',async event=>{event.preventDefault();const response=await fetch('/rest/v1/forms',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:crypto.randomUUID(),body:new FormData(event.target).get('body')})});document.querySelector('#result').textContent=response.ok?'Submitted':String(response.status)});</script>`);
+  await writeFile(join(formProject, 'dist', 'index.html'), `<h1>Public form</h1><form><label>Message<input name="body"></label><button>Send</button></form><p id="result"></p><script>document.querySelector('form').addEventListener('submit',async event=>{event.preventDefault();const response=await fetch('/_cellapp/db/forms',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:crypto.randomUUID(),body:new FormData(event.target).get('body')})});document.querySelector('#result').textContent=response.ok?'Submitted':String(response.status)});</script>`);
   await writeFile(join(formProject, 'cellapp.data.json'), JSON.stringify({version:1,tables:[{name:'forms',columns:[{name:'id',type:'uuid'},{name:'body',type:'text'}],primaryKey:['id'],policies:{anonymousInsert:'all'}}]}));
   const form = await deploy(client, formProject, {output:'dist',spa:true}, () => {});
   const formMeta = JSON.parse(await readFile(join(formProject, 'cellapp.json'), 'utf8')) as {appId:string};
@@ -174,8 +186,8 @@ try {
   await anonymousPage.getByLabel('Message').fill('browser-anonymous');
   await anonymousPage.getByRole('button',{name:'Send'}).click();
   await anonymousPage.getByText('Submitted').waitFor();
-  assert.equal((await anonymousContext.request.get(form.url+'/rest/v1/forms')).status(),403);
-  assert.equal((await anonymousContext.request.patch(form.url+'/rest/v1/forms',{headers:{Origin:form.url},data:{body:'changed'}})).status(),401);
+  assert.equal((await anonymousContext.request.get(form.url+'/_cellapp/db/forms')).status(),403);
+  assert.equal((await anonymousContext.request.patch(form.url+'/_cellapp/db/forms',{headers:{Origin:form.url},data:{body:'changed'}})).status(),401);
   assert.equal((await cli('anonymous','set',formMeta.appId,'--pages','false','--read','false','--write','false')).effectiveWrite,false);
   assert.equal((await anonymousContext.request.get(form.url+'/',{maxRedirects:0,headers:{Accept:'text/html'}})).status(),303);
   await anonymousContext.close();
@@ -183,7 +195,7 @@ try {
   await mkdir(join(secondProject, 'dist'), {recursive: true});
   await writeFile(join(secondProject, 'dist', 'index.html'), '<h1>Second app</h1>');
   const second = await deploy(client, secondProject, {output: 'dist'}, () => {});
-  assert.equal((await anotherContext.request.get(second.url + '/rest/v1/notes?select=id')).status(), 401);
+  assert.equal((await anotherContext.request.get(second.url + '/_cellapp/db/notes?select=id')).status(), 401);
   await ownerPage.goto(second.url);
   await ownerPage.getByRole('heading', {name: 'Second app'}).waitFor();
   const secondCookie = (await ownerContext.cookies(second.url)).find(c => c.name === '__Host-cellapp')!;

@@ -41,7 +41,7 @@ try {
   const context = await browser.newContext();
   const page = await context.newPage();
   page.on('pageerror', error => failures.push(error.message));
-  page.on('request', request => { if (!request.url().startsWith(`${origin}/`) && request.url() !== avatarUrl) failures.push(`External request: ${request.url()}`); if (request.url().includes('/rest/v1/')) failures.push('Dashboard fetched table rows'); });
+  page.on('request', request => { if (!request.url().startsWith(`${origin}/`) && request.url() !== avatarUrl) failures.push(`External request: ${request.url()}`); if (request.url().includes('/_cellapp/db/')) failures.push('Dashboard fetched table rows'); });
   await page.route('https://avatars.githubusercontent.com/**', route => route.fulfill({status:200, contentType:'image/svg+xml', body:'<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96"><circle cx="48" cy="48" r="48" fill="#63788d"/></svg>'}));
   // UI fixtures only: actual authentication, transactions and HTTPS are checked separately.
   await page.route('**/api/console/**', async route => {
