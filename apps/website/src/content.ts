@@ -8,7 +8,7 @@ export const plans: Plan[] = [
   { id: 'scale', name: 'Scale', audience: 'Give a growing product team more room.', monthly: 59, yearly: 49, apps: 'Unlimited apps', support: 'Priority', access: 'Per-app access keys' },
 ];
 export type DocLocale = 'en' | 'zh-CN';
-export interface DocStep { heading: string; text: string; points?: string[]; note?: string; code?: string; link?: { label: string; href: string } }
+export interface DocStep { heading: string; text: string; points?: string[]; note?: string; code?: string; codeLabel?: string; link?: { label: string; href: string } }
 export interface DocSection { id: string; title: string; heading: string; intro: string; steps: DocStep[] }
 export interface DocGuide { label: string; title: string; summary: string; outline: string; next: string; finish: string; sections: DocSection[] }
 export const docGuides: Record<DocLocale, DocGuide> = {
@@ -22,6 +22,11 @@ export const docGuides: Record<DocLocale, DocGuide> = {
         { heading: '2. Start with the copyable request', text: 'Copy this request into the coding Agent already working on this project. The Agent reads the public instructions, checks the project, and obtains the official client on demand; you do not need a global installation.', code: deploymentPrompt, link: { label: 'Open the deployment page', href: '/deploy/' } },
         { heading: '3. Approve access promptly', text: 'If this machine is not signed in, the Agent should request browser authorization before a long build. Open the verification URL as soon as the Agent shares it and compare the code. An expired code needs a new authorization request.', note: 'Approve in the browser. Do not paste a password, cookie, or deployment credential into chat.' },
         { heading: '4. Check the returned result', text: 'After local build and upload, wait for a published result and an HTTPS app URL. Open the URL, check the main page and assets, then refresh a nested route you intend to share.', link: { label: 'See verification steps', href: '#deploy' } },
+      ] },
+      { id: 'installation', title: 'Installation', heading: 'Run the CLI yourself.', intro: 'If you prefer the terminal, use the published Cellapp CLI. Node.js 22.12 or later and npm are required. Agent-led deployment needs no manual installation: the Agent obtains the client on demand.', steps: [
+        { heading: 'Run without installing globally', text: 'Use npm to fetch and run the latest published CLI when needed. Start with its help command; use the same npm exec prefix for later cellapp commands.', code: 'npm exec --yes --package=@cellapp/cli@latest -- cellapp --help', codeLabel: 'Run on demand' },
+        { heading: 'Or install globally', text: 'If you use the CLI regularly, install the published npm package and check that the command is available.', code: 'npm install -g @cellapp/cli@latest', codeLabel: 'Global npm install' },
+        { heading: 'Verify the installed command', text: 'This check applies to the global installation. For on-demand use, the first command above already performs the same check.', code: 'cellapp --help', codeLabel: 'Verify installation', link: { label: 'Read the CLI source and manual workflow', href: 'https://github.com/cellapp-ai/skills#manual-install' } },
       ] },
       { id: 'deploy', title: 'Deploy & Verify', heading: 'Follow the publication through.', intro: 'The Agent builds and uploads the static output on your machine. A successful publication activates a release and returns its app URL.', steps: [
         { heading: 'Read the official Agent guide', text: 'The public guide describes project inspection, early authorization, publishing, and recovery. It is the source of truth for current CLI commands and flags.', link: { label: 'Read English Agent instructions', href: 'https://cellapp.ai/deploy/AGENTS.md' } },
@@ -59,6 +64,11 @@ export const docGuides: Record<DocLocale, DocGuide> = {
         { heading: '2. 复制部署请求', text: '将这条提示词发给正在此项目中工作的编码 Agent。Agent 会阅读公开指引、检查项目，并按需获取官方客户端；你无需全局安装。', code: deploymentPrompt, link: { label: '打开部署页', href: '/deploy/' } },
         { heading: '3. 尽早完成授权', text: '如果这台设备尚未登录，Agent 应在耗时构建前发起浏览器授权。收到验证网址后尽快打开并核对验证码；若验证码过期，请 Agent 重新发起授权。', note: '请在浏览器中批准。不要把密码、Cookie 或部署凭证发到聊天里。' },
         { heading: '4. 核对返回结果', text: '本地构建与上传完成后，等待发布成功状态和 HTTPS 应用网址。打开网址，检查首页与资源，再直接访问并刷新你准备分享的深层页面。', link: { label: '查看核验步骤', href: '#deploy' } },
+      ] },
+      { id: 'installation', title: '安装', heading: '自行使用 CLI。', intro: '如果你想在终端中操作，可以使用已发布的 Cellapp CLI。需要 Node.js 22.12 或更高版本及 npm。由 Agent 部署时无需手动安装：Agent 会按需获取客户端。', steps: [
+        { heading: '免全局安装运行', text: '让 npm 按需获取并运行最新发布的 CLI。先查看帮助；后续 cellapp 命令沿用相同的 npm exec 前缀。', code: 'npm exec --yes --package=@cellapp/cli@latest -- cellapp --help', codeLabel: '按需运行' },
+        { heading: '或者全局安装', text: '如果经常自行使用 CLI，可以安装已发布的 npm 包，再检查命令是否可用。', code: 'npm install -g @cellapp/cli@latest', codeLabel: 'npm 全局安装' },
+        { heading: '验证安装', text: '此检查适用于全局安装。按需运行时，上面的第一条命令已经执行相同检查。', code: 'cellapp --help', codeLabel: '验证安装', link: { label: '阅读 CLI 源码和手动操作说明', href: 'https://github.com/cellapp-ai/skills#manual-install' } },
       ] },
       { id: 'deploy', title: '部署与核验', heading: '跟进发布全过程。', intro: 'Agent 在你的机器上构建并上传静态产物。发布成功后，新版本生效并返回应用网址。', steps: [
         { heading: '阅读官方 Agent 指引', text: '公开指引说明项目检查、提前授权、发布和失败恢复。当前 CLI 命令及参数以它为准。', link: { label: '阅读中文 Agent 指引', href: 'https://cellapp.ai/deploy/AGENTS.zh-CN.md' } },
