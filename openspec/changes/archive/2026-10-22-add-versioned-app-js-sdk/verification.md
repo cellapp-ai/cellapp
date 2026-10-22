@@ -16,8 +16,17 @@
 - Website: frozen pnpm install, lint, production build, and static preview browser test with local Google Chrome. The preview test fetched the English and Chinese version guides and the changelog and returned 200 for each. Existing lint warnings remained.
 - `git diff --check` in both repositories.
 
+## Published and checked (2026-10-22)
+
+- The public version guide and changelog were uploaded to Cloudflare Pages. Both returned 200 on the deployment URL, `cellapp-website.pages.dev`, and `cellapp.ai` during release acceptance.
+- Cloud Run deployed the final `deploy/main` commit `457d9a3` with image digest `sha256:047068a4525bffdc189af5a1d87b1c4078d972d212ca4dae8dbdf4336ee83b18`. Migration execution `cellapp-migrate-vt2wt` succeeded. Revision `cellapp-00027-rwc` became ready and received 100% traffic; the deployment script checked the control login page and unknown application host.
+- Read-only public checks returned 200 for the control login page and an existing visitor app, 401 for unauthenticated versioned `/_cellapp/me` and `/_cellapp/db/notes`, 400 `unsupported_api_version` for `v=1.2`, and 404 for the former `/rest/v1/notes` path. An authenticated CLI read returned stable/latest `1.1` and date alias `261022`, and listed existing apps.
+- Published skills `main` at `df91430`, `@cellapp/sdk@0.1.0`, and `@cellapp/cli@0.4.0` in that order after service acceptance. Both npm version metadata and tarballs became publicly available. An isolated install of the CLI package passed `cellapp --help` and packaged Skill checks; the notes example installed the published SDK and built in an isolated directory. The SDK's jsDelivr `+esm` URL returned 200.
+- Pushed public main at `a88fb39` and private `deploy/main` at `457d9a3`; both remote heads were verified.
+
 ## Not yet verified
 
-- A candidate in the target environment with the public guide/changelog, compatible server and edge routing, then CLI/Skill/SDK release, followed by a release switch between two distinct supported API contracts and real static rollback. Only the baseline `1.1 = 261022` contract exists today, so changing stable to a different supported contract cannot yet be exercised end to end. No production release or package publication was performed.
+- A real static rollback restoring an older HTML marker, and a stable/default switch between two distinct supported API contracts. Only the baseline `1.1 = 261022` contract exists today, so the two-contract scenario cannot yet run.
+- An authenticated production visitor's table CRUD and access revocation across versions. Local isolated browser tests passed these paths, while the production checks above were read-only and did not write to an existing app's data.
 
-The remaining OpenSpec tasks stay unchecked. The user explicitly requested archive and publication on 2026-10-22; this archive records the implementation and local checks, while the two-contract and real rollout scenarios remain open. Do not describe the version as production supported until those scenarios pass.
+The remaining three OpenSpec tasks stay unchecked. The user explicitly requested archive and publication on 2026-10-22; this archive preserves the outstanding acceptance work. Do not describe multi-version switching and rollback as production verified until those scenarios pass.
