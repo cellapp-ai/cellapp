@@ -51,8 +51,7 @@ const routes = ['/', '/deploy/', '/pricing/', '/docs/', '/docs/zh-CN/', '/blog/'
     await page.waitForURL('**/docs/');
     await page.getByRole('link', { name: 'Installation', exact: true }).first().click();
     assert(await page.getByRole('heading', { name: 'Run the CLI yourself.' }).isVisible());
-    await page.getByRole('button', { name: 'Copy run on demand command' }).click();
-    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'npm exec --yes --package=@cellapp/cli@latest -- cellapp --help');
+    assert(!((await page.locator('#installation').innerText()).includes('npm exec')));
     await page.getByRole('button', { name: 'Copy global npm install command' }).click();
     assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'npm install -g @cellapp/cli@latest');
     await page.getByRole('button', { name: 'Copy verify installation command' }).click();
@@ -70,8 +69,9 @@ const routes = ['/', '/deploy/', '/pricing/', '/docs/', '/docs/zh-CN/', '/blog/'
     assert.equal(await page.locator('html').getAttribute('lang'), 'zh-CN');
     assert(await page.getByRole('heading', { name: '按症状检查，然后重试。' }).isVisible());
     assert(await page.getByRole('heading', { name: '自行使用 CLI。' }).isVisible());
-    await page.getByRole('button', { name: '复制按需运行命令' }).click();
-    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'npm exec --yes --package=@cellapp/cli@latest -- cellapp --help');
+    assert(!((await page.locator('#installation').innerText()).includes('npm exec')));
+    await page.getByRole('button', { name: '复制npm 全局安装命令' }).click();
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'npm install -g @cellapp/cli@latest');
     await page.getByRole('button', { name: '复制部署提示词' }).click();
     await page.locator('#getting-started').getByRole('status').filter({ hasText: '已复制到剪贴板' }).waitFor();
     await page.getByRole('link', { name: 'Read in English' }).last().click();
