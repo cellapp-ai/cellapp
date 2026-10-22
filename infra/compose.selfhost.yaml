@@ -1,0 +1,104 @@
+name: cellapp-selfhost
+services:
+  postgres:
+    image: postgres:17.6-alpine
+    restart: unless-stopped
+    env_file: ./selfhost.local/runtime.env
+    environment:
+      POSTGRES_USER: cellapp_admin
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U cellapp_admin -d postgres']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [private]
+
+  database-init:
+    image: postgres:17.6-alpine
+    env_file: ./selfhost.local/runtime.env
+    depends_on:
+      postgres: {condition: service_healthy}
+    volumes:
+      - ./selfhost-db-init.sh:/init.sh:ro
+      - ../apps/server/appdata/bootstrap.sql:/bootstrap-appdata.sql:ro
+    entrypoint: [sh, /init.sh]
+    networks: [private]
+    restart: "no"
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    user: '0:0'
+    command: [server, --certs-dir, /certs, /data, --console-address, ':9001']
+    restart: unless-stopped
+    env_file: ./selfhost.local/runtime.env
+    environment:
+      MINIO_REGION_NAME: us-east-1
+    volumes:
+      - minio:/data
+      - ./selfhost.local/minio-certs:/certs:ro
+    networks: [private]
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    env_file: ./selfhost.local/runtime.env
+    depends_on: [minio]
+    volumes:
+      - ./minio-init.sh:/init.sh:ro
+      - ./selfhost.local/minio-ca.crt:/root/.mc/certs/CAs/selfhost.crt:ro
+    entrypoint: [sh, /init.sh]
+    networks: [private]
+    restart: "no"
+
+  migrate:
+    image: ${CELLAPP_IMAGE:-cellapp:selfhost}
+    build: {context: .., dockerfile: Dockerfile}
+    env_file: ./selfhost.local/runtime.env
+    entrypoint: [cellapp-server, -migrate]
+    depends_on:
+      database-init: {condition: service_completed_successfully}
+    networks: [private]
+    restart: "no"
+
+  app:
+    image: ${CELLAPP_IMAGE:-cellapp:selfhost}
+    build: {context: .., dockerfile: Dockerfile}
+    entrypoint: [/usr/local/bin/selfhost-entrypoint]
+    restart: unless-stopped
+    env_file: ./selfhost.local/runtime.env
+    environment:
+      SELFHOST_CA_CERT: /run/selfhost/minio-ca.crt
+    volumes:
+      - ./selfhost.local/minio-ca.crt:/run/selfhost/minio-ca.crt:ro
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      minio-init: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, /usr/local/bin/cellapp-healthcheck]
+      interval: 5s
+      timeout: 4s
+      retries: 24
+    networks: [private]
+
+  ingress:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    ports: ['80:80', '443:443']
+    volumes:
+      - ./selfhost.local/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./selfhost.local/control.crt:/etc/caddy/control.crt:ro
+      - ./selfhost.local/control.key:/etc/caddy/control.key:ro
+      - ./selfhost.local/apps.crt:/etc/caddy/apps.crt:ro
+      - ./selfhost.local/apps.key:/etc/caddy/apps.key:ro
+    depends_on:
+      app: {condition: service_healthy}
+    networks: [private]
+
+volumes:
+  postgres:
+  minio:
+networks:
+  private:
+    driver: bridge

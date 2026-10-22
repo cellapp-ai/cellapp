@@ -4,6 +4,7 @@ dist/
 .env.*
 !.env.example
 .local/
+infra/selfhost.local/
 coverage/
 test-results/
 infra/cloudrun.json

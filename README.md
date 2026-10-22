@@ -1,159 +1,46 @@
-# Cellapp
+# Cellapp — Your Personal AI App Workspace
 
-免费静态应用托管：在本机通过 Skill / CLI 构建发布，使用固定 HTTPS 地址。应用可用 `@命名空间/别名` 分享，原有应用 ID 地址保持稳定。访客先登录 Cellapp；公开应用允许已登录用户直接访问，受限应用通过申请审批或访问密钥授权。平台提供独立应用数据库与受控的 Supabase 表级 CRUD。服务端为 Go，CLI 为 TypeScript；PostgreSQL 保存控制元数据和独立的应用表数据，私有 S3 兼容存储保存发布产物，本地开发默认使用 MinIO。
+[English](README.md) | [简体中文](README.zh-CN.md)
 
-想部署自己的项目，可打开 [部署指南](https://cellapp.ai/deploy)，复制一句指令给正在开发项目的 AI。AI 会读取[机器可读部署指引](https://cellapp.ai/deploy/AGENTS.md)、按需安装 CLI、在本机完成构建和发布；首次使用时，你只需在浏览器确认授权。当前托管静态前端，应用售卖尚未开放。
+Build apps with an Agent, then publish, manage, and share them.
 
-## 产品官网
+An Agent can build your app on your computer and publish it to Cellapp with the deployment Skill. You can also publish with the `cellapp` CLI. Each app gets a stable HTTPS address that you can keep updating, control access to, and connect to its own data tables when it needs shared data. Cellapp delivers the app and handles sign-in and data access; it does not run uploaded programs.
 
-`apps/website` 承接原独立官网项目，作为独立 pnpm 项目构建和测试；Cloudflare Pages 项目 `cellapp-website` 承载 `cellapp.ai`。公开 `/deploy` 页面与 `/deploy/AGENTS.md` 由官网静态产物提供，控制台 `console.cellapp.ai` 继续处理登录和授权。官网的改动先在 `apps/website` 目录运行 `corepack pnpm install --frozen-lockfile` 安装依赖，再在仓库根目录运行 `npm run build:website` 构建，并在预览服务启动后运行 `npm run test:website` 验收。Git 推送不会自动发布官网，上传 `apps/website/dist/` 到 Cloudflare Pages 是单独的发布步骤。
+## Quick start
 
-## 开发
+### With an Agent (recommended)
 
-需要 Go 1.24+、Node.js 22.12+ 和 Docker Compose。
+Send this one request to the coding Agent working on your project:
 
-```sh
-git clone --recurse-submodules <主仓库地址>
-cd cellapp
-npm ci
-npm --prefix skills ci
-go mod download
-docker compose -f infra/compose.yaml up -d postgres postgrest proxy minio
-docker compose -f infra/compose.yaml run --rm minio-init
-cp .env.example .env
-```
+> Install the Cellapp deployment Skill with `npx skills add cellapp-ai/skills`, then follow it to build and deploy this project to Cellapp. Use app data tables if needed, and give me the published URL.
 
-本地 Compose 提供数据库、HTTPS 代理及持久化 MinIO。初始化命令必须成功后再启动服务，它会幂等创建私有 `cellapp` Bucket，重复运行保留已有对象。开发 S3 默认与 `.env.example` 一致，无需云端账号。详细配置、初始化失败重试及已有外部存储升级见 [S3 存储配置](docs/s3-storage.md)。
+The Agent installs the Skill, obtains the official CLI when needed, and handles the build and deployment. You only need to approve Cellapp access in your browser on first use. If your Agent does not support Skills, give it the [public Agent instructions](https://cellapp.ai/deploy/AGENTS.md) instead.
 
-本地开发使用 `AUTH_MODE=dev`，访问登录入口时直接进入唯一的固定开发账号，无需连接 GitHub。该模式只允许非生产环境和 localhost/loopback 控制域；生产环境或非本地域名配置 dev 模式会拒绝启动。它仍签发正常浏览器会话，因此设备授权和权限检查走与生产相同的后续流程。
+### Manually with the CLI
 
-生产设置 `AUTH_MODE=github`，并在 GitHub 的 **Settings → Developer settings → OAuth Apps** 创建 OAuth App。填写真实控制域作为 Homepage URL，Authorization callback URL 填写 `${CONTROL_ORIGIN}/auth/callback`，然后将 Client ID 和新生成的 Client secret 写入 `GITHUB_CLIENT_ID`、`GITHUB_CLIENT_SECRET`。服务端使用 OAuth state 与 PKCE，并通过 GitHub API 返回的不可变数字用户 ID 绑定所有者；不会读取邮箱或仓库权限。
-
-加载 `.env` 后执行（仅加载你自己维护的文件）：
+If you prefer to work in a terminal, install the CLI globally and verify it. Node.js 22.12 or later and npm are required.
 
 ```sh
-set -a
-. ./.env
-set +a
-npm run migrate
-npm run build --workspace @cellapp/web
-npm run dev
+npm install -g @cellapp/cli@latest
+cellapp --help
 ```
 
-Docker 内代理连接宿主服务时，将开发 `LISTEN_ADDRESS` 设置为 `0.0.0.0:3000`，并用本机防火墙限制直连；生产监听仅允许可信反向代理访问。应用入口仍按精确 Host 检查。当前限流按直接连接地址计数，代理后的请求会共享来源配额；不要启用未验证的转发头信任。
+Run `cellapp login` to connect to Cellapp, then `cellapp deploy --help` for deployment options. Build output and authorization files stay on your computer; deployment credentials are not included in the published app. See the [client documentation](skills/README.md) for the full CLI and app data workflow.
 
-本地入口为 `https://control.localhost:8443` 和 `https://<app-id>.apps.localhost:8443`。Caddy 使用本地 CA，浏览器和 CLI 都必须信任该 CA；不要关闭 TLS 验证。导出 CA：
+## Build apps without setting up a server
 
-```sh
-mkdir -p .local
-docker compose -f infra/compose.yaml cp proxy:/data/caddy/pki/authorities/local/root.crt .local/root.crt
-export NODE_EXTRA_CA_CERTS="$PWD/.local/root.crt"
-```
+Cellapp provides account sign-in, access control, and separate data tables for each app. An Agent can build and publish locally; the app runs in the browser and reads and writes shared data through controlled APIs. You can focus on the interface and interactions without setting up your own server for publishing, user access, or data storage.
 
-已有数据库卷的配置升级见 [命名升级说明](docs/operations.md#命名升级)。独立应用数据数据库的初始化与现有卷补建见 [应用数据数据库运维](docs/app-data-operations.md)。
+Apps that need continuously running background jobs or custom server-side logic still need a separately deployed service.
 
-根据操作系统将此证书加入本地测试浏览器的受信任证书，或使用隔离测试浏览器配置。若系统不解析 `*.localhost`，为本次应用 host 配置本地 DNS。
+## Self-host Cellapp
 
-## Web 控制面
+The [single-host Docker Compose guide](docs/self-hosting.md) (Chinese) covers the full platform: the Go service, dashboard, separate app data API, PostgreSQL, private MinIO by default, and an HTTPS entry point. You will need a control domain and an app wildcard domain under different registrable domains, trusted certificates for both, and a GitHub OAuth app. For the existing Cloud Run deployment path, see the [operations guide](docs/operations.md) (Chinese).
 
-`apps/web` 是主仓库的私有 npm workspace，根 `npm ci` 安装依赖。它提供真实应用列表/详情、访问审批、密钥轮换、数据表版本、删除、部署凭证撤销与设备授权。Go 在控制域同源提供页面及 `/api/console`，登录沿用现有浏览器会话。独立开发和界面检查不需要客户端子模块；未连接 Go 时显示服务不可达状态：
+## Contribute
 
-```sh
-npm run dev:web
-npm run typecheck --workspace @cellapp/web
-npm run lint:web
-npm run build --workspace @cellapp/web
-npm run preview:web
-npm test --workspace @cellapp/web
-```
+The [development guide](docs/development.md) (Chinese) covers checkout, local dependencies, builds, tests, and contribution conventions. The public CLI and Skill live in the separate `skills` Git submodule; the Web dashboard and Go service live in this repository.
 
-开发默认 `http://127.0.0.1:5173`，正式产物预览默认 `http://127.0.0.1:4173`，仅监听 loopback。前端产物为 `apps/web/dist/`，包含完整 HTML、JS、CSS、字体与品牌资源。前端测试自动构建并启动临时预览，使用本机 Chrome；非 macOS 或其他安装路径通过 `CHROME_PATH` 指定浏览器，报告及截图保存于 `test-results/web/`。
+## License
 
-真实联调先构建前端再启动 Go，从 `https://control.localhost:8443` 访问。`WEB_ROOT` 开发默认 `apps/web/dist`；缺少可读取的 index/assets 时正常服务启动失败，迁移/清理等维护命令不依赖前端产物。完整构建生成 `dist/cellapp-server` 与 `dist/web/`，部署和回滚必须配套，生产显式指定静态目录。接口域与兼容路径见[控制 API](docs/control-api.md)，浏览器契约见 [Web API](docs/web-api.md)。
-
-完整仓库 `typecheck`、`test`、`build` 也包含 Web 检查，测试包含前端 lint 和浏览器验收；缺少客户端子模块时仍返回初始化提示。前端工程、代码与设计约定见 [前端规范入口](docs/standards/README.md)，与服务端及 CLI 规范分别维护。
-
-## Cloud Run 服务部署
-
-生产服务使用单一镜像交付 Go server、配套 Web console、内部 PostgREST 和 Caddy。Caddy 接收 Cloud Run 的 HTTP 端口，公网 TLS 由预先配置的 HTTPS 负载均衡终止。控制域与 `*.apps` 访客域须位于不同注册域，负载均衡、通配 DNS 和 DNS 授权通配证书须在部署前就绪；Cloud Run 原生域名映射不能提供所需通配证书。
-
-先按 [Cloud Run 运维说明](docs/operations.md#cloud-run-部署) 配置 PostgreSQL、私有 S3、Secret Manager、GitHub OAuth、服务账号/VPC、Artifact Registry 和定时清理触发器。复制非秘密示例并填写实际资源名称和 Secret Manager **版本引用**；不要在 JSON 中填写秘密值：
-
-示例默认使用俄勒冈 `us-west1` 验证/测试环境和自建 PostgreSQL；控制库、独立应用数据库、PostgREST 专用账号及应用数据 JWT 均通过 Secret Manager 版本引用提供。
-
-```sh
-cp infra/cloudrun.example.json infra/cloudrun.json
-python3 scripts/deploy-cloud-run.py --config infra/cloudrun.json
-```
-
-脚本要求支持 `gcloud run jobs deploy` 的较新 Google Cloud CLI；生产发布建议使用干净的 Git 检出，未提交源码会明确提示并仍按镜像 digest 记录。它构建镜像、执行迁移、更新清理 job、发布 Cloud Run 修订版本，并检查两个现有域名入口；任一步失败返回非零。`infra/cloudrun.json` 不会提交或上传到构建上下文。公网授权、私有对象及回滚仍需按运维文档进行真实环境验收。本轮本地结果与未完成项见 [Cloud Run 部署验收记录](docs/cloud-run-deployment-verification.md)。
-
-## 发布静态页面
-
-```sh
-npm run cli -- login --origin https://control.localhost:8443
-npm run cli -- deploy --project /absolute/project --output dist --build 'npm run build' --spa --origin https://control.localhost:8443
-npm run cli -- apps --origin https://control.localhost:8443
-```
-
-普通 HTML 目录可省略 `--build`。建议产物位于项目的专用子目录，避免把源码或配置文件当成网页。`cellapp.json` 保存应用关联和待完成部署标识，不保存秘密。部署凭证位于 `~/.config/cellapp/` 的私有文件。首次密钥只向所有者展示，丢失后可主动使用 `reset-key <app-id>`；重置会让旧会话失效。
-
-更新时在同一项目运行 deploy。网络错误可以重试同一命令；如果发生版本冲突，先确认最新应用版本，再移除 `cellapp.json` 的 `pending` 字段以创建新部署。不要删除 `appId`，否则会创建另一个应用。
-
-## 仓库与客户端版本
-
-`skills/` 是独立 Git 子模块，公开客户端 TypeScript 包位于 `skills/packages/`，Web 前端位于主仓库 `apps/web`，主仓库固定子模块提交。已有检出先初始化：
-
-```sh
-git submodule update --init --recursive
-```
-
-拉取主仓库及已初始化客户端：
-
-```sh
-git pull --recurse-submodules
-```
-
-可主动执行 `git config submodule.recurse true` 设置本仓库的默认递归行为；新增或未初始化子模块仍需初始化。更新前检查两个仓库的本地修改；不要使用 `update --remote` 自动追随最新客户端。子仓库远程使用 SSH，需要对应 GitHub 读取权限与 SSH 认证。
-
-主仓库 `npm run cli`、`typecheck`、`test`、`build` 调用子仓库客户端；完整测试与构建还包含 Go 服务端。客户端修改前若处于 detached HEAD，先创建开发分支。交付时先提交、推送子仓库并确认提交可获取，再提交主仓库固定版本，详见 [AGENTS.md](AGENTS.md) 和 [客户端规范](skills/AGENTS.md)。
-
-## CLI 与 Skill 安装
-
-客户端独立安装、构建和打包：
-
-```sh
-npm --prefix skills ci
-npm --prefix skills run build
-cd skills
-npm pack --ignore-scripts
-```
-
-CLI 入口是子仓库中的 `dist/packages/cli/src/main.js`，需要保留其 `dist/packages/shared`。可在干净目录安装生成的 `cellapp-cli-0.1.0.tgz`，命令为 `cellapp`，仍提供 `ohmyapp` 别名。根目录不再打包 CLI。
-
-将 `skills/skills/cellapp-deploy/` 复制到目标 Agent 的技能目录，并确保 `cellapp --help` 可用。安装 Skill 不会安装 CLI，不自动修改全局 Agent 配置。已有 `ohmyapp.json` 和旧凭证在首次使用时安全迁移并保留恢复副本；`OHMYAPP_ORIGIN` 仍支持，新增配置使用 `CELLAPP_ORIGIN`。独立客户端安装与兼容说明见 [客户端 README](skills/README.md)。
-
-## 验证
-
-```sh
-npm run typecheck
-npm test
-npm run build
-go vet ./apps/server/...
-export TEST_DATABASE_URL='<isolated-control-test-dsn>'
-export TEST_APP_DATA_DATABASE_URL='<isolated-app-data-admin-dsn>'
-export TEST_APP_DATA_PROVISIONER_URL='<isolated-app-data-provisioner-dsn>'
-export TEST_POSTGREST_URL='<isolated-postgrest-url>'
-go test -race -count=1 ./apps/server/...
-export S3_ACCESS_KEY_ID='<isolated-minio-key>'
-export S3_SECRET_ACCESS_KEY='<isolated-minio-secret>'
-RUN_BROWSER_TESTS=1 go test -race -count=1 -run TestBrowserEndToEnd -v ./apps/server/internal/hosting
-```
-
-未提供对应的 `TEST_*` 变量时，真实数据库或 PostgREST 集成测试会明确跳过；浏览器验收显式要求全部服务配置。实际执行结果见 [应用数据验收记录](docs/app-data-verification.md)。集成测试创建随机独立 schema，结束后清理，不操作其他 schema。浏览器测试默认使用本机 macOS Chrome，可用 `CHROME_PATH` 指定其他平台 Chrome 可执行文件。跨服务浏览器测试生成临时 HTTPS 证书，通过 Chrome 的 SPKI 白名单只信任本次测试证书，浏览器请求仍启用证书检查；Node 使用同一临时 CA。也可用 `TEST_BROWSER_CA_CERT` 和 `TEST_BROWSER_CA_KEY` 指定隔离测试 CA。测试身份提供方和存储替身仅编译在测试中；生产服务没有认证绕过入口。内存对象存储测试替身不能代替真实 MinIO / S3 与匿名读取验收。
-
-范围：在线 HTML/JS/CSS 与静态资源、平台用户身份、独立应用表及表级 CRUD；不提供自定义应用服务端、Supabase Auth、Realtime、Storage、RPC、自定义域名或离线 PWA。表创建和策略通过 [CLI 与 Skill](skills/README.md) 的 `cellapp data` 工作流完成；[笔记 Demo](skills/skills/cellapp-deploy/examples/notes/README.md) 可验证建表及数据读写。更多运维配置见 [operations.md](docs/operations.md)。本次目录与子模块迁移验收见 [仓库协作规范验收](docs/repository-workflow-verification.md)。
-
-## 许可证
-
-主仓库中的原创代码和文档采用 [Apache License 2.0](LICENSE)，版权声明见 [NOTICE](NOTICE)。`skills` 是独立 Git 子模块，其 CLI、Skill 和文档继续遵循自身的 [MIT License](skills/LICENSE)。第三方依赖及资源遵循各自的许可证。
+Original code and documentation in this repository are licensed under the [Apache License 2.0](LICENSE); see [NOTICE](NOTICE) for copyright notices. The separate `skills` submodule has its own [MIT License](skills/LICENSE).

@@ -18,6 +18,7 @@ README.md
 AGENTS.md
 scripts
 infra/compose.yaml
+infra/selfhost.local
 infra/Caddyfile
 infra/minio-init.sh
 infra/cloudrun*.json
