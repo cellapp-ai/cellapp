@@ -26,7 +26,7 @@ With that preview running, run `corepack pnpm test`. The browser check covers al
 
 ## Content
 
-Edit plans, documentation sections and articles in `src/content.ts`. Adding an article to that typed list generates its card, detail page, metadata and static route on the next build. The square icon (`public/logos/cellapp-square.svg`) and Michroma `ce//app` horizontal wordmark (`public/logos/cellapp-landscape.svg`) are embedded in `src/logo.ts` for portable output. The navigation and footer use the horizontal wordmark; the square icon remains the favicon. The wordmark uses vector outlines and needs no font download at runtime.
+Edit plans, documentation sections and articles in `src/content.ts`. Adding an article to that typed list generates its card, detail page, metadata and static route on the next build. The square icon (`public/logos/cellapp-square.svg`) and Michroma `ce//app` horizontal wordmark (`public/logos/cellapp-landscape.svg`) are embedded in `src/logo.ts` for portable output. The navigation and footer use the horizontal wordmark; the square icon remains the favicon. The wordmark uses vector outlines and needs no font download at runtime. The navigation wordmark links home and highlights its slashes on the homepage. Its right-hand action reads “Deploy for free” until a same-origin session check confirms the visitor is signed in, then reads “Dashboard”; either state opens the existing dashboard entry and sign-in flow.
 
 ## Release review
 

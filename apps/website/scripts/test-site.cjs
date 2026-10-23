@@ -41,6 +41,36 @@ const routes = ['/', '/deploy/', '/pricing/', '/docs/', '/docs/zh-CN/', '/blog/'
     }
     assert.equal(headings.size, routes.length, 'Each article must have its own content');
     await page.goto(targetUrl + '/');
+    const navigation = page.getByRole('navigation', { name: 'Primary navigation' });
+    assert.equal(await navigation.getByRole('link', { name: 'Home', exact: true }).count(), 0);
+    assert.equal(await navigation.locator('.brand').getAttribute('aria-current'), 'page');
+    assert.equal(await navigation.locator('.brand-slashes path').count(), 2);
+    assert.equal(await navigation.getByRole('link', { name: 'Deploy for free' }).getAttribute('href'), '/dashboard');
+    const sessionContext = await browser.newContext();
+    const sessionPage = await sessionContext.newPage();
+    let sessionStatus = 200;
+    await sessionPage.route('https://cellapp.ai/**', route => {
+      if (new URL(route.request().url()).pathname === '/api/console/session') {
+        return route.fulfill({ status: sessionStatus, contentType: 'application/json', body: sessionStatus === 200 ? JSON.stringify({ ownerId: 'a'.repeat(32) }) : '{}' });
+      }
+      return route.fulfill({ status: 200, contentType: 'text/html', body: fs.readFileSync(path.join(root, 'dist/index.html')) });
+    });
+    await sessionPage.goto('https://cellapp.ai/');
+    const sessionNav = sessionPage.getByRole('navigation', { name: 'Primary navigation' });
+    await sessionNav.getByRole('link', { name: 'Dashboard' }).waitFor();
+    assert.equal(await sessionNav.getByRole('link', { name: 'Dashboard' }).getAttribute('href'), '/dashboard');
+    sessionStatus = 401;
+    await sessionPage.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await sessionNav.getByRole('link', { name: 'Deploy for free' }).waitFor();
+    sessionStatus = 503;
+    await sessionPage.reload();
+    assert(await sessionNav.getByRole('link', { name: 'Deploy for free' }).isVisible());
+    await sessionContext.close();
+    await page.goto(targetUrl + '/docs/');
+    assert.equal(await navigation.locator('.brand').getAttribute('aria-current'), null);
+    assert.equal(await navigation.locator('.brand-slashes').count(), 0);
+    results.push('Home wordmark, signed-out and signed-in navigation action, session fallback');
+    await page.goto(targetUrl + '/');
     assert.equal(await page.getByRole('heading', { level: 1 }).innerText(), 'your apps,\nyour rules.');
     assert(await page.getByText('Cellapp hosts your static frontend as a shareable HTTPS app with access controls.').isVisible());
     assert(await page.getByText('Tell the coding Agent working on your project to follow the Cellapp deployment guide, approve access in your browser, then share the app URL it returns.').isVisible());
@@ -136,7 +166,7 @@ const routes = ['/', '/deploy/', '/pricing/', '/docs/', '/docs/zh-CN/', '/blog/'
     const changelog = await context.request.get(targetUrl + '/deploy/api-changelog.md');
     assert.equal(changelog.status(), 200);
     assert.match(await changelog.text(), /## 1\.1 = 261022/);
-    assert.equal(await page.getByRole('navigation', { name: 'Primary navigation' }).getByRole('link', { name: 'Dashboard' }).getAttribute('href'), '/dashboard');
+    assert.equal(await page.getByRole('navigation', { name: 'Primary navigation' }).getByRole('link', { name: 'Deploy for free' }).getAttribute('href'), '/dashboard');
     results.push('Deployment prompt copy and public Agent Markdown guides');
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(targetUrl + '/deploy/');
@@ -162,6 +192,7 @@ const routes = ['/', '/deploy/', '/pricing/', '/docs/', '/docs/zh-CN/', '/blog/'
     for (const route of routes) {
       await staticPage.goto(targetUrl + route);
       assert(await staticPage.getByRole('navigation', { name: 'Primary navigation' }).getByRole('link', { name: 'Pricing', exact: true }).isVisible());
+      assert(await staticPage.getByRole('navigation', { name: 'Primary navigation' }).getByRole('link', { name: 'Deploy for free' }).isVisible());
       assert((await staticPage.getByRole('heading', { level: 1 }).innerText()).length > 10);
     }
     await staticPage.emulateMedia({ reducedMotion: 'reduce' });
@@ -173,7 +204,7 @@ const routes = ['/', '/deploy/', '/pricing/', '/docs/', '/docs/zh-CN/', '/blog/'
     await nojs.close();
     await page.goto('file://' + path.join(root, 'dist/bundle.html'));
     await page.getByRole('heading', { level: 1, name: /your apps/ }).waitFor();
-    assert.equal(await page.getByRole('navigation', { name: 'Primary navigation' }).getByRole('link', { name: 'Dashboard' }).getAttribute('href'), 'https://cellapp.ai/dashboard');
+    assert.equal(await page.getByRole('navigation', { name: 'Primary navigation' }).getByRole('link', { name: 'Deploy for free' }).getAttribute('href'), 'https://cellapp.ai/dashboard');
     await page.getByRole('navigation', { name: 'Primary navigation' }).getByRole('link', { name: 'Pricing', exact: true }).click();
     await page.getByRole('button', { name: 'Yearly', exact: true }).click();
     await page.getByRole('link', { name: 'Explore Ship' }).click();

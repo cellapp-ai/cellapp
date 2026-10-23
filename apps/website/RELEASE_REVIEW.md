@@ -4,7 +4,7 @@ On 2026-09-28, the product owner approved a local preview and explicitly request
 
 | Item | Current preview | Product detail to confirm |
 | --- | --- | --- |
-| Starter | $0, one app, community support | Confirm name, free availability and limits |
+| Starter | $0, one app, community support | Confirm name and limits; the free entry action was requested on 2026-10-23, while plan terms remain a preview |
 | Ship | $19 monthly or $180 annually, ten apps | Confirm price, billing terms and access-key availability |
 | Scale | $59 monthly or $588 annually, unlimited apps | Confirm price, support and usage limits |
 | Plan actions | Open Docs with plan/cadence context | No checkout is implemented; confirm the eventual conversion destination |
@@ -20,3 +20,5 @@ On 2026-10-14, the owner approved publishing the current page content, including
 Later on 2026-10-14, the website source was merged into `apps/website` in the Cellapp repository. The deployment documentation was updated to the verified public `@cellapp/cli@0.2.1` command, the client repository, `/deploy/` and `/deploy/AGENTS.md`. This source merge does not itself upload a new Cloudflare Pages release. Pricing and paid sales remain previews.
 
 On 2026-10-20, the new homepage copy and bilingual Docs pages from `clarify-website-value-and-guides` were uploaded to Cloudflare Pages from main commit `2255e64`. The deployment URL is `https://b56de126.cellapp-website.pages.dev`. Direct checks of `/`, `/docs/`, `/docs/zh-CN/`, and `/deploy/AGENTS.md` returned the expected content on both that URL and `https://cellapp.ai`. The slogan is “your apps, your rules.”; the 4S line labels Sell as coming later. Draft pricing and paid sales remain unchanged.
+
+On 2026-10-23, the owner requested a “Deploy for free” entry action for signed-out visitors and “Dashboard” for signed-in visitors. This approves the free entry wording for the navigation action; the Starter plan's name, limit, and detailed terms remain draft pricing content.
