@@ -49,6 +49,9 @@ func TestAnonymousDataWithRealPostgREST(t *testing.T) {
 	if err := f.server.DataProbe(ctx, names); err != nil {
 		t.Fatal(err)
 	}
+	if err := f.server.dataTableProbe(ctx, names, manifest); err != nil {
+		t.Fatal(err)
+	}
 	host, _ := url.Parse(app.URL)
 	request := func(method, path, body, origin, cookie string, headers map[string]string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, "https://"+host.Host+path, strings.NewReader(body))
@@ -91,6 +94,9 @@ func TestAnonymousDataWithRealPostgREST(t *testing.T) {
 	manifest.Version = 2
 	manifest.Tables[0].Policies.AnonymousSelect = "all"
 	if _, err := appdata.Apply(ctx, pool, app.ID, manifest); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.server.dataTableProbe(ctx, names, manifest); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.db.Exec(ctx, `UPDATE apps SET anonymous_read=true WHERE id=$1`, app.ID); err != nil {

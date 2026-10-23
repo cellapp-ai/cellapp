@@ -1,6 +1,6 @@
 # 单机自部署 Cellapp
 
-此路径在一台 Linux 主机上运行完整 Cellapp：Go 服务与配套 Web 控制台、内部 PostgREST、两个 PostgreSQL 数据库、默认私有 MinIO，以及 Caddy HTTPS 入口。`infra/compose.selfhost.yaml` 与本地开发的 `infra/compose.yaml` 分开。仅入口绑定主机的 80/443 端口；数据库、MinIO 与应用 HTTP 端口不映射到主机。
+此路径在一台 Linux 主机上运行完整 Cellapp：Go 服务与配套 Web 控制台、内部 PostgREST、两个 PostgreSQL 数据库、默认私有 RustFS，以及 Caddy HTTPS 入口。旧 MinIO 安装应继续使用原版本与原数据卷；本指南的新 RustFS 安装不会读取、复用或迁移旧对象。`infra/compose.selfhost.yaml` 与本地开发的 `infra/compose.yaml` 分开。仅入口绑定主机的 80/443 端口；数据库、RustFS 与应用 HTTP 端口不映射到主机。
 
 ## 准备域名、证书和 OAuth
 
@@ -35,20 +35,20 @@ curl -fsS https://control.example.com/health
 curl -I https://control.example.com/dashboard/
 ```
 
-`ps` 应显示 app 健康且入口运行；`/health` 返回成功。用浏览器检查真实可信证书、GitHub 登录、控制台、授权发布。全局安装 `npm install -g @cellapp/cli@latest`，以 `cellapp --help` 验证；登录和发布参数见[客户端文档](../skills/README.md)。发布静态测试项目后，检查 `https://<app-id>.apps.example.net`，同时检查未知 Host 不能拿到应用内容。MinIO API/控制台不应能从公网直连，Bucket 的匿名读取应被拒绝。这些公网 DNS、真实 GitHub 和公网证书检查需要运营者在自己的服务器完成；本地证书 fixture 不能替代。
+`ps` 应显示 app 健康且入口运行；`/health` 返回成功。用浏览器检查真实可信证书、GitHub 登录、控制台、授权发布。全局安装 `npm install -g @cellapp/cli@latest`，以 `cellapp --help` 验证；登录和发布参数见[客户端文档](../skills/README.md)。发布静态测试项目后，检查 `https://<app-id>.apps.example.net`，同时检查未知 Host 不能拿到应用内容。RustFS API/控制台不应能从公网直连，Bucket 的匿名读取应被拒绝。这些公网 DNS、真实 GitHub 和公网证书检查需要运营者在自己的服务器完成；本地证书 fixture 不能替代。
 
 ## 更新与恢复
 
-先备份 `infra/selfhost.local/`、PostgreSQL 两个数据库和 MinIO 卷，再拉取经审核的代码。构建新镜像并重新运行 `python3 scripts/selfhost.py start`；迁移失败时不启动新的公网入口。升级数据库或 MinIO 镜像前先确认版本兼容。回滚应用镜像也要先确认数据库迁移向后兼容，不能只恢复旧镜像覆盖新版结构。
+先备份 `infra/selfhost.local/`、PostgreSQL 两个数据库和 RustFS 卷，再拉取经审核的代码。构建新镜像并重新运行 `python3 scripts/selfhost.py start`；迁移失败时不启动新的公网入口。升级数据库或 RustFS 镜像前先确认版本兼容。回滚应用镜像也要先确认数据库迁移向后兼容，不能只恢复旧镜像覆盖新版结构。
 
-建议在停写窗口做一致性卷备份，并将备份加密转移到另一台主机。以下命令从仓库根目录执行，保存 PostgreSQL 的**两个**数据库及角色、MinIO 全部对象和受保护配置；备份目录需有足够空间：
+建议在停写窗口做一致性卷备份，并将备份加密转移到另一台主机。以下命令从仓库根目录执行，保存 PostgreSQL 的**两个**数据库及角色、RustFS 全部对象和受保护配置；备份目录需有足够空间。`rustfs-certs` 卷只存放从受保护配置复制的证书，恢复启动时会重新生成：
 
 ```sh
 mkdir -m 700 -p backup/selfhost
-docker compose -f infra/compose.selfhost.yaml stop ingress app postgres minio
+docker compose -f infra/compose.selfhost.yaml stop ingress app postgres rustfs
 tar -czf backup/selfhost/config.tgz infra/selfhost.local
 docker run --rm -v cellapp-selfhost_postgres:/data:ro -v "$PWD/backup/selfhost:/backup" alpine:3.22 tar -C /data -cf /backup/postgres.tar .
-docker run --rm -v cellapp-selfhost_minio:/data:ro -v "$PWD/backup/selfhost:/backup" alpine:3.22 tar -C /data -cf /backup/minio.tar .
+docker run --rm -v cellapp-selfhost_rustfs:/data:ro -v "$PWD/backup/selfhost:/backup" alpine:3.22 tar -C /data -cf /backup/rustfs.tar .
 python3 scripts/selfhost.py start
 ```
 
@@ -57,15 +57,15 @@ python3 scripts/selfhost.py start
 ```sh
 tar -xzf backup/selfhost/config.tgz
 docker volume create cellapp-selfhost_postgres
-docker volume create cellapp-selfhost_minio
+docker volume create cellapp-selfhost_rustfs
 docker run --rm -v cellapp-selfhost_postgres:/data -v "$PWD/backup/selfhost:/backup:ro" alpine:3.22 tar -C /data -xf /backup/postgres.tar
-docker run --rm -v cellapp-selfhost_minio:/data -v "$PWD/backup/selfhost:/backup:ro" alpine:3.22 tar -C /data -xf /backup/minio.tar
+docker run --rm -v cellapp-selfhost_rustfs:/data -v "$PWD/backup/selfhost:/backup:ro" alpine:3.22 tar -C /data -xf /backup/rustfs.tar
 docker compose -f infra/compose.selfhost.yaml build app
 python3 scripts/selfhost.py start
 ```
 
-不要把备份解入正在运行的容器，也不要将旧卷与新卷混合。恢复演练必须核对控制用户、应用表和静态对象。回滚镜像前确认迁移兼容；不兼容时恢复同一时间点的全部备份。详细数据约束见[应用数据运维](app-data-operations.md)与 [S3 文档](s3-storage.md)。
+不要把备份解入正在运行的容器，也不要将旧 MinIO 卷与新的 RustFS 卷混合。恢复演练必须核对控制用户、应用表和静态对象。回滚镜像前确认迁移兼容；不兼容时恢复同一时间点的全部备份。详细数据约束见[应用数据运维](app-data-operations.md)与 [S3 文档](s3-storage.md)。
 
-若启动失败，查看 `docker compose -f infra/compose.selfhost.yaml ps` 及相应服务日志；修复证书、DNS、数据库或 MinIO 后重跑 `start`。不要执行 `docker compose down -v`，它会删除持久数据。真实公网验收、备份恢复和可用性监控由部署者负责。
+若启动失败，查看 `docker compose -f infra/compose.selfhost.yaml ps` 及相应服务日志；修复证书、DNS、数据库或 RustFS 后重跑 `start`。不要执行 `docker compose down -v`，它会删除持久数据。真实公网验收、备份恢复和可用性监控由部署者负责。
 
 本轮隔离环境的实际结果与未执行的公网检查见[自部署验收记录](self-hosting-verification.md)。

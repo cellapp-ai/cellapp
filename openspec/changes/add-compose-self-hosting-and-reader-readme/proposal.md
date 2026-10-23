@@ -1,5 +1,7 @@
 # Proposal
 
+> Storage follow-up: `replace-bundled-minio-with-rustfs` supersedes the bundled MinIO choice. The original narrative below records the earlier design; current requirements and remaining tasks now use RustFS. Existing MinIO data is not migrated.
+
 ## Why
 
 The root README is dominated by contributor commands and mixes local development, Cloud Run operations, and end-user usage. The existing Docker Compose file starts development dependencies but does not provide a reproducible way to run the complete Cellapp platform on an operator's server. Readers need a short project entry point and a separate, truthful self-hosting path.

@@ -248,7 +248,7 @@ try {
     assert.equal(oldRelease.status, 'published');
     assert.deepEqual(await legacy('logout'), {loggedOut: true});
   }
-  console.log('HTTPS browser + real PostgreSQL/PostgREST/MinIO: login, grants, requests, key rotation, revocation, public access, CRUD, isolation and deletion passed.');
+  console.log('HTTPS browser + real PostgreSQL/PostgREST/RustFS: login, grants, requests, key rotation, revocation, public access, CRUD, isolation and deletion passed.');
 } finally {
   await browser.close(); await rm(root, {recursive: true, force: true});
 }

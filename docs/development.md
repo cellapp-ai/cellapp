@@ -19,8 +19,8 @@ go mod download
 ## 本地服务
 
 ```sh
-docker compose -f infra/compose.yaml up -d postgres postgrest proxy minio
-docker compose -f infra/compose.yaml run --rm minio-init
+docker compose -f infra/compose.yaml up -d postgres postgrest proxy rustfs
+docker compose -f infra/compose.yaml run --rm rustfs-init
 cp .env.example .env
 set -a
 . ./.env
@@ -38,7 +38,7 @@ docker compose -f infra/compose.yaml cp proxy:/data/caddy/pki/authorities/local/
 export NODE_EXTRA_CA_CERTS="$PWD/.local/root.crt"
 ```
 
-MinIO 初始化幂等，私有 Bucket 持久化。配置、失败重试及外部存储见 [S3 文档](s3-storage.md)；应用数据角色与现有卷升级见[应用数据运维](app-data-operations.md)。
+RustFS 初始化幂等，私有 Bucket 持久化。旧 MinIO 卷不会被新环境复用或自动迁移。配置、失败重试及外部存储见 [S3 文档](s3-storage.md)；应用数据角色与现有卷升级见[应用数据运维](app-data-operations.md)。
 
 ## 构建与检查
 

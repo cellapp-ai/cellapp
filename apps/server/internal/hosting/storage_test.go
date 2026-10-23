@@ -189,7 +189,7 @@ func TestLiveS3(t *testing.T) {
 	if e = storage.Health(ctx); e != nil {
 		t.Fatal(e)
 	}
-	key := "cellapp-probes/" + id()
+	key := "mcp-chunks/cellapp-probes/" + id()
 	body := []byte("cellapp-private-storage-probe")
 	defer func() {
 		cleanup, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -209,6 +209,15 @@ func TestLiveS3(t *testing.T) {
 	_ = object.Close()
 	if e != nil || !bytes.Equal(got, body) {
 		t.Fatal("object read mismatch", e)
+	}
+	found := false
+	if e = storage.WalkTemporary(ctx, func(listed string, _ time.Time) error {
+		if listed == key {
+			found = true
+		}
+		return nil
+	}); e != nil || !found {
+		t.Fatal("temporary object missing from prefix listing", e)
 	}
 	req, e := http.NewRequestWithContext(ctx, "GET", c.S3Endpoint+"/"+c.S3Bucket+"/"+key, nil)
 	if e != nil {

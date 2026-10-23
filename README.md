@@ -35,7 +35,7 @@ Apps that need continuously running background jobs or custom server-side logic 
 
 ## Self-host Cellapp
 
-The [single-host Docker Compose guide](docs/self-hosting.md) (Chinese) covers the full platform: the Go service, dashboard, separate app data API, PostgreSQL, private MinIO by default, and an HTTPS entry point. You will need a control domain and an app wildcard domain under different registrable domains, trusted certificates for both, and a GitHub OAuth app. For the existing Cloud Run deployment path, see the [operations guide](docs/operations.md) (Chinese).
+The [single-host Docker Compose guide](docs/self-hosting.md) (Chinese) covers the full platform: the Go service, dashboard, separate app data API, PostgreSQL, private RustFS by default, and an HTTPS entry point. You will need a control domain and an app wildcard domain under different registrable domains, trusted certificates for both, and a GitHub OAuth app. For the existing Cloud Run deployment path, see the [operations guide](docs/operations.md) (Chinese).
 
 ## Contribute
 

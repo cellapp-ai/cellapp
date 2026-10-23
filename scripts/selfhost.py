@@ -20,7 +20,7 @@ CONFIG = ROOT / "infra" / "selfhost.local"
 COMPOSE = ROOT / "infra" / "compose.selfhost.yaml"
 DOMAIN = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$")
 OAUTH = re.compile(r"^[A-Za-z0-9_-]+$")
-SECRET_NAMES = ("POSTGRES_PASSWORD", "CONTROL_DB_PASSWORD", "APP_DATA_DB_PASSWORD", "POSTGREST_DB_PASSWORD", "SECRET", "APP_DATA_JWT_SECRET", "MINIO_ROOT_USER", "MINIO_ROOT_PASSWORD")
+SECRET_NAMES = ("POSTGRES_PASSWORD", "CONTROL_DB_PASSWORD", "APP_DATA_DB_PASSWORD", "POSTGREST_DB_PASSWORD", "SECRET", "APP_DATA_JWT_SECRET", "RUSTFS_ACCESS_KEY", "RUSTFS_SECRET_KEY")
 
 
 def fail(message):
@@ -57,8 +57,28 @@ def cert_matches(cert, key, host):
         fail(f"TLS certificate and key do not match for {host}")
 
 
+def check_storage_backend():
+    if any((CONFIG / name).exists() for name in ("minio-ca.crt", "minio-ca.key", "minio-certs")):
+        fail("legacy MinIO TLS files detected; keep the old version. This change does not migrate objects")
+    secrets_path = CONFIG / "secrets.json"
+    if secrets_path.exists() and any(name in json.loads(secrets_path.read_text()) for name in ("MINIO_ROOT_USER", "MINIO_ROOT_PASSWORD")):
+        fail("legacy MinIO credentials detected; keep the old version. This change does not migrate objects")
+    runtime_path = CONFIG / "runtime.env"
+    if runtime_path.exists() and "S3_ENDPOINT=https://minio:9000" in runtime_path.read_text():
+        fail("legacy MinIO endpoint detected; keep the old version. This change does not migrate objects")
+    settings_path = CONFIG / "settings.json"
+    if settings_path.exists():
+        settings = json.loads(settings_path.read_text())
+        if settings.get("storage_backend") != "rustfs":
+            fail("legacy MinIO self-host configuration cannot start with RustFS; keep the old version. This change does not migrate objects")
+        return settings
+    if any((CONFIG / name).exists() for name in ("runtime.env", "secrets.json")):
+        fail("existing self-host configuration has no RustFS marker; keep the old version. This change does not migrate MinIO objects")
+    return {}
+
+
 def setup(args):
-    old = json.loads((CONFIG / "settings.json").read_text()) if (CONFIG / "settings.json").exists() else {}
+    old = check_storage_backend()
     control = args.control_host or old.get("control_host")
     apps = args.apps_domain or old.get("apps_domain")
     if not control or not apps or not DOMAIN.fullmatch(control) or not DOMAIN.fullmatch(apps):
@@ -89,7 +109,7 @@ def setup(args):
     values = json.loads((CONFIG / "secrets.json").read_text()) if (CONFIG / "secrets.json").exists() else {}
     for name in SECRET_NAMES:
         if name not in values:
-            values[name] = secrets.token_urlsafe(48)
+            values[name] = secrets.token_hex(24) if name == "RUSTFS_ACCESS_KEY" else secrets.token_urlsafe(48)
         if len(values[name]) < 32 or "development" in values[name].lower() or len(set(values[name])) < 8:
             fail(f"unsafe generated secret: {name}")
     if len(set(values.values())) != len(values):
@@ -101,23 +121,23 @@ def setup(args):
         if path != destination:
             shutil.copyfile(path, destination)
             destination.chmod(0o600)
-    if not (CONFIG / "minio-ca.crt").exists():
-        cert_dir = CONFIG / "minio-certs"
+    if not (CONFIG / "rustfs-ca.crt").exists():
+        cert_dir = CONFIG / "rustfs-certs"
         cert_dir.mkdir(mode=0o700, exist_ok=True)
-        ca_key = CONFIG / "minio-ca.key"
-        run(["openssl", "req", "-x509", "-newkey", "rsa:3072", "-nodes", "-days", "3650", "-subj", "/CN=Cellapp private MinIO CA", "-keyout", str(ca_key), "-out", str(CONFIG / "minio-ca.crt")])
-        csr = CONFIG / "minio.csr"
-        run(["openssl", "req", "-newkey", "rsa:3072", "-nodes", "-subj", "/CN=minio", "-keyout", str(cert_dir / "private.key"), "-out", str(csr)])
-        ext = CONFIG / "minio.ext"
-        write_private(ext, "subjectAltName=DNS:minio\nextendedKeyUsage=serverAuth\n")
-        run(["openssl", "x509", "-req", "-in", str(csr), "-CA", str(CONFIG / "minio-ca.crt"), "-CAkey", str(ca_key), "-CAcreateserial", "-days", "825", "-extfile", str(ext), "-out", str(cert_dir / "public.crt")])
+        ca_key = CONFIG / "rustfs-ca.key"
+        run(["openssl", "req", "-x509", "-newkey", "rsa:3072", "-nodes", "-days", "3650", "-subj", "/CN=Cellapp private RustFS CA", "-keyout", str(ca_key), "-out", str(CONFIG / "rustfs-ca.crt")])
+        csr = CONFIG / "rustfs.csr"
+        run(["openssl", "req", "-newkey", "rsa:3072", "-nodes", "-subj", "/CN=rustfs", "-keyout", str(cert_dir / "rustfs_key.pem"), "-out", str(csr)])
+        ext = CONFIG / "rustfs.ext"
+        write_private(ext, "subjectAltName=DNS:rustfs\nextendedKeyUsage=serverAuth\n")
+        run(["openssl", "x509", "-req", "-in", str(csr), "-CA", str(CONFIG / "rustfs-ca.crt"), "-CAkey", str(ca_key), "-CAcreateserial", "-days", "825", "-extfile", str(ext), "-out", str(cert_dir / "rustfs_cert.pem")])
         csr.unlink()
         ext.unlink()
-        for file in (ca_key, CONFIG / "minio-ca.crt", cert_dir / "private.key", cert_dir / "public.crt"):
+        for file in (ca_key, CONFIG / "rustfs-ca.crt", cert_dir / "rustfs_key.pem", cert_dir / "rustfs_cert.pem"):
             file.chmod(0o600)
     # The application runs as a non-root user and only reads the public CA.
-    (CONFIG / "minio-ca.crt").chmod(0o644)
-    settings = dict(control_host=control, apps_domain=apps, github_client_id=client_id, github_client_secret=client_secret)
+    (CONFIG / "rustfs-ca.crt").chmod(0o644)
+    settings = dict(storage_backend="rustfs", control_host=control, apps_domain=apps, github_client_id=client_id, github_client_secret=client_secret)
     write_private(CONFIG / "settings.json", json.dumps(settings, indent=2) + "\n")
     environment = {
         "NODE_ENV": "production", "AUTH_MODE": "github", "CONTROL_ORIGIN": "https://" + control,
@@ -130,8 +150,8 @@ def setup(args):
         "PGRST_DB_ANON_ROLE": "cellapp_appdata_anon", "PGRST_OPENAPI_MODE": "disabled", "PGRST_DB_POOL": "5",
         "PGRST_DB_MAX_ROWS": "1000", "PGRST_DB_PRE_REQUEST": "cellapp_internal.pre_request",
         "PGRST_JWT_SECRET": values["APP_DATA_JWT_SECRET"],
-        "S3_ENDPOINT": "https://minio:9000", "S3_REGION": "us-east-1", "S3_BUCKET": "cellapp",
-        "S3_ACCESS_KEY_ID": values["MINIO_ROOT_USER"], "S3_SECRET_ACCESS_KEY": values["MINIO_ROOT_PASSWORD"],
+        "S3_ENDPOINT": "https://rustfs:9000", "S3_REGION": "us-east-1", "S3_BUCKET": "cellapp",
+        "S3_ACCESS_KEY_ID": values["RUSTFS_ACCESS_KEY"], "S3_SECRET_ACCESS_KEY": values["RUSTFS_SECRET_KEY"],
         "MAX_APPS": "10", "MAX_FILES": "1000", "MAX_FILE_BYTES": "10000000", "MAX_DEPLOYMENT_BYTES": "50000000",
         "MAX_STORAGE_BYTES": "500000000", "MAX_MONTHLY_VISITORS": "1000", "MAX_REQUESTS_PER_MINUTE": "120",
         "UPLOAD_TTL_SECONDS": "3600", "RETENTION_SECONDS": "86400",
@@ -158,12 +178,13 @@ def check_ingress():
 
 
 def start(_args):
+    check_storage_backend()
     if not (CONFIG / "runtime.env").is_file():
         fail("run setup before start")
     stages = [
-        ("database and MinIO", ("up", "-d", "--wait", "postgres", "minio")),
+        ("database and RustFS", ("up", "-d", "--wait", "postgres", "rustfs")),
         ("application databases", ("run", "--rm", "database-init")),
-        ("private bucket", ("run", "--rm", "minio-init")),
+        ("private bucket", ("run", "--rm", "rustfs-init")),
         ("control migrations", ("run", "--rm", "migrate")),
         ("application health", ("up", "-d", "--no-deps", "--force-recreate", "--wait", "app")),
         ("public TLS ingress", ("up", "-d", "--no-deps", "--force-recreate", "--wait", "ingress")),

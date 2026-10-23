@@ -28,26 +28,38 @@ services:
     networks: [private]
     restart: "no"
 
-  minio:
-    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
-    user: '0:0'
-    command: [server, --certs-dir, /certs, /data, --console-address, ':9001']
+  rustfs-certs-init:
+    image: alpine:3.22
+    volumes:
+      - ./selfhost.local/rustfs-certs:/source:ro
+      - rustfs-certs:/certs
+    entrypoint: [sh, -ec]
+    command: ['cp /source/rustfs_cert.pem /certs/rustfs_cert.pem; cp /source/rustfs_key.pem /certs/rustfs_key.pem; chown -R 10001:10001 /certs; chmod 0500 /certs; chmod 0400 /certs/rustfs_key.pem; chmod 0444 /certs/rustfs_cert.pem']
+    networks: [private]
+    restart: "no"
+
+  rustfs:
+    image: rustfs/rustfs:1.0.3
     restart: unless-stopped
     env_file: ./selfhost.local/runtime.env
     environment:
-      MINIO_REGION_NAME: us-east-1
+      RUSTFS_TLS_PATH: /certs
+    depends_on:
+      rustfs-certs-init: {condition: service_completed_successfully}
     volumes:
-      - minio:/data
-      - ./selfhost.local/minio-certs:/certs:ro
+      - rustfs:/data
+      - rustfs-certs:/certs:ro
     networks: [private]
 
-  minio-init:
-    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+  rustfs-init:
+    image: rustfs/rc:v0.1.36
     env_file: ./selfhost.local/runtime.env
-    depends_on: [minio]
+    environment:
+      S3_CA_BUNDLE: /run/selfhost/rustfs-ca.crt
+    depends_on: [rustfs]
     volumes:
-      - ./minio-init.sh:/init.sh:ro
-      - ./selfhost.local/minio-ca.crt:/root/.mc/certs/CAs/selfhost.crt:ro
+      - ./rustfs-init.sh:/init.sh:ro
+      - ./selfhost.local/rustfs-ca.crt:/run/selfhost/rustfs-ca.crt:ro
     entrypoint: [sh, /init.sh]
     networks: [private]
     restart: "no"
@@ -69,12 +81,12 @@ services:
     restart: unless-stopped
     env_file: ./selfhost.local/runtime.env
     environment:
-      SELFHOST_CA_CERT: /run/selfhost/minio-ca.crt
+      SELFHOST_CA_CERT: /run/selfhost/rustfs-ca.crt
     volumes:
-      - ./selfhost.local/minio-ca.crt:/run/selfhost/minio-ca.crt:ro
+      - ./selfhost.local/rustfs-ca.crt:/run/selfhost/rustfs-ca.crt:ro
     depends_on:
       migrate: {condition: service_completed_successfully}
-      minio-init: {condition: service_completed_successfully}
+      rustfs-init: {condition: service_completed_successfully}
     healthcheck:
       test: [CMD, /usr/local/bin/cellapp-healthcheck]
       interval: 5s
@@ -98,7 +110,8 @@ services:
 
 volumes:
   postgres:
-  minio:
+  rustfs:
+  rustfs-certs:
 networks:
   private:
     driver: bridge

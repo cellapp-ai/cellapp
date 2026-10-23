@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Provide a reproducible, secure single-host deployment of the complete Cellapp platform with Docker Compose and private MinIO storage by default, independent of the managed Cloud Run release path.
+Provide a reproducible, secure single-host deployment of the complete Cellapp platform with Docker Compose and private RustFS storage by default, independent of the managed Cloud Run release path.
 
 ## ADDED Requirements
 
@@ -20,7 +20,7 @@ Cellapp SHALL provide a production Docker Compose path that starts the control s
 
 ### Requirement: Explicit production configuration
 
-The Compose path SHALL require a control hostname and application wildcard domain on different registrable domains, trusted HTTPS for both, and GitHub OAuth credentials. It MUST generate or require distinct persistent production secrets for platform signing, application data signing, databases, and MinIO; it MUST reject development credentials and development authentication mode.
+The Compose path SHALL require a control hostname and application wildcard domain on different registrable domains, trusted HTTPS for both, and GitHub OAuth credentials. It MUST generate or require distinct persistent production secrets for platform signing, application data signing, databases, and RustFS; it MUST reject development credentials and development authentication mode.
 
 #### Scenario: Invalid or missing configuration
 - **WHEN** a hostname overlaps the application domain, TLS material is absent, OAuth credentials are missing, or a secret retains a development default
@@ -30,16 +30,16 @@ The Compose path SHALL require a control hostname and application wildcard domai
 - **WHEN** a browser visits the configured control host or a published application subdomain over HTTPS
 - **THEN** ingress preserves the requested host, routes it to the matching Cellapp surface, and rejects an unknown host without exposing another application's content
 
-### Requirement: Private MinIO by default
+### Requirement: Private RustFS by default
 
-The Compose path SHALL provision a durable private MinIO Bucket by default and connect the production service to it over verified HTTPS with non-development credentials. Object and management ports MUST NOT be publicly exposed. Operators MAY explicitly select a separately configured HTTPS S3-compatible store without changing application behavior.
+The Compose path SHALL provision a durable private RustFS Bucket by default and connect the production service to it over verified HTTPS with non-development credentials. Object and management ports MUST NOT be publicly exposed. Operators MAY explicitly select a separately configured HTTPS S3-compatible store without changing application behavior.
 
 #### Scenario: Repeat setup or restart
 - **WHEN** the operator reruns initialization or restarts the stack after publishing files
 - **THEN** the Bucket remains private and the published objects remain readable through authorized application delivery
 
 #### Scenario: Unauthorized storage access
-- **WHEN** an unauthenticated client attempts to read a stored object or reach the MinIO management endpoint from the public network
+- **WHEN** an unauthenticated client attempts to read a stored object or reach the RustFS management endpoint from the public network
 - **THEN** the object is not disclosed and the management endpoint is not available
 
 ### Requirement: Safe initialization and recovery

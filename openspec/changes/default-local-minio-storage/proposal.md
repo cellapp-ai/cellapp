@@ -1,5 +1,7 @@
 # Proposal
 
+> Storage follow-up: `replace-bundled-minio-with-rustfs` supersedes the bundled MinIO choice. The original narrative below records the earlier design; current requirements and remaining tasks now use RustFS. Existing MinIO data is not migrated.
+
 ## Why
 
 当前服务开发默认指向七牛云且需要事先配置云端 Bucket/凭证，本地 Compose 无对象存储，无法直接复现完整托管环境。生产示例已经采用通用 S3 凭证变量，代码仍读取七牛专用变量，造成配置与实现不一致。

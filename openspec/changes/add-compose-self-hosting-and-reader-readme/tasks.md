@@ -1,5 +1,7 @@
 # Tasks
 
+> 已勾选的 MinIO 条目记录原阶段事实；其默认后端由 `replace-bundled-minio-with-rustfs` 取代。未勾选的私有存储任务现以 RustFS 为准，须以该变更的真实验收结果更新状态，不得用旧 MinIO 结果代替。
+
 ## 1. Production Compose and configuration
 
 - [x] 1.1 Add an isolated production Compose file for the existing application image, PostgreSQL, MinIO and public TLS ingress; verify `docker compose config` resolves the intended services and exposes only ingress ports.
@@ -9,7 +11,7 @@
 
 ## 2. Durable dependencies and startup gates
 
-- [ ] 2.1 Configure private MinIO with persistent data, generated credentials and verified internal HTTPS; verify signed object round trip, anonymous denial, no public storage ports, and trust after container restart.
+- [x] 2.1 Configure private RustFS with persistent data, generated credentials and verified internal HTTPS; verify signed object round trip, anonymous denial, no public storage ports, and trust after container restart.
 - [x] 2.2 Add production-safe application database/role initialization without fixed development passwords, and run control migrations before public startup; verify fresh bootstrap, repeat bootstrap and distinct database/role boundaries.
 - [x] 2.3 Gate public readiness on database, MinIO Bucket privacy, migrations and application health; verify a failed dependency or migration reports its stage and retains existing volumes for retry.
 - [x] 2.4 Exercise the existing production image under Compose, adjusting its entrypoint only where required; verify the paired Web console and PostgREST start, and rerun the Cloud Run entrypoint smoke check if shared behavior changes.

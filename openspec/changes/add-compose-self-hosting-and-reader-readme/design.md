@@ -1,5 +1,7 @@
 # Design
 
+> Storage follow-up: `replace-bundled-minio-with-rustfs` supersedes the bundled MinIO choice. The original narrative below records the earlier design; current requirements and remaining tasks now use RustFS. Existing MinIO data is not migrated.
+
 ## Context
 
 See [proposal.md](./proposal.md) for motivation and the two delta specs for acceptance criteria. `infra/compose.yaml` currently starts development PostgreSQL, PostgREST, Caddy, and MinIO with fixed development credentials; Go runs on the host. The production `Dockerfile` already bundles the Go service, matching Web console, PostgREST, and an internal HTTP Caddy entrypoint. Production configuration rejects `AUTH_MODE=dev`, overlapping control/application registrable domains, and an HTTP S3 endpoint. The Cloud Run release path and local development path must stay usable.

@@ -1,5 +1,7 @@
 # Design
 
+> Storage follow-up: `replace-bundled-minio-with-rustfs` supersedes the bundled MinIO choice. The original narrative below records the earlier design; current requirements and remaining tasks now use RustFS. Existing MinIO data is not migrated.
+
 ## Context
 
 动机见 [proposal.md](proposal.md)。`LoadConfig` 的非生产回退仍是七牛 Endpoint、`cn-east-1` 和不可用的 Bucket/凭证占位符；生产不使用这些回退。`NewStorage` 已支持 HTTP/HTTPS、path-style、Signature V4 和指定 Bucket 健康检查，并要求生产 HTTPS，继续复用即可。

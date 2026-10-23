@@ -15,7 +15,7 @@
     { "id": "proxy", "type": "cloud", "label": "Caddy / TLS", "sublabel": "控制域 + 应用域", "pos": [245, 245], "size": [140, 64] },
     { "id": "server", "type": "backend", "label": "Go Hosting Service", "sublabel": "控制 API + 应用网关", "pos": [470, 245], "size": [150, 64], "tag": "单一服务" },
     { "id": "postgres", "type": "database", "label": "PostgreSQL", "sublabel": "账号 / 应用 / 版本 / 会话", "pos": [730, 170], "size": [170, 64] },
-    { "id": "s3", "type": "cloud", "label": "私有 S3 / 本地 MinIO", "sublabel": "静态发布产物", "pos": [730, 340], "size": [170, 64], "tag": "禁止匿名读" },
+    { "id": "s3", "type": "cloud", "label": "私有 S3 / 本地 RustFS", "sublabel": "静态发布产物", "pos": [730, 340], "size": [170, 64], "tag": "禁止匿名读" },
     { "id": "visitor", "type": "external", "label": "应用访问者", "sublabel": "独立分享密钥", "pos": [40, 610], "size": [140, 64] }
   ],
   "boundaries": [

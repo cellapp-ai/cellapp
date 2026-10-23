@@ -37,26 +37,24 @@ services:
       PGRST_DB_MAX_ROWS: 1000
       PGRST_DB_PRE_REQUEST: cellapp_internal.pre_request
     ports: ["127.0.0.1:3001:3000"]
-  minio:
-    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
-    command: ["server", "/data", "--console-address", ":9001"]
+  rustfs:
+    image: rustfs/rustfs:1.0.3
     environment:
-      MINIO_ROOT_USER: cellapp-local
-      MINIO_ROOT_PASSWORD: cellapp-local-development-only
-      MINIO_REGION_NAME: us-east-1
+      RUSTFS_ACCESS_KEY: cellapp-local
+      RUSTFS_SECRET_KEY: cellapp-local-development-only
     ports: ["127.0.0.1:9000:9000", "127.0.0.1:9001:9001"]
-    volumes: ["minio:/data"]
-  minio-init:
-    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
-    depends_on: ["minio"]
+    volumes: ["rustfs:/data"]
+  rustfs-init:
+    image: rustfs/rc:v0.1.36
+    depends_on: ["rustfs"]
     environment:
-      S3_ENDPOINT: http://minio:9000
+      S3_ENDPOINT: http://rustfs:9000
       S3_BUCKET: cellapp
       S3_ACCESS_KEY_ID: cellapp-local
       S3_SECRET_ACCESS_KEY: cellapp-local-development-only
-    volumes: ["./minio-init.sh:/init.sh:ro"]
+    volumes: ["./rustfs-init.sh:/init.sh:ro"]
     entrypoint: ["/bin/sh", "/init.sh"]
 volumes:
   postgres:
   caddy:
-  minio:
+  rustfs:

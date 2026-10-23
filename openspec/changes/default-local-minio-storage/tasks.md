@@ -1,15 +1,17 @@
 # Tasks
 
+> 已勾选的 MinIO 条目记录原阶段事实；其默认后端由 `replace-bundled-minio-with-rustfs` 取代。未勾选的存储验收条目现以 RustFS 为准，须以该变更的真实验收结果更新状态，不得用旧 MinIO 结果代替。
+
 ## 1. 服务 S3 配置
 
 - [x] 1.1 将 Config/适配器内部凭证字段改为通用 S3 名称，将开发默认设为设计中的本地 MinIO 参数；用配置测试验证空环境默认和显式 Endpoint/Region/Bucket 覆盖，编译检查无旧供应商字段引用。
 - [x] 1.2 实现通用凭证成对优先、旧变量成对回退与缺项拒绝；配置测试覆盖两组完整、仅旧组、两组各缺一项、不得混用及错误脱敏，验证生产缺项不回退。
 - [x] 1.3 更新存储测试提示并保持生产 HTTPS、指定 Bucket 健康检查、签名读写和清理行为；执行对应 Go 单元测试，覆盖 HTTP 生产拒绝及 Bucket 缺失/认证失败。
 
-## 2. 本地 MinIO 编排
+## 2. 本地 RustFS 编排
 
-- [ ] 2.1 在 `infra/compose.yaml` 添加固定版本 MinIO、loopback API/管理端口和持久卷，使开发值与服务默认一致；验证镜像可获取及 Compose 配置解析，实际检查端口只绑定 loopback。
-- [ ] 2.2 添加有界等待、幂等创建私有 Bucket 的初始化服务，传递失败状态；在独立 Compose 项目验证首次初始化、重复运行、重启后对象保留，以及错误凭证/不可达的非零退出，不修改现有开发卷或云 Bucket。
+- [ ] 2.1 在 `infra/compose.yaml` 添加固定版本 RustFS、loopback API/管理端口和持久卷，使开发值与服务默认一致；验证镜像可获取及 Compose 配置解析，实际检查端口只绑定 loopback。
+- [x] 2.2 添加有界等待、幂等创建私有 Bucket 的初始化服务，传递失败状态；在独立 Compose 项目验证首次初始化、重复运行、重启后对象保留，以及错误凭证/不可达的非零退出，不修改现有开发卷或云 Bucket。
 
 ## 3. 当前资料与遗留引用
 
@@ -20,9 +22,9 @@
 
 ## 4. 真实验收与回归
 
-- [ ] 4.1 对隔离 MinIO 显式运行 `RUN_S3_TESTS=1 go test -race -count=1 -run TestLiveS3 -v ./apps/server/internal/hosting`，验证健康、内容一致、匿名拒绝、删除后不可读及探针清理；记录真实运行结果，不用协议替身结果替代。
+- [x] 4.1 对隔离 RustFS 显式运行 `RUN_S3_TESTS=1 go test -race -count=1 -run TestLiveS3 -v ./apps/server/internal/hosting`，验证健康、内容一致、匿名拒绝、删除后不可读及探针清理；记录真实运行结果，不用协议替身结果替代。
 - [ ] 4.2 执行 `npm run typecheck`、`npm test`、`npm run build`、`go vet ./apps/server/...`，并用隔离 `TEST_DATABASE_URL` 执行服务端 race 与显式 `TestBrowserEndToEnd` 验收；分别记录通过、失败、跳过及环境缺口。
-- [ ] 4.3 使用隔离数据库和真实 MinIO 支撑的本地完整服务验证 CLI 授权发布、HTML/SPA 读取、未授权及匿名对象拒绝、失败更新保持原版本、删除与对象回收；只用独立测试资源，区分真实 MinIO 与浏览器测试的内存存储替身。
+- [ ] 4.3 使用隔离数据库和真实 RustFS 支撑的本地完整服务验证 CLI 授权发布、HTML/SPA 读取、未授权及匿名对象拒绝、失败更新保持原版本、删除与对象回收；只用独立测试资源，区分真实 RustFS 与浏览器测试的内存存储替身。
 - [ ] 4.4 新建本轮存储验收记录，记录实际版本、入口、首次/重复初始化与持久化结果、失败场景、残留引用分类及未执行项；核对文件链接与命令，执行 OpenSpec 严格校验。
 
 ## 5. 规格与交付

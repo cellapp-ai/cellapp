@@ -35,7 +35,7 @@ Cellapp 提供账户登录、访问控制和每个应用独立的数据表。Age
 
 ## 自己部署
 
-[单机 Docker Compose 自部署指南](docs/self-hosting.md)涵盖完整平台：Go 服务、控制台、独立应用数据 API、PostgreSQL、默认私有 MinIO 和 HTTPS 入口。需要准备两个不同注册域的控制域名与应用通配域名、相应可信证书，以及 GitHub OAuth 应用。现有 Cloud Run 部署路径见[运维文档](docs/operations.md)。
+[单机 Docker Compose 自部署指南](docs/self-hosting.md)涵盖完整平台：Go 服务、控制台、独立应用数据 API、PostgreSQL、默认私有 RustFS 和 HTTPS 入口。需要准备两个不同注册域的控制域名与应用通配域名、相应可信证书，以及 GitHub OAuth 应用。现有 Cloud Run 部署路径见[运维文档](docs/operations.md)。
 
 ## 参与开发
 

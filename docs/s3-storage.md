@@ -1,15 +1,15 @@
 # S3 存储配置
 
-服务使用私有 S3 兼容 Bucket 保存发布产物，开发默认使用本地 MinIO。访客仅通过应用网关读取文件，不获得对象读取签名直链。启用边缘静态分发后，Worker 在验证短期授权后通过私有 R2 绑定读取已发布版本；访客仍不获得对象地址或凭证。适配器使用 path-style 和 Signature V4，支持指定 Bucket 的 HEAD 及对象 PUT/GET/HEAD/DELETE；R2 使用 `S3_REGION=auto`，生产 Endpoint 必须为 HTTPS。已有产物的完整性校验和回滚流程见[边缘静态分发与回滚](edge-delivery.md)。
+服务使用私有 S3 兼容 Bucket 保存发布产物，开发默认使用本地 RustFS。访客仅通过应用网关读取文件，不获得对象读取签名直链。启用边缘静态分发后，Worker 在验证短期授权后通过私有 R2 绑定读取已发布版本；访客仍不获得对象地址或凭证。适配器使用 path-style 和 Signature V4，支持指定 Bucket 的 HEAD 及对象 PUT/GET/HEAD/DELETE；R2 使用 `S3_REGION=auto`，生产 Endpoint 必须为 HTTPS。已有产物的完整性校验和回滚流程见[边缘静态分发与回滚](edge-delivery.md)。
 
-## 本地 MinIO
+## 本地 RustFS
 
 ```sh
-docker compose -f infra/compose.yaml up -d postgres proxy minio
-docker compose -f infra/compose.yaml run --rm minio-init
+docker compose -f infra/compose.yaml up -d postgres proxy rustfs
+docker compose -f infra/compose.yaml run --rm rustfs-init
 ```
 
-第二条命令必须以零状态退出，出现 `Private local S3 bucket initialized.` 后才算存储就绪。初始化有界等待服务、幂等创建 Bucket 并关闭匿名访问；重复运行保留对象。首次运行需要能够访问固定版本镜像所在的镜像仓库。
+第二条命令必须以零状态退出，出现 `Private RustFS bucket initialized and anonymous GET denied.` 后才算存储就绪。初始化有界等待服务、幂等创建 Bucket，并用实际对象验证匿名 GET 被拒绝；重复运行保留对象。首次运行需要能够访问固定版本镜像所在的镜像仓库。
 
 宿主 Go 服务默认值与 `.env.example` 一致：
 
@@ -27,11 +27,11 @@ S3_SECRET_ACCESS_KEY=cellapp-local-development-only
 
 ```sh
 docker compose -f infra/compose.yaml ps -a
-docker compose -f infra/compose.yaml logs minio
-docker compose -f infra/compose.yaml run --rm minio-init
+docker compose -f infra/compose.yaml logs rustfs
+docker compose -f infra/compose.yaml run --rm rustfs-init
 ```
 
-修改宿主端口需同时修改 Compose 映射和服务 `S3_ENDPOINT`；初始化容器仍使用内部 `http://minio:9000`。修改本地 Bucket/凭证时同步 MinIO、初始化服务和 Go 服务环境。不停止无关进程或删除旧卷来释放端口。
+修改宿主端口需同时修改 Compose 映射和服务 `S3_ENDPOINT`；初始化容器仍使用内部 `http://rustfs:9000`。修改本地 Bucket/凭证时同步 RustFS、初始化服务和 Go 服务环境。不停止无关进程或删除旧卷来释放端口。旧版 MinIO 命名卷不会被 RustFS 复用，新 Bucket 不包含旧对象；本变更不迁移旧数据。
 
 ## 外部存储与生产
 
@@ -53,4 +53,4 @@ Bucket 和任何独立下载/CDN 入口均须私有。仅对 S3 地址测试匿�
 RUN_S3_TESTS=1 go test -race -count=1 -run TestLiveS3 -v ./apps/server/internal/hosting
 ```
 
-测试包含 Bucket 健康检查、随机对象写入、签名读取及内容核对、匿名 GET 拒绝、删除后不可读和探针清理。服务 `/health` 同时检查数据库与存储。完整 CLI 发布、访客鉴权及删除验收还需要隔离数据库、配套 Web 产物和受信任 HTTPS 入口。内存或协议存储替身不能代替真实 MinIO 验收。
+测试包含 Bucket 健康检查、随机对象写入、签名读取及内容核对、临时对象前缀遍历、匿名 GET 拒绝、删除后不可读和探针清理。服务 `/health` 同时检查数据库与存储。完整 CLI 发布、访客鉴权及删除验收还需要隔离数据库、配套 Web 产物和受信任 HTTPS 入口。内存或协议存储替身不能代替真实 RustFS 验收。
