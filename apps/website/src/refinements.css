@@ -5,8 +5,24 @@
 
 .hero-use{max-width:540px;margin:0 0 32px;color:var(--paper);font-size:1rem;line-height:1.65}
 .nav-links{gap:clamp(12px,1.6vw,25px)}
+.site-header .nav-links {
+  flex: 1;
+  margin-left: clamp(24px, 4vw, 64px);
+}
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
 .nav-github{width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
 .nav-github svg{width:20px;height:20px}
+@media (max-width: 800px) {
+  .site-header .menu-button { margin-left: auto; }
+  .site-header .nav-links { flex: auto; margin-left: 0; }
+  .nav-links .nav-actions .nav-cta { margin-left: 0; }
+}
 .hero-copy{margin-bottom:12px}
 .four-s{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:24px;margin:44px 0 80px;border-top:1px solid var(--line)}
 .four-s>div{padding-top:14px;border-top:2px solid transparent}
