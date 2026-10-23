@@ -4,6 +4,9 @@
 @media(max-width:800px){nav{height:auto;min-height:72px;flex-wrap:wrap}.menu-button{display:block;border:1px solid var(--line);background:var(--panel);color:var(--paper);padding:8px 14px;border-radius:4px}.nav-links{display:none;width:100%;padding:16px 0 22px;flex-wrap:wrap;gap:22px}.nav-links.is-open{display:flex}.nav-links a:not(.nav-cta){display:inline-flex}.nav-links .nav-cta{margin-left:auto}.resource-grid{grid-template-columns:1fr;gap:25px}.brand-wordmark{width:156px}.comparison th,.comparison td{padding:12px 8px;font-size:.78rem}.side-nav{display:flex;flex-wrap:wrap;gap:0 18px}.side-nav .side-title{width:100%}.side-nav a{padding:12px 0;margin:0;font-size:.84rem}.article-card.featured{padding:25px}.article-page{padding:60px 0 80px}.article-body h1{font-size:clamp(2.7rem,11vw,4rem)}.article-section h2{font-size:2.1rem}footer{align-items:flex-start}.terminal{box-shadow:8px 8px 0 #8199ff29}.hero h1{font-size:clamp(3rem,13vw,5rem)}.page-hero h1{font-size:clamp(2.9rem,12vw,5rem)}}
 
 .hero-use{max-width:540px;margin:0 0 32px;color:var(--paper);font-size:1rem;line-height:1.65}
+.nav-links{gap:clamp(12px,1.6vw,25px)}
+.nav-github{width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+.nav-github svg{width:20px;height:20px}
 .hero-copy{margin-bottom:12px}
 .four-s{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:24px;margin:44px 0 80px;border-top:1px solid var(--line)}
 .four-s>div{padding-top:14px;border-top:2px solid transparent}

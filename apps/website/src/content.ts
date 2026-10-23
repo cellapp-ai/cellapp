@@ -1,6 +1,6 @@
 export type Cadence = 'monthly' | 'yearly';
 export interface Plan { id: string; name: string; audience: string; monthly: number; yearly: number; apps: string; support: string; access: string; recommended?: boolean }
-export const github = 'https://github.com/cellapp-ai/skills';
+export const github = 'https://github.com/cellapp-ai/cellapp';
 export const deploymentPrompt = 'Read https://cellapp.ai/deploy/AGENTS.md, build this project locally and deploy it; use its supported app database tables if needed, and give me the published URL.';
 export const plans: Plan[] = [
   { id: 'starter', name: 'Starter', audience: 'Try the workflow. Share your first build.', monthly: 0, yearly: 0, apps: '1 app', support: 'Community', access: 'Public links' },
