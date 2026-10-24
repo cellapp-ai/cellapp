@@ -34,7 +34,7 @@ func TestConfig(t *testing.T) {
 	if _, e := load(map[string]string{"NODE_ENV": "production"}); e == nil {
 		t.Fatal("production started without config")
 	}
-	for _, m := range []map[string]string{{"MAX_APPS": "0"}, {"SECRET": "short"}, {"CONTROL_ORIGIN": "http://example.com"}, {"APPS_DOMAIN": "control.localhost"}, {"APP_PORT": "-1"}, {"AUTH_MODE": "unknown"}, {"AUTH_MODE": "dev", "CONTROL_ORIGIN": "https://example.com"}} {
+	for _, m := range []map[string]string{{"MAX_APPS": "0"}, {"SECRET": "short"}, {"CONTROL_ORIGIN": "http://example.com"}, {"CONTROL_ORIGIN": "https://control.apps.localhost:8443", "APPS_DOMAIN": "apps.localhost"}, {"APP_PORT": "-1"}, {"AUTH_MODE": "unknown"}, {"AUTH_MODE": "dev", "CONTROL_ORIGIN": "https://example.com"}} {
 		if _, e := load(m); e == nil {
 			t.Fatalf("accepted invalid config: %v", m)
 		}

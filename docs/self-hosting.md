@@ -4,9 +4,11 @@
 
 ## 准备域名、证书和 OAuth
 
-需要 Docker Engine 与 Compose v2、Python 3、OpenSSL、可用的 443 端口和可离机备份的磁盘。控制域和应用通配域必须处在**不同注册域**，例如 `control.example.com` 和 `apps.example.net`。将控制域的 A/AAAA 记录及 `*.apps.example.net` 的通配 DNS 指向服务器。准备受浏览器信任的控制域证书/私钥和 `*.apps.example.net` 通配证书/私钥；本版本不自动申请通配证书。私钥只让主机管理员读取。若使用反向代理或 CDN，必须保持原始 Host 与端到端 HTTPS。
+需要 Docker Engine 与 Compose v2、Python 3、OpenSSL、可用的 443 端口和可离机备份的磁盘。一个注册域即可：控制台使用 `example.com/dashboard`，应用使用 `https://<app-id>.example.com`。将 `example.com` 与 `*.example.com` 的 A/AAAA 记录指向服务器，分别准备受浏览器信任的 `example.com` 证书/私钥和 `*.example.com` 通配证书/私钥（也可用一张同时覆盖两者的证书）。通配证书通常**不覆盖**裸域名；本版本不自动申请证书。私钥只让主机管理员读取。若使用反向代理或 CDN，必须保持原始 Host 与端到端 HTTPS。
 
-在 GitHub **Settings → Developer settings → OAuth Apps** 创建应用。Homepage URL 填 `https://control.example.com`，Authorization callback URL 精确填 `https://control.example.com/auth/callback`。把 Client secret 单独写入仅管理员可读的文件，例如 `/secure/github-client-secret`，不要放进命令行参数。
+也可将应用放在 `https://<app-id>.apps.example.com`：此时 `--apps-domain apps.example.com`，为 `*.apps.example.com` 配置通配 DNS 与证书。控制台仍可放在 `example.com`。现有 `control.example.com` 加 `apps.example.net` 等不同域名配置继续受支持。控制台主机不能落在应用通配域内，例如 `control.example.com` 配 `*.example.com` 会被拒绝。
+
+在 GitHub **Settings → Developer settings → OAuth Apps** 创建应用。Homepage URL 填 `https://example.com`，Authorization callback URL 精确填 `https://example.com/auth/callback`。把 Client secret 单独写入仅管理员可读的文件，例如 `/secure/github-client-secret`，不要放进命令行参数。
 
 ## 初始化和启动
 
@@ -15,8 +17,8 @@
 ```sh
 git submodule update --init --recursive
 python3 scripts/selfhost.py setup \
-  --control-host control.example.com \
-  --apps-domain apps.example.net \
+  --control-host example.com \
+  --apps-domain example.com \
   --github-client-id YOUR_GITHUB_CLIENT_ID \
   --github-client-secret-file /secure/github-client-secret \
   --control-cert /secure/control.crt --control-key /secure/control.key \
@@ -31,11 +33,11 @@ python3 scripts/selfhost.py start
 
 ```sh
 docker compose -f infra/compose.selfhost.yaml ps
-curl -fsS https://control.example.com/health
-curl -I https://control.example.com/dashboard/
+curl -fsS https://example.com/health
+curl -I https://example.com/dashboard/
 ```
 
-`ps` 应显示 app 健康且入口运行；`/health` 返回成功。用浏览器检查真实可信证书、GitHub 登录、控制台、授权发布。全局安装 `npm install -g @cellapp/cli@latest`，以 `cellapp --help` 验证；登录和发布参数见[客户端文档](../skills/README.md)。发布静态测试项目后，检查 `https://<app-id>.apps.example.net`，同时检查未知 Host 不能拿到应用内容。RustFS API/控制台不应能从公网直连，Bucket 的匿名读取应被拒绝。这些公网 DNS、真实 GitHub 和公网证书检查需要运营者在自己的服务器完成；本地证书 fixture 不能替代。
+`ps` 应显示 app 健康且入口运行；`/health` 返回成功。用浏览器检查真实可信证书、GitHub 登录、控制台、授权发布。全局安装 `npm install -g @cellapp/cli@latest`，以 `cellapp --help` 验证；登录和发布参数见[客户端文档](../skills/README.md)。发布静态测试项目后，检查 `https://<app-id>.example.com`（使用嵌套通配域时为 `https://<app-id>.apps.example.com`），同时检查未知 Host 不能拿到应用内容。RustFS API/控制台不应能从公网直连，Bucket 的匿名读取应被拒绝。这些公网 DNS、真实 GitHub 和公网证书检查需要运营者在自己的服务器完成；本地证书 fixture 不能替代。
 
 ## 更新与恢复
 

@@ -113,3 +113,44 @@ func TestApplicationDatabaseConfiguration(t *testing.T) {
 		t.Fatal("invalid application database URL accepted")
 	}
 }
+
+func TestProductionApplicationDomainLayouts(t *testing.T) {
+	base := map[string]string{
+		"NODE_ENV": "production", "SECRET": strings.Repeat("s", 32),
+		"DATABASE_URL": "postgres://test/control", "APP_DATA_DATABASE_URL": "postgres://test/app_data",
+		"POSTGREST_URL": "http://127.0.0.1:3001", "APP_DATA_JWT_SECRET": strings.Repeat("j", 32),
+		"GITHUB_CLIENT_ID": "test", "GITHUB_CLIENT_SECRET": "test",
+		"S3_ENDPOINT": "https://storage.example.net", "S3_REGION": "us-east-1", "S3_BUCKET": "private-test",
+		"S3_ACCESS_KEY_ID": "test-ak", "S3_SECRET_ACCESS_KEY": "test-sk",
+		"MAX_APPS": "10", "MAX_FILES": "1000", "MAX_FILE_BYTES": "100", "MAX_DEPLOYMENT_BYTES": "1000", "MAX_STORAGE_BYTES": "10000",
+		"MAX_MONTHLY_VISITORS": "1000", "MAX_REQUESTS_PER_MINUTE": "120", "UPLOAD_TTL_SECONDS": "3600", "RETENTION_SECONDS": "86400",
+	}
+	for _, tc := range []struct {
+		name, control, apps string
+		valid               bool
+	}{
+		{"apex and direct wildcard", "example.com", "example.com", true},
+		{"apex and nested wildcard", "example.com", "apps.example.com", true},
+		{"sibling hosts", "control.example.com", "apps.example.com", true},
+		{"separate domains", "control.example.com", "apps.example.net", true},
+		{"control inside app wildcard", "control.example.com", "example.com", false},
+		{"nested control inside app wildcard", "control.apps.example.com", "apps.example.com", false},
+		{"public suffix app base", "example.com", "co.uk", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			vars := make(map[string]string, len(base)+2)
+			for key, value := range base {
+				vars[key] = value
+			}
+			vars["CONTROL_ORIGIN"] = "https://" + tc.control
+			vars["APPS_DOMAIN"] = tc.apps
+			c, err := LoadConfig(func(key string) string { return vars[key] })
+			if tc.valid && (err != nil || c.AppsDomain != tc.apps) {
+				t.Fatalf("valid domain layout rejected: %v", err)
+			}
+			if !tc.valid && err == nil {
+				t.Fatal("unsafe domain layout accepted")
+			}
+		})
+	}
+}

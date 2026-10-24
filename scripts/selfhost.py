@@ -83,11 +83,10 @@ def setup(args):
     apps = args.apps_domain or old.get("apps_domain")
     if not control or not apps or not DOMAIN.fullmatch(control) or not DOMAIN.fullmatch(apps):
         fail("supply valid --control-host and --apps-domain DNS names")
-    if control == apps or control.endswith("." + apps) or apps.endswith("." + control):
-        fail("control host and application domain overlap")
-    # Conservative preflight; the server additionally checks the public suffix list.
-    if control.split(".")[-2:] == apps.split(".")[-2:]:
-        fail("control host and application domain must use different registrable domains")
+    # A wildcard covers subdomains, not its base name. The control host may be
+    # the base itself, but cannot be one of the application wildcard hosts.
+    if control.endswith("." + apps):
+        fail("control host falls inside the application wildcard")
     client_id = args.github_client_id or old.get("github_client_id")
     if not client_id or not OAUTH.fullmatch(client_id) or client_id.lower().startswith(("your_", "replace", "example", "development")):
         fail("supply a valid GitHub OAuth Client ID")

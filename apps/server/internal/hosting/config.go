@@ -177,14 +177,14 @@ func LoadConfig(get func(string) string) (c Config, err error) {
 			return c, fmt.Errorf("AUTH_MODE=dev requires a non-production localhost control origin")
 		}
 	}
-	if !domainPattern.MatchString(c.AppsDomain) || origin.Hostname() == c.AppsDomain || strings.HasSuffix(origin.Hostname(), "."+c.AppsDomain) {
+	if !domainPattern.MatchString(c.AppsDomain) || strings.HasSuffix(origin.Hostname(), "."+c.AppsDomain) {
 		return c, fmt.Errorf("invalid or overlapping application domains")
 	}
 	if c.Production {
-		a, ae := publicsuffix.EffectiveTLDPlusOne(origin.Hostname())
-		b, be := publicsuffix.EffectiveTLDPlusOne(c.AppsDomain)
-		if ae != nil || be != nil || a == b {
-			return c, fmt.Errorf("control and app domains must have different registrable domains")
+		_, controlError := publicsuffix.EffectiveTLDPlusOne(origin.Hostname())
+		_, appError := publicsuffix.EffectiveTLDPlusOne(c.AppsDomain)
+		if controlError != nil || appError != nil {
+			return c, fmt.Errorf("control and app domains must be registrable hostnames")
 		}
 	}
 	if c.AppPort != "" {

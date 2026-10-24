@@ -1,5 +1,14 @@
 # 单机自部署本轮验收
 
+## 单域名补充验收（2026-10-24）
+
+- `example.com` 搭配 `*.example.com`、`example.com` 搭配 `*.apps.example.com`，以及不同注册域配置均通过 Go 生产配置检查和隔离的自部署初始化测试。`control.example.com` 搭配 `*.example.com` 被拒绝。
+- 初始化测试使用临时自签名证书，检查证书覆盖、生成的 Caddy Host 规则、重复初始化时证书及秘密保持不变；通过。它不代表真实公网证书和 DNS 验收。
+- 在隔离 PostgreSQL 容器上，`go test -race -count=1 ./apps/server/...` 通过；同域 Host 隔离、控制台 Cookie、应用来源或缺少 Origin 的写入拒绝及 CLI Bearer 行为由集成测试覆盖。`go vet ./apps/server/...`、Python 测试、两项 OpenSpec 严格校验和 `git diff --check` 通过。
+- 本次未运行完整浏览器发布流程，也未在公网域名检查 GitHub OAuth、真实证书、DNS 和实际应用页面。这些仍需在部署主机验证。
+
+以下为 2026-10-22 的原始历史记录，当时使用 MinIO 和双域名测试配置；不代表本轮 RustFS 或单域名验收结果。
+
 日期：2026-10-22。执行环境：macOS arm64、Docker Desktop、隔离的 Compose 项目和临时自签名控制域/应用通配域证书。所有凭证与卷均为本轮测试资源，未连接生产 GitHub OAuth、公共 DNS 或用户数据。
 
 ## 通过

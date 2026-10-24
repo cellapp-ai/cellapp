@@ -20,10 +20,18 @@ Cellapp SHALL provide a production Docker Compose path that starts the control s
 
 ### Requirement: Explicit production configuration
 
-The Compose path SHALL require a control hostname and application wildcard domain on different registrable domains, trusted HTTPS for both, and GitHub OAuth credentials. It MUST generate or require distinct persistent production secrets for platform signing, application data signing, databases, and RustFS; it MUST reject development credentials and development authentication mode.
+The Compose path SHALL require a control hostname, an application wildcard domain, trusted HTTPS for both, and GitHub OAuth credentials. It MUST generate or require distinct persistent production secrets for platform signing, application data signing, databases, and RustFS; it MUST reject development credentials and development authentication mode. The control hostname MUST NOT fall inside the application wildcard.
+
+#### Scenario: One-domain deployment
+- **WHEN** the control hostname is `example.com` and the application domain is `example.com` or `apps.example.com`
+- **THEN** preflight accepts the layout, subject to valid DNS, certificates, OAuth credentials, and secrets
+
+#### Scenario: Sibling or separate-domain deployment
+- **WHEN** the control hostname is a sibling of the application domain or belongs to another registrable domain
+- **THEN** preflight accepts the layout, subject to the same public configuration checks
 
 #### Scenario: Invalid or missing configuration
-- **WHEN** a hostname overlaps the application domain, TLS material is absent, OAuth credentials are missing, or a secret retains a development default
+- **WHEN** the control hostname falls inside the application wildcard, TLS material is absent, OAuth credentials are missing, or a secret retains a development default
 - **THEN** the preflight or service startup fails before presenting the deployment as publicly usable
 
 #### Scenario: Valid host routing

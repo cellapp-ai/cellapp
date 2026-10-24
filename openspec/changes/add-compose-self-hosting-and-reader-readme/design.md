@@ -1,6 +1,6 @@
 # Design
 
-> Storage follow-up: `replace-bundled-minio-with-rustfs` supersedes the bundled MinIO choice. The original narrative below records the earlier design; current requirements and remaining tasks now use RustFS. Existing MinIO data is not migrated.
+> Storage follow-up: `replace-bundled-minio-with-rustfs` supersedes the bundled MinIO choice. Domain follow-up: `single-domain-self-hosting` permits one registrable domain; `example.com` plus `*.example.com` or `*.apps.example.com` is valid, while a control host inside the application wildcard is not. The original narrative below records earlier design choices; current requirements and remaining tasks now use RustFS. Existing MinIO data is not migrated.
 
 ## Context
 
@@ -22,7 +22,7 @@ Alternative considered: extend the development Compose with profiles and product
 
 ### 2. Use explicit public certificates for the first release
 
-The operator supplies trusted certificate/key files covering the control hostname and `*.APPS_DOMAIN`, with DNS already directed to the host. The ingress configuration selects the correct certificate and forwards the original Host unchanged to the application image. Preflight checks names, certificate/key readability and coverage, and the required two distinct registrable domains before public startup. GitHub OAuth uses the control origin and its exact `/auth/callback` URL.
+The operator supplies trusted certificate/key files covering the control hostname and `*.APPS_DOMAIN`, with DNS already directed to the host. The ingress configuration selects the correct certificate and forwards the original Host unchanged to the application image. Preflight checks names, certificate/key readability and coverage, and rejects a control hostname inside the application wildcard before public startup. The control hostname may equal the wildcard base or be its parent. GitHub OAuth uses the control origin and its exact `/auth/callback` URL.
 
 Alternative considered: built-in ACME DNS-01. Wildcard issuance requires provider credentials and a provider-specific ingress build, which adds a second public secret and update path. The first release documents certificate acquisition separately; automation can be added without changing Cellapp's public URL contract. A valid wildcard certificate is therefore an explicit prerequisite, not something Compose can infer from a domain alone.
 
