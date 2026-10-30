@@ -35,6 +35,7 @@ type Server struct {
 	Storage               Storage
 	Identity              Identity
 	MCPMetadataHTTPClient *http.Client
+	ModelTestHTTPClient   *http.Client
 	Logger                *slog.Logger
 }
 type handler func(http.ResponseWriter, *http.Request) error
@@ -85,6 +86,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /auth/logout", s.wrap(s.logoutBrowser))
 	mux.HandleFunc("GET /dashboard", s.wrap(s.webPage))
 	mux.HandleFunc("GET /dashboard/", s.wrap(s.webPage))
+	mux.HandleFunc("GET /dashboard/model-consent", s.wrap(s.modelConsentPage))
+	mux.HandleFunc("POST /dashboard/model-consent", s.wrap(s.modelConsentDecision))
 	mux.HandleFunc("GET /dashboard/assets/", s.wrap(s.webAsset))
 	mux.HandleFunc("GET /dashboard/logos/", s.wrap(s.webAsset))
 	mux.HandleFunc("GET /api/console/session", s.webAPI(s.webSession))
@@ -106,10 +109,20 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/console/apps/{app}/requests/{user}/{decision}", s.webAPI(s.webAccessDecision))
 	mux.HandleFunc("POST /api/console/apps/{app}/grants/{user}/revoke", s.webAPI(s.webGrantRevoke))
 	mux.HandleFunc("GET /api/console/credentials", s.webAPI(s.webCredentials))
+	mux.HandleFunc("GET /api/console/model-connections", s.webAPI(s.webModelConnections))
+	mux.HandleFunc("GET /api/console/models", s.webAPI(s.webPersonalModels))
+	mux.HandleFunc("GET /api/console/model-grants", s.webAPI(s.webModelGrants))
+	mux.HandleFunc("GET /api/console/model-usage", s.webAPI(s.webModelUsage))
+	mux.HandleFunc("POST /api/console/model-grants/{app}/{connection}/revoke", s.webAPI(s.webRevokeModelGrant))
+	mux.HandleFunc("POST /api/console/model-connections", s.webAPI(s.webCreateModelConnection))
+	mux.HandleFunc("POST /api/console/model-connections/{connection}/key", s.webAPI(s.webRotateModelKey))
+	mux.HandleFunc("POST /api/console/model-connections/{connection}/test", s.webAPI(s.webTestModelConnection))
+	mux.HandleFunc("DELETE /api/console/model-connections/{connection}", s.webAPI(s.webDeleteModelConnection))
 	mux.HandleFunc("GET /api/console/mcp/connections", s.webAPI(s.webMCPConnections))
 	mux.HandleFunc("POST /api/console/mcp/connections/{client}/revoke", s.webAPI(s.webMCPRevoke))
 	mux.HandleFunc("POST /api/console/credentials/{credential}/revoke", s.webAPI(s.webRevoke))
 	mux.HandleFunc("POST /api/console/device/decision", s.webAPI(s.webDevice))
+	mux.HandleFunc("POST /api/console/remote-tasks", s.webAPI(s.webCreateRemoteTask))
 	mux.HandleFunc("POST /dashboard/device", s.wrap(s.deviceDecision))
 	mux.HandleFunc("POST /auth/device", s.wrap(s.createDevice))
 	mux.HandleFunc("POST /auth/device/poll", s.wrap(s.pollDevice))
@@ -221,7 +234,11 @@ func (s *Server) Handler() http.Handler {
 			return
 		}
 		if e := s.serveApp(w, r, app); e != nil {
-			errorResponse(w, e)
+			if strings.HasPrefix(r.URL.Path, "/_cellapp/v1/") {
+				modelErrorResponse(w, e)
+			} else {
+				errorResponse(w, e)
+			}
 		}
 	})
 }

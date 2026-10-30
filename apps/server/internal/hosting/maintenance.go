@@ -117,7 +117,7 @@ func (s *Server) Cleanup(ctx context.Context) error {
 			return e
 		}
 	}
-	_, e = s.DB.Exec(ctx, `DELETE FROM rate_limits WHERE expires_at<now(); DELETE FROM access_sessions WHERE expires_at<now(); DELETE FROM app_handoff_tickets WHERE expires_at<now(); DELETE FROM app_browser_sessions WHERE expires_at<now(); DELETE FROM browser_sessions WHERE expires_at<now(); DELETE FROM device_authorizations WHERE expires_at<now()`)
+	_, e = s.DB.Exec(ctx, `DELETE FROM rate_limits WHERE expires_at<now(); DELETE FROM access_sessions WHERE expires_at<now(); DELETE FROM app_handoff_tickets WHERE expires_at<now(); DELETE FROM app_browser_sessions WHERE expires_at<now(); DELETE FROM browser_sessions WHERE expires_at<now(); DELETE FROM device_authorizations WHERE expires_at<now(); DELETE FROM personal_device_authorizations WHERE expires_at<now(); DELETE FROM boot_model_sessions WHERE expires_at<now()`)
 	return errors.Join(append(dataErrors, e)...)
 }
 func (s *Server) Suspend(ctx context.Context, app string) error {

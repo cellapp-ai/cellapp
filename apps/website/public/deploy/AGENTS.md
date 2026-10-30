@@ -6,6 +6,10 @@ When building a static app that uses Cellapp identity or tables, read the [appli
 
 The user wants the current project developed and deployed to Cellapp. Run the official published client yourself for building, upload and verification. The user only needs to approve device authorization in the browser. Do not implement Cellapp's upload protocol yourself or ask the user to install a CLI.
 
+## Local setup (also works without a coding Agent)
+
+Once a matching Cellapp CLI release is available, run `cellapp doctor`, adding `--project <project>` only when inspecting that specific project. It reads Node/npm, Cellapp login and reachability, installed coding Agents, and static build readiness; `cellapp doctor --json` provides structured output. If Codex, Claude or Cursor CLI is installed, `cellapp set agent codex` (or `claude` or `cursor`) saves its name as a local preference. It does not install, sign in to or run the Agent. Use that Agent's own login flow, or continue manually with the Cellapp CLI authorization, build and deploy steps below. The first release has no device pairing or remote coding.
+
 ## Inspect the project
 
 Work from the user's project directory. Read its package manifest, lockfile, build scripts, static output and any existing `cellapp.json`. Determine a working build command and the output directory containing `index.html`. For plain HTML, omit the build command. Add `--spa` only for client-side routes. Reuse the association in `cellapp.json` on later deployments. Ask only when the build command or output directory is genuinely ambiguous.

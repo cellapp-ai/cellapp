@@ -6,6 +6,10 @@
 
 用户希望把当前项目开发并部署到 Cellapp。由你自行运行官方已发布的客户端，完成构建、上传和验证。用户只需在浏览器中批准设备授权。不要自行实现 Cellapp 的上传协议，也不要让用户安装 CLI。
 
+## 本机环境检查（可手动执行）
+
+在支持本功能的 Cellapp CLI 版本发布后，先运行 `cellapp doctor`；只在要检查具体项目时加 `--project <项目目录>`。它只读检查 Node/npm、Cellapp 登录和连通、已安装的编码 Agent，以及指定项目的静态构建准备情况。可用 `cellapp doctor --json` 取得结构化结果。若已有 Codex、Claude 或 Cursor CLI，可选运行 `cellapp set agent codex`、`cellapp set agent claude` 或 `cellapp set agent cursor`，只在本机保存已安装 CLI 的首选名称，不安装、不登录、不执行 Agent。Agent 未登录时按其自身流程登录；没有 Agent 时，继续按本文手动运行 Cellapp CLI 的授权、构建和部署步骤。首版不需要设备配对，也没有远程编码。
+
 ## 检查项目
 
 在用户的项目目录中工作。读取包清单、锁文件、构建脚本、静态输出，以及已有的 `cellapp.json`。确定可用的构建命令，以及包含 `index.html` 的输出目录。普通 HTML 如果不需要构建，就省略构建命令。仅当应用使用客户端路由时添加 `--spa`。再次部署时复用 `cellapp.json` 中的应用关联。只有构建命令或输出目录确实不明确时才询问。

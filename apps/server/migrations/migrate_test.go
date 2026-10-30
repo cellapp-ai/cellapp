@@ -69,7 +69,7 @@ func TestRunFreshAndRepeat(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&count); err != nil || count != len(controlMigrations) {
 		t.Fatalf("migration count=%d, err=%v", count, err)
 	}
-	for _, table := range []string{"owners", "apps", "deployments", "access_sessions", "app_monthly_visitors", "app_visitor_admissions", "mcp_oauth_clients", "mcp_oauth_consents", "mcp_oauth_codes", "mcp_oauth_tokens", "mcp_upload_chunks"} {
+	for _, table := range []string{"owners", "apps", "deployments", "access_sessions", "app_monthly_visitors", "app_visitor_admissions", "mcp_oauth_clients", "mcp_oauth_consents", "mcp_oauth_codes", "mcp_oauth_tokens", "mcp_upload_chunks", "model_connections", "model_connection_grants", "model_request_usage", "personal_devices", "device_projects", "remote_agent_tasks", "personal_device_authorizations", "boot_model_sessions"} {
 		var exists bool
 		if err := pool.QueryRow(ctx, `SELECT to_regclass($1) IS NOT NULL`, table).Scan(&exists); err != nil || !exists {
 			t.Fatalf("missing %s: %v", table, err)
@@ -77,7 +77,7 @@ func TestRunFreshAndRepeat(t *testing.T) {
 	}
 }
 
-func TestRunAddsMCPToExistingDatabase(t *testing.T) {
+func TestRunAddsPersonalModelsToExistingDatabase(t *testing.T) {
 	pool, _ := migrationDatabase(t)
 	ctx := context.Background()
 	if _, err := pool.Exec(ctx, `CREATE TABLE schema_migrations(version integer PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
@@ -99,8 +99,144 @@ func TestRunAddsMCPToExistingDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 	var exists bool
-	if err := pool.QueryRow(ctx, `SELECT to_regclass('mcp_oauth_tokens') IS NOT NULL`).Scan(&exists); err != nil || !exists {
-		t.Fatalf("MCP migration missing: %v", err)
+	if err := pool.QueryRow(ctx, `SELECT to_regclass('model_connections') IS NOT NULL`).Scan(&exists); err != nil || !exists {
+		t.Fatalf("personal model migration missing: %v", err)
+	}
+}
+
+func TestPersonalModelOwnershipAndConcurrentRevocation(t *testing.T) {
+	pool, _ := migrationDatabase(t)
+	ctx := context.Background()
+	if err := Run(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO owners(id,issuer,subject) VALUES('one','test','one'),('two','test','two');
+INSERT INTO app_namespaces(id,owner_id,handle) VALUES('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','one','one');
+INSERT INTO apps(id,owner_id,namespace_id,slug,name,key_hash,create_key,create_digest)
+VALUES('app-one','one','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','one','One','hash','request','digest');
+INSERT INTO model_connections(id,owner_id,name,api_base,model_id,encrypted_key,key_version)
+VALUES('connection-one','one','Test','https://example.com/v1','model',decode('0102','hex'),1);`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO model_connection_grants(owner_id,app_id,connection_id)
+VALUES('two','app-one','connection-one')`); err == nil {
+		t.Fatal("another owner granted a connection they do not own")
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO model_connection_grants(owner_id,app_id,connection_id)
+VALUES('one','app-one','connection-one')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO model_request_usage(id,owner_id,app_id,connection_id,status)
+VALUES('usage-one','one','app-one','connection-one','started')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE model_request_usage SET status='succeeded' WHERE id='usage-one'`); err == nil {
+		t.Fatal("completed usage without a finish time")
+	}
+	start := make(chan struct{})
+	results := make(chan int64, 2)
+	errors := make(chan error, 2)
+	for range 2 {
+		go func() {
+			<-start
+			command, err := pool.Exec(ctx, `UPDATE model_connection_grants SET revoked_at=now()
+			WHERE owner_id='one' AND app_id='app-one' AND connection_id='connection-one' AND revoked_at IS NULL`)
+			if err != nil {
+				errors <- err
+				return
+			}
+			results <- command.RowsAffected()
+		}()
+	}
+	close(start)
+	var revoked int64
+	for range 2 {
+		select {
+		case count := <-results:
+			revoked += count
+		case err := <-errors:
+			t.Fatal(err)
+		}
+	}
+	if revoked != 1 {
+		t.Fatalf("concurrent revocation changed %d grants", revoked)
+	}
+	if _, err := pool.Exec(ctx, `DELETE FROM model_connections WHERE id='connection-one'`); err != nil {
+		t.Fatal(err)
+	}
+	var grants, usage int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM model_connection_grants`).Scan(&grants); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM model_request_usage`).Scan(&usage); err != nil {
+		t.Fatal(err)
+	}
+	if grants != 0 || usage != 1 {
+		t.Fatalf("connection deletion: grants=%d usage=%d", grants, usage)
+	}
+}
+
+func TestPersonalDeviceTaskOwnershipAndSingleCompletion(t *testing.T) {
+	pool, _ := migrationDatabase(t)
+	ctx := context.Background()
+	if err := Run(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO owners(id,issuer,subject) VALUES('one','test','one'),('two','test','two');
+INSERT INTO personal_devices(id,owner_id,name,credential_hash) VALUES('device-one','one','Laptop','credential-one');
+INSERT INTO device_projects(id,owner_id,device_id,name,permissions) VALUES('project-one','one','device-one','Project','{}');
+INSERT INTO remote_agent_tasks(id,owner_id,device_id,project_id,kind,request) VALUES('task-one','one','device-one','project-one','develop','{}');`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO device_projects(id,owner_id,device_id,name,permissions) VALUES('foreign','two','device-one','Foreign','{}')`); err == nil {
+		t.Fatal("another owner attached a project to the device")
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO remote_agent_tasks(id,owner_id,device_id,project_id,kind,request) VALUES('foreign','two','device-one','project-one','develop','{}')`); err == nil {
+		t.Fatal("another owner attached a task to the project")
+	}
+	if _, err := pool.Exec(ctx, `UPDATE remote_agent_tasks SET sequence=-1 WHERE id='task-one'`); err == nil {
+		t.Fatal("negative task sequence accepted")
+	}
+	if _, err := pool.Exec(ctx, `UPDATE remote_agent_tasks SET state='succeeded' WHERE id='task-one'`); err == nil {
+		t.Fatal("task completed without a finish time")
+	}
+	start := make(chan struct{})
+	counts := make(chan int64, 2)
+	errors := make(chan error, 2)
+	for range 2 {
+		go func() {
+			<-start
+			command, err := pool.Exec(ctx, `UPDATE remote_agent_tasks SET state='claimed',sequence=sequence+1,claimed_at=now()
+			WHERE id='task-one' AND owner_id='one' AND state='queued'`)
+			if err != nil {
+				errors <- err
+				return
+			}
+			counts <- command.RowsAffected()
+		}()
+	}
+	close(start)
+	var claimed int64
+	for range 2 {
+		select {
+		case count := <-counts:
+			claimed += count
+		case err := <-errors:
+			t.Fatal(err)
+		}
+	}
+	if claimed != 1 {
+		t.Fatalf("task claimed %d times", claimed)
+	}
+	for _, state := range []string{"succeeded", "failed"} {
+		command, err := pool.Exec(ctx, `UPDATE remote_agent_tasks SET state=$1,sequence=sequence+1,finished_at=now()
+		WHERE id='task-one' AND state='claimed'`, state)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if state == "succeeded" && command.RowsAffected() != 1 || state == "failed" && command.RowsAffected() != 0 {
+			t.Fatalf("terminal state changed twice: %s %d", state, command.RowsAffected())
+		}
 	}
 }
 

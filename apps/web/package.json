@@ -7,7 +7,7 @@
     "dev": "vite --host 127.0.0.1",
     "typecheck": "tsc -b",
     "lint": "oxlint --deny-warnings .",
-    "test": "npm run build && tsx tests/browser.ts",
+    "test": "npm run build && tsx tests/browser.ts && tsx tests/model-sdk.ts",
     "build": "npm run typecheck && vite build",
     "preview": "vite preview --host 127.0.0.1"
   },

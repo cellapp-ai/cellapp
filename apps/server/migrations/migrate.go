@@ -41,6 +41,18 @@ var githubProfile string
 //go:embed 011_anonymous_app_access.sql
 var anonymousAppAccess string
 
+//go:embed 012_personal_model_connections.sql
+var personalModelConnections string
+
+//go:embed 013_personal_devices_tasks.sql
+var personalDevicesTasks string
+
+//go:embed 014_personal_device_pairing.sql
+var personalDevicePairing string
+
+//go:embed 015_boot_model_sessions.sql
+var bootModelSessions string
+
 type migration struct {
 	version int
 	sql     string
@@ -57,6 +69,10 @@ var controlMigrations = []migration{
 	{version: 9, sql: mcpAgentAccess},
 	{version: 10, sql: githubProfile},
 	{version: 11, sql: anonymousAppAccess},
+	{version: 12, sql: personalModelConnections},
+	{version: 13, sql: personalDevicesTasks},
+	{version: 14, sql: personalDevicePairing},
+	{version: 15, sql: bootModelSessions},
 }
 
 // Run applies each control migration once, including the initial schema on

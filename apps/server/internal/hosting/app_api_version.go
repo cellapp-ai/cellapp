@@ -17,8 +17,8 @@ type appAPIContract struct {
 	Status  string `json:"status"`
 }
 
-var appAPIContracts = []appAPIContract{{Version: "1.1", Date: "261022", Status: "supported"}}
-var appAPILatest = "1.1"
+var appAPIContracts = []appAPIContract{{Version: "1.1", Date: "261022", Status: "supported"}, {Version: "1.2", Date: "261027", Status: "supported"}}
+var appAPILatest = "1.2"
 var appAPIVersionPattern = regexp.MustCompile(`^[1-9][0-9]*\.[0-9]+$`)
 var appAPIDatePattern = regexp.MustCompile(`^[0-9]{6}$`)
 
@@ -57,7 +57,7 @@ func validateAppAPIContracts(contracts []appAPIContract, latest, stable string) 
 
 func implementedAppAPIContract(version string) bool {
 	switch version {
-	case "1.1":
+	case "1.1", "1.2":
 		return true
 	default:
 		return false
@@ -66,7 +66,7 @@ func implementedAppAPIContract(version string) bool {
 
 func appAPIIdentityResponse(contract appAPIContract, appUserID string) (any, error) {
 	switch contract.Version {
-	case "1.1":
+	case "1.1", "1.2":
 		return map[string]string{"id": appUserID, "access": "admitted"}, nil
 	default:
 		return nil, fmt.Errorf("unimplemented application API identity contract %s", contract.Version)
@@ -75,7 +75,7 @@ func appAPIIdentityResponse(contract appAPIContract, appUserID string) (any, err
 
 func appAPIDataQuery(contract appAPIContract, values url.Values) (string, error) {
 	switch contract.Version {
-	case "1.1":
+	case "1.1", "1.2":
 		values.Del("v")
 		return values.Encode(), nil
 	default:

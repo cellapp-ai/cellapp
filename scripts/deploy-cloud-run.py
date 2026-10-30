@@ -17,6 +17,7 @@ NAME = re.compile(r"^[a-z][a-z0-9-]{1,61}[a-z0-9]$")
 DOMAIN = re.compile(r"^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$")
 DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 SECRET_KEYS = ("SECRET", "DATABASE_URL", "APP_DATA_DATABASE_URL", "APP_DATA_JWT_SECRET", "PGRST_DB_URI", "PGRST_JWT_SECRET", "GITHUB_CLIENT_SECRET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY")
+OPTIONAL_SECRET_KEYS = ("MODEL_ENCRYPTION_KEY",)
 PUBLIC_ENV = ("NODE_ENV", "AUTH_MODE", "CONTROL_ORIGIN", "APPS_DOMAIN", "GITHUB_CLIENT_ID", "S3_ENDPOINT", "S3_REGION", "S3_BUCKET", "POSTGREST_URL", "PGRST_SERVER_HOST", "PGRST_SERVER_PORT", "PGRST_DB_SCHEMAS", "PGRST_DB_PRE_CONFIG", "PGRST_DB_ANON_ROLE", "PGRST_OPENAPI_MODE", "PGRST_DB_POOL", "PGRST_DB_MAX_ROWS", "PGRST_DB_PRE_REQUEST", "MAX_APPS", "MAX_FILES", "MAX_FILE_BYTES", "MAX_DEPLOYMENT_BYTES", "MAX_STORAGE_BYTES", "MAX_MONTHLY_VISITORS", "MAX_REQUESTS_PER_MINUTE", "UPLOAD_TTL_SECONDS", "RETENTION_SECONDS", "PUBLICATION_PAUSED", "ALLOW_ANONYMOUS_APP_DATA_WRITES")
 LIMIT_KEYS = ("MAX_APPS", "MAX_FILES", "MAX_FILE_BYTES", "MAX_DEPLOYMENT_BYTES", "MAX_STORAGE_BYTES", "MAX_MONTHLY_VISITORS", "MAX_REQUESTS_PER_MINUTE", "UPLOAD_TTL_SECONDS", "RETENTION_SECONDS")
 
@@ -75,9 +76,9 @@ def load_config(path):
     if not limits["MAX_FILE_BYTES"] <= limits["MAX_DEPLOYMENT_BYTES"] <= limits["MAX_STORAGE_BYTES"]:
         raise DeploymentError("file, deployment, and storage limits must be ascending")
     secrets = config.get("secrets")
-    if not isinstance(secrets, dict) or set(secrets) != set(SECRET_KEYS):
-        raise DeploymentError("secrets must contain exactly the required Secret Manager references")
-    for key in SECRET_KEYS:
+    if not isinstance(secrets, dict) or not set(SECRET_KEYS).issubset(secrets) or set(secrets) - set(SECRET_KEYS) - set(OPTIONAL_SECRET_KEYS):
+        raise DeploymentError("secrets must contain required Secret Manager references and only supported optional references")
+    for key in secrets:
         ref = secrets[key]
         if not isinstance(ref, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,254}:(?:latest|[1-9][0-9]*)", ref):
             raise DeploymentError(f"invalid secret reference: {key}")
@@ -156,7 +157,7 @@ def preflight(c):
             raise DeploymentError("Direct VPC subnet does not belong to the configured network")
     if c.get("cloudsql_instance"):
         gcloud("Cloud SQL instance", "sql", "instances", "describe", c["cloudsql_instance"].split(":")[-1], f"--project={project}")
-    for key in SECRET_KEYS:
+    for key in c["secrets"]:
         name, version = c["secrets"][key].rsplit(":", 1)
         gcloud(f"secret reference {key}", "secrets", "versions", "describe", version, f"--secret={name}", f"--project={project}")
     if c.get("cloudflare_edge"):
@@ -188,7 +189,7 @@ def settings(c):
     for key in PUBLIC_ENV:
         if "," in env[key] or "=" in env[key]:
             raise DeploymentError(f"unsupported character in configuration: {key}")
-    secret_flags = ",".join(f"{key}={c['secrets'][key]}" for key in SECRET_KEYS)
+    secret_flags = ",".join(f"{key}={c['secrets'][key]}" for key in (*SECRET_KEYS, *OPTIONAL_SECRET_KEYS) if key in c["secrets"])
     network_flags = ([f"--vpc-connector={c['vpc_connector']}"] if c.get("vpc_connector")
                      else [f"--network={c['network']}", f"--subnet={c['subnet']}"])
     common = [f"--project={c['project']}", f"--region={c['region']}", f"--service-account={c['service_account']}",

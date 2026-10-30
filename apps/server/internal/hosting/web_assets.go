@@ -32,7 +32,7 @@ func LoadWebFS(directory string) (fs.FS, error) {
 }
 
 func webUIPath(p string) bool {
-	if p == "/dashboard" || p == "/dashboard/" || p == "/dashboard/login" || p == "/dashboard/applications" || p == "/dashboard/credentials" || p == "/dashboard/device" || p == "/dashboard/profile" {
+	if p == "/dashboard" || p == "/dashboard/" || p == "/dashboard/login" || p == "/dashboard/applications" || p == "/dashboard/model-connections" || p == "/dashboard/local-setup" || p == "/dashboard/credentials" || p == "/dashboard/device" || p == "/dashboard/profile" {
 		return true
 	}
 	return strings.HasPrefix(p, "/dashboard/applications/") && idPattern.MatchString(strings.TrimPrefix(p, "/dashboard/applications/"))

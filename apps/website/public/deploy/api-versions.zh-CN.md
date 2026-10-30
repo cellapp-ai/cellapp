@@ -2,7 +2,9 @@
 
 [English](./api-versions.md) · [版本记录](./api-changelog.md)
 
-应用运行时 API 包括 `/_cellapp/me` 和 `/_cellapp/db/{table}` 下已支持的表操作。它与 SDK npm 包版本、`/_cellapp/db` 路径及 `cellapp.data.json` 表清单版本分别管理。
+应用运行时 API 包括 `/_cellapp/me`、`/_cellapp/db/{table}` 下已支持的表操作，以及 1.2 契约中以 `/_cellapp/v1` 为基址的模型列表与 Chat Completions 子集。它与 SDK npm 包版本、`/_cellapp/db` 路径及 `cellapp.data.json` 表清单版本分别管理。
+
+模型调用要求 `1.2 = 261027`；只更新 SDK 包不能让已固定为 `1.1` 的页面获得模型调用能力。SDK 的模型请求也会携带 `v`。
 
 ## 选择固定契约
 

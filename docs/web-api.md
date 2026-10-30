@@ -8,7 +8,7 @@ Cellapp Web 从 `https://cellapp.ai/dashboard` 通过同域 `/api/console` 访�
 
 所有 POST/PUT/DELETE 要求 `Origin` 与 `CONTROL_ORIGIN` 精确一致，缺失或不匹配返回 `403 origin_rejected`。有请求体时要求 `application/json`，否则返回 `415 json_required`；设备决策和资料更新最多 1 MiB，只允许声明的字段和一个 JSON 值，无效内容返回 `400 invalid_json`。接口不开放携带凭证的 CORS。API 和页面使用 `private, no-store`。
 
-GET `/auth/login?return=<本站管理路径>` 和 `/auth/callback` 保留现有登录流程，回调 URL 为 `https://cellapp.ai/auth/callback`。管理路径统一位于 `/dashboard`，包括 `/dashboard/applications/{app}`、`/dashboard/credentials`、`/dashboard/device`、`/dashboard/profile` 与 `/dashboard/login`。设备链接为 `/dashboard/device?code=...`；打开或登录不会自动批准。CLI 的设备流程位于 `POST /auth/device`、`POST /auth/device/poll`，当前凭证撤销为 `DELETE /auth/credentials/current`，Bearer 管理位于 `/api/control/v1/*`；旧根路径在兼容期仍可调用，且保持同一字段、错误与权限。旧 `console.cellapp.ai` API 不再转发。
+GET `/auth/login?return=<本站管理路径>` 和 `/auth/callback` 保留现有登录流程，回调 URL 为 `https://cellapp.ai/auth/callback`。管理路径统一位于 `/dashboard`，包括 `/dashboard/applications/{app}`、`/dashboard/model-connections`、`/dashboard/credentials`、`/dashboard/device`、`/dashboard/profile` 与 `/dashboard/login`。设备链接为 `/dashboard/device?code=...`；打开或登录不会自动批准。CLI 的设备流程位于 `POST /auth/device`、`POST /auth/device/poll`，当前凭证撤销为 `DELETE /auth/credentials/current`，Bearer 管理位于 `/api/control/v1/*`；旧根路径在兼容期仍可调用，且保持同一字段、错误与权限。旧 `console.cellapp.ai` API 不再转发。
 
 ## 接口
 
@@ -30,12 +30,26 @@ GET `/auth/login?return=<本站管理路径>` 和 `/auth/callback` 保留现有�
 | DELETE `/api/console/apps/{app}` | 无请求体；`{deleted:true}`，使用既有墓碑和清理机制 |
 | POST `/api/console/apps/{app}/key` | 无请求体；`{key}`，32 字节随机密钥的 64 字符小写 hex |
 | GET `/api/console/credentials` | 有效未撤销自有凭证数组 `{id,createdAt,expiresAt}` |
+| GET `/api/console/model-connections` | 当前用户连接数组 `{id,name,apiBase,modelId,capabilities,createdAt,updatedAt}`；`capabilities` 初始为 `{}`，不返回 API 密钥 |
+| POST `/api/console/model-connections` | `{name,apiBase,modelId?,apiKey}`；不填模型 ID 时尝试供应商 `/models` 并选取第一个作为回退/能力测试模型，发现失败返回 `400 model_discovery_failed`，可手动填写；创建后返回不含密钥的连接信息；未配置独立加密密钥时返回 503 |
+| POST `/api/console/model-connections/{connection}/test` | 无请求体；依次测试文本、SSE 和工具调用，返回 `{text,stream,tools}`；各项为 `{supported,error?}`，失败类别可供用户诊断 |
+| POST `/api/console/model-connections/{connection}/key` | `{apiKey}`；更换供应商密钥，返回 `{rotated:true}` 并清除旧能力测试结果 |
+| DELETE `/api/console/model-connections/{connection}` | 无请求体；返回 `{deleted:true}`；后续模型调用不能使用已删除连接 |
+| GET `/api/console/model-grants` | 当前用户有效的应用模型授权数组 `{appId,appName,connectionId,connectionName,grantedAt}` |
+| GET `/api/console/model-usage` | 当前用户最近 30 天按应用和连接汇总的 `{appId,connectionId,requests,succeeded,failed,cancelled,unknownUsage,inputTokens,outputTokens}` 数组；未知 token 用量单独计数，已知用量求和不代表供应商账单 |
+| POST `/api/console/model-grants/{app}/{connection}/revoke` | 无请求体；`{revoked:true}`；只撤销当前用户对此应用和连接的授权 |
 | POST `/api/console/credentials/{credential}/revoke` | 无请求体；`{revoked:true}`；重复撤销自有记录安全成功 |
 | POST `/api/console/device/decision` | `{code,decision}`；决策为 `approved` 或 `denied`；返回 `{status}` |
 
 应用字段为 `id,name,namespace,slug,aliasUrl,activeDeployment,suspended,url,visibility,dataState`，其中 `activeDeployment` 可空。当前发布字段为 `id,status,createdAt,publishedAt,spa,fileCount,bytes`，其中 `publishedAt` 可空，时间均为 RFC3339；详情不返回发布历史、存储凭证或密钥摘要。凭证列表不返回 token，也不存在设备名称或头像字段。
 
 浏览器 `GET /api/console/session` 额外返回 `username,avatarUrl`；它们来自当前所有者已验证的 GitHub 资料或手动显示名称，开发模式或旧会话可为空。头像地址仅为固定 GitHub 用户 ID 对应的 `avatars.githubusercontent.com` 图片。Profile 响应额外返回 `githubUsername`；`displayName` 仍是可清除的手动设置值，清除后界面默认显示 GitHub 用户名。
+
+模型授权确认页是控制域 `GET /dashboard/model-consent?app=<不可变应用 ID>`；未登录时先走现有登录流程。页面由服务端呈现应用、作者、可选的个人供应商连接和数据将流向供应商的说明。使用者选择一个连接后，以同源 `POST /dashboard/model-consent` 提交 `app` 和 `connection` 表单字段；取消只返回应用，不写授权。服务端重新检查当前浏览器身份、应用准入和连接所有权，再为此用户、应用和连接建立可独立撤销的授权。再次选择其他连接会增加授权，不替换原连接；应用作者的脚本不能替使用者完成确认。同一连接下任意模型均可被该应用调用，SDK 本地选型不是权限控制。
+
+应用域模型 API base URL 为 `/_cellapp/v1`。`GET /models` 返回当前用户授权给当前应用的连接所提供模型的并集，响应形如 `{object:"list",data:[{id,object:"model",created,owned_by}]}`；`id` 为 `cellapp:<连接 ID>:<供应商模型 ID>`，保证不同供应商的重名模型不冲突，`owned_by` 为连接显示名称。服务端从供应商 `GET /models` 有界获取列表，失败时保留用户手动配置的模型 ID。`POST /chat/completions` 接收 `{model,messages,tools?,stream?}` 的已支持 OpenAI 子集；服务端按模型 ID、当前应用会话和应用 ID 逐次检查连接授权，不接受应用提供的供应商地址或密钥。缺少授权返回 `403 model_authorization_required`，OpenAI 形态的 `error.details.authorizeUrl` 是控制域确认页地址。SDK 提供 `models.current()`、`chat()` 和 `streamChat()`，选择偏好只存在当前浏览器；每次模型请求仍携带 `model`，不会将默认选择单独同步到服务端。后续 Responses 路径为复数 `/responses`，本期不可用。
+
+首版的本机设置使用公开 `cellapp doctor` 与 `cellapp set agent <codex|claude|cursor>`。它们只在用户电脑上检查环境和保存已安装编码 Agent 的首选名称，不创建云端设备身份或上传本机选择。个人设备配对、心跳、Boot 模型会话、项目远程授权和远程任务接口均未注册；历史试验性表结构保留以兼容已执行迁移，旧设备凭证也不能使用这些能力。`POST /api/console/remote-tasks` 固定返回 `409 remote_development_unavailable`，不会创建任务。现有部署 CLI 的 `/auth/device` 浏览器授权是独立的既有能力，仍正常提供。
 
 表结构响应中的每个 `tables[]` 项包含 `name,columns,primaryKey,indexes,policies`。`columns[]` 为 `{name,type,nullable?}`，`indexes[]` 为 `{columns,unique?}`；`policies` 为可选的 `select,insert,update,delete,ownerColumn` 字段，未授予的操作在界面显示为无访问权。`state` 是应用数据服务的 `ready`、`pending` 或 `error` 状态；即使已经有已应用版本，非 `ready` 也不能被解释为当前可用。此 GET 使用浏览器所有者会话和逐应用鉴权，其他所有者的应用返回 404，无会话返回 401，独立应用数据库不可读时返回 `503 app_data_unavailable`，不把失败伪装成空表。返回数据私有且不缓存；访客域不能读取。原 `/data` 状态接口保持兼容。
 

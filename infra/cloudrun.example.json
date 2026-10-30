@@ -29,6 +29,7 @@
   },
   "secrets": {
     "SECRET": "cellapp-secret:1",
+    "MODEL_ENCRYPTION_KEY": "cellapp-model-encryption-key:1",
     "DATABASE_URL": "cellapp-database-url:1",
     "APP_DATA_DATABASE_URL": "cellapp-app-data-database-url:1",
     "APP_DATA_JWT_SECRET": "cellapp-app-data-jwt-secret:1",

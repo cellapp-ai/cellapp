@@ -36,6 +36,7 @@ type Config struct {
 	EdgeOriginHost, EdgeOriginSecret                                                     string
 	EdgeGrantKeyID                                                                       string
 	EdgeGrantSigningKey                                                                  ed25519.PrivateKey
+	ModelEncryptionKey                                                                   []byte
 	PostgRESTURL, AppDataJWTSecret                                                       string
 	AppAPIStableVersion                                                                  string
 	AuthMode                                                                             string
@@ -107,6 +108,13 @@ func LoadConfig(get func(string) string) (c Config, err error) {
 		c.AppPort = "8443"
 	}
 	c.Secret = value("SECRET", "local-development-secret-not-for-production")
+	if encoded := get("MODEL_ENCRYPTION_KEY"); encoded != "" {
+		key, keyError := base64.RawURLEncoding.DecodeString(encoded)
+		if keyError != nil || len(key) != 32 {
+			return c, fmt.Errorf("MODEL_ENCRYPTION_KEY must be a base64url 32-byte key")
+		}
+		c.ModelEncryptionKey = key
+	}
 	c.DatabaseURL = value("DATABASE_URL", "postgres://cellapp:development@localhost:5432/cellapp")
 	c.AppDataDatabaseURL = value("APP_DATA_DATABASE_URL", "postgres://cellapp_appdata_provisioner:development@localhost:5432/cellapp_data")
 	c.PostgRESTURL = value("POSTGREST_URL", "http://127.0.0.1:3001")
@@ -216,6 +224,9 @@ func LoadConfig(get func(string) string) (c Config, err error) {
 	}
 	if len(c.Secret) < 32 {
 		return c, fmt.Errorf("SECRET must contain at least 32 bytes")
+	}
+	if len(c.ModelEncryptionKey) != 0 && (string(c.ModelEncryptionKey) == c.Secret || string(c.ModelEncryptionKey) == c.AppDataJWTSecret) {
+		return c, fmt.Errorf("MODEL_ENCRYPTION_KEY must be independent of other secrets")
 	}
 	api, e := url.Parse(c.PostgRESTURL)
 	if e != nil || api.Scheme != "http" || api.Host == "" || api.User != nil || api.Path != "" || api.RawQuery != "" || api.Fragment != "" {

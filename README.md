@@ -4,6 +4,8 @@
 
 Build apps with an Agent, then publish, manage, and share them.
 
+For the in-progress personal model and local setup features, see the [Chinese usage guide](docs/personal-agent-guide.md). They are not released to the live service or npm yet.
+
 An Agent can build your app on your computer and publish it to Cellapp with the deployment Skill. You can also publish with the `cellapp` CLI. Each app gets a stable HTTPS address that you can keep updating, control access to, and connect to its own data tables when it needs shared data. Cellapp delivers the app and handles sign-in and data access; it does not run uploaded programs.
 
 ## Quick start

@@ -19,6 +19,7 @@ const checks: string[] = [];
 const appID = '1'.repeat(32);
 const ownerID = '2'.repeat(32);
 const credentialID = '3'.repeat(32);
+const modelConnectionID = '5'.repeat(32);
 const key = '4'.repeat(64);
 let mode: 'normal' | 'empty' | 'error' | 'expired' | 'lost' = 'normal';
 let mutations = 0;
@@ -35,6 +36,8 @@ let appName = 'Shared notes';
 let appVisibility: 'public' | 'restricted' = 'restricted';
 let anonymous = {pages:false,read:false,write:false,operatorWritesEnabled:false,effectiveWrite:false};
 let loggedOut = false;
+let modelItems: Record<string, unknown>[] = [];
+let modelGrantActive = true;
 let browser;
 try {
   browser = await chromium.launch({ executablePath, headless: true });
@@ -53,6 +56,19 @@ try {
       if (mode === 'lost') { await route.abort('failed'); return; }
       if (mode === 'error') { await route.fulfill({status:503,json:{message:'Service temporarily unavailable.'}}); return; }
       if (path === '/logout') { loggedOut = true; await route.fulfill({json: {loggedOut:true}}); return; }
+      if (path === '/model-connections' && method === 'POST') {
+        const body = route.request().postDataJSON() as Record<string, string>;
+        assert.equal(body.apiKey,'provider-secret');
+        const item = {id:modelConnectionID,name:body.name,apiBase:body.apiBase,modelId:body.modelId,capabilities:{},createdAt:'2026-10-01T00:00:00Z',updatedAt:'2026-10-01T00:00:00Z'};
+        modelItems = [item];await route.fulfill({status:201,json:item});return;
+      }
+      if (path === `/model-connections/${modelConnectionID}/test`) {
+        modelItems = modelItems.map(item => ({...item,capabilities:{text:{supported:true},stream:{supported:false,error:'invalid_stream'},tools:{supported:false,error:'provider_rejected'}}}));
+        await route.fulfill({json:{text:{supported:true},stream:{supported:false,error:'invalid_stream'},tools:{supported:false,error:'provider_rejected'}}});return;
+      }
+      if (path === `/model-connections/${modelConnectionID}/key`) { assert.equal(route.request().postDataJSON().apiKey,'replacement-secret');await route.fulfill({json:{rotated:true}});return; }
+      if (path === `/model-connections/${modelConnectionID}` && method === 'DELETE') { modelItems=[];await route.fulfill({json:{deleted:true}});return; }
+      if (path === `/model-grants/${appID}/${modelConnectionID}/revoke`) { modelGrantActive = false; await route.fulfill({json:{revoked:true}}); return; }
       if (path.endsWith('/key')) { await route.fulfill({json: {key}}); return; }
       if (path.endsWith('/anonymous') && method === 'PUT') {
         const body = route.request().postDataJSON() as Record<string, unknown>;
@@ -77,7 +93,7 @@ try {
       const table = {name:structureMode === 'long' ? 'notes_'+'x'.repeat(50) : 'notes',columns:[{name:'id',type:'uuid'},{name:'owner_id',type:'text'},{name:'body',type:'text',nullable:true}],primaryKey:['id'],indexes:[{columns:['owner_id']}],policies:{select:'own-rows',insert:'own-rows',ownerColumn:'owner_id'}};
       await route.fulfill({json:{state:structureMode === 'pending' ? 'pending' : 'ready',version:structureMode === 'empty' ? 0 : 1,tables:structureMode === 'empty' ? [] : [table]}}); return;
     }
-    const value = path === '/apps' ? mode === 'empty' ? [] : [app] : path === '/credentials' ? mode === 'empty' ? [] : [{id: credentialID, createdAt:'2026-09-01T00:00:00Z', expiresAt:'2026-10-01T00:00:00Z'}] : path === '/profile' ? {displayName,userSlug,githubUsername} : path.endsWith('/access') ? {requests: [], grants: []} : path.endsWith('/anonymous') ? anonymous : path.endsWith('/data') ? {state:'ready',version:1,digest:'f'.repeat(64)} : {...app, release: null};
+    const value = path === '/apps' ? mode === 'empty' ? [] : [app] : path === '/model-connections' ? modelItems : path === '/model-grants' ? modelItems.length && modelGrantActive ? [{appId:appID,appName:'Shared notes',connectionId:modelConnectionID,connectionName:'Personal',grantedAt:'2026-10-01T00:00:00Z'}] : [] : path === '/model-usage' ? modelItems.length ? [{appId:appID,connectionId:modelConnectionID,requests:2,succeeded:1,failed:1,cancelled:0,unknownUsage:1,inputTokens:3,outputTokens:1}] : [] : path === '/credentials' ? mode === 'empty' ? [] : [{id: credentialID, createdAt:'2026-09-01T00:00:00Z', expiresAt:'2026-10-01T00:00:00Z'}] : path === '/profile' ? {displayName,userSlug,githubUsername} : path.endsWith('/access') ? {requests: [], grants: []} : path.endsWith('/anonymous') ? anonymous : path.endsWith('/data') ? {state:'ready',version:1,digest:'f'.repeat(64)} : {...app, release: null};
     await route.fulfill({json: value});
   });
   await page.goto(origin + '/dashboard/');
@@ -189,6 +205,43 @@ try {
   mode='lost';await page.getByRole('button',{name:'Rotate access key',exact:true}).click();const sent=mutations;await page.getByRole('button',{name:'Confirm',exact:true}).click();
   await page.getByRole('alert').filter({hasText:'may already have taken effect'}).waitFor();assert.equal(mutations,sent+1);
   checks.push('Details deep link, unpublished state, confirmation/cancel focus, transient key and uncertain write without retry');
+  mode='normal';await page.goto(origin+'/dashboard/model-connections');await page.getByRole('heading',{name:'Model connections',exact:true}).waitFor();
+  await page.getByLabel('Name',{exact:true}).fill('Personal');
+  await page.getByLabel('HTTPS API base URL').fill('https://models.example.com/v1');
+  await page.getByLabel('Model ID (optional fallback)').fill('model-one');
+  await page.getByLabel('Provider API key').fill('provider-secret');
+  await page.getByRole('button',{name:'Save connection'}).click();
+  await page.getByRole('status').filter({hasText:'Connection saved'}).waitFor();
+  await page.getByRole('button',{name:'Refresh authorizations'}).click();
+  await page.getByText('Authorized provider:').waitFor();
+  await page.getByRole('button',{name:'Refresh usage'}).click();
+  await page.getByText('1 request has unknown token usage.').waitFor();
+  await page.getByRole('button',{name:'Revoke',exact:true}).click();
+  await page.getByRole('button',{name:'Confirm',exact:true}).click();
+  await page.getByText('No applications are authorized to use your models.').waitFor();
+  assert(!(await page.locator('body').textContent())?.includes('provider-secret'));
+  await page.getByRole('button',{name:'Test capabilities'}).click();
+  await page.getByText('Unavailable (invalid_stream)').waitFor();
+  await page.getByRole('button',{name:'Replace key',exact:true}).click();
+  await page.getByLabel('New provider API key').fill('replacement-secret');
+  await page.locator('.model-form').getByRole('button',{name:'Replace key'}).click();
+  await page.getByRole('status').filter({hasText:'Key replaced'}).waitFor();
+  await page.setViewportSize({width:320,height:800});
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await page.getByRole('button',{name:'Delete',exact:true}).click();await page.getByRole('button',{name:'Confirm',exact:true}).click();
+  await page.getByRole('heading',{name:'No model connections'}).waitFor();
+  checks.push('Model connection create, partial capability status, key replacement, deletion and narrow layout with UI fixtures');
+  mode='normal';await page.goto(origin+'/dashboard/local-setup');await page.getByRole('heading',{name:'Local setup',exact:true}).waitFor();
+  await page.getByText('cellapp doctor', {exact:true}).waitFor();
+  await page.getByText('cellapp set agent codex', {exact:true}).waitFor();
+  assert.equal(await page.getByRole('link',{name:'Read the Cellapp setup and deployment guide'}).count(),1);
+  assert.equal(await page.getByRole('link',{name:'My devices'}).count(),0);
+  for (const width of [390,1440]) {
+    await page.setViewportSize({width,height:900});
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `Local setup overflow at ${width}`);
+    assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa']).analyze()).violations,[]);
+  }
+  checks.push('Local setup instructions, responsive layout and accessibility with UI fixtures');
   mode='normal';await page.goto(origin+'/dashboard/credentials');await page.getByRole('button',{name:'Revoke',exact:true}).click();await page.getByRole('button',{name:'Confirm',exact:true}).click();await page.getByRole('status').filter({hasText:'credential revoked'}).waitFor();
   mode='lost';const beforeRevoke=mutations;await page.getByRole('button',{name:'Revoke',exact:true}).click();await page.getByRole('button',{name:'Confirm',exact:true}).click();await page.getByRole('alert').filter({hasText:'may already have taken effect'}).waitFor();assert.equal(mutations,beforeRevoke+1);
   mode='empty';await page.getByRole('button',{name:'Refresh credentials'}).click();await page.getByRole('heading',{name:'No active credentials'}).waitFor();

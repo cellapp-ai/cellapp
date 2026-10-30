@@ -27,6 +27,12 @@ func (s *Server) serveApp(w http.ResponseWriter, r *http.Request, appID string) 
 	if r.URL.Path == "/_cellapp/db" || strings.HasPrefix(r.URL.Path, "/_cellapp/db/") {
 		return s.serveData(w, r, appID)
 	}
+	if r.Method == http.MethodPost && r.URL.Path == "/_cellapp/v1/chat/completions" {
+		return s.modelChat(w, r, appID)
+	}
+	if r.Method == http.MethodGet && r.URL.Path == "/_cellapp/v1/models" {
+		return s.modelList(w, r, appID)
+	}
 	if r.Method == http.MethodGet && r.URL.Path == "/_cellapp/handoff" {
 		return s.consumeAppHandoff(w, r, appID)
 	}

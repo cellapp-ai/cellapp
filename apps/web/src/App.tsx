@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
-import type { ComponentProps, MouseEvent, ReactNode } from 'react';
-import { access, anonymousSettings, application, credential, dataStructure, decisionResult, detail, keyResult, list, message, profile, request, RequestError, session, success } from '@/api';
-import type { Session } from '@/api';
+import type { ComponentProps, FormEvent, MouseEvent, ReactNode } from 'react';
+import { access, anonymousSettings, application, credential, dataStructure, decisionResult, detail, keyResult, list, message, modelCapabilities, modelConnection, modelGrant, modelUsage, profile, request, RequestError, session, success } from '@/api';
+import type { ModelCapability, Session } from '@/api';
 
 type Load<T> = { kind: 'loading' } | { kind: 'ready'; value: T } | { kind: 'error'; message: string };
 function useResource<T>(path: string, parse: (value: unknown) => T) {
@@ -19,11 +19,14 @@ function useResource<T>(path: string, parse: (value: unknown) => T) {
 }
 const applications = list(application);
 const credentials = list(credential);
+const modelConnections = list(modelConnection);
+const modelGrants = list(modelGrant);
+const modelUsages = list(modelUsage);
 function date(value: string) { return new Date(value).toLocaleString('en-GB', { timeZone: 'UTC' }) + ' UTC'; }
 function loginReturn(): string {
   const value = new URLSearchParams(window.location.search).get('return') ?? '/dashboard';
   const path = value.split('?')[0] ?? '';
-  return ['/dashboard', '/dashboard/applications', '/dashboard/credentials', '/dashboard/device', '/dashboard/profile'].includes(path) || /^\/dashboard\/applications\/[a-f0-9]{32}$/.test(path) ? value : '/dashboard';
+  return ['/dashboard', '/dashboard/applications', '/dashboard/credentials', '/dashboard/model-connections', '/dashboard/local-setup', '/dashboard/device', '/dashboard/profile'].includes(path) || /^\/dashboard\/applications\/[a-f0-9]{32}$/.test(path) ? value : '/dashboard';
 }
 function Feedback({ children, error = false }: { children: ReactNode; error?: boolean }) {
   return <p className={error ? 'feedback error' : 'feedback'} role={error ? 'alert' : 'status'}>{children}</p>;
@@ -210,6 +213,96 @@ function Credentials() {
     {selected && <Confirm title="Revoke deployment access?" onClose={() => setSelected(null)} busy={busy} onConfirm={() => { void revoke(); }}>The tool using this credential will need to authorize again. Published applications remain available.</Confirm>}
   </>;
 }
+function CapabilityStatus({ label, result }: { label: string; result: ModelCapability | undefined }) {
+  return <li><strong>{label}:</strong> {result === undefined ? 'Not tested' : result.supported ? 'Available' : `Unavailable (${result.error ?? 'test failed'})`}</li>;
+}
+function ModelAuthorizations() {
+  const grants = useResource('/model-grants', modelGrants);
+  const usage = useResource('/model-usage', modelUsages);
+  const [selected, setSelected] = useState<{appId: string; connectionId: string} | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [feedback, setFeedback] = useState('');
+  const revoke = async () => {
+    if (!selected || busy) return;
+    setBusy(true); setError(''); setFeedback('');
+    try {
+      await request(`/model-grants/${selected.appId}/${selected.connectionId}/revoke`, success('revoked'), {method: 'POST'});
+      setFeedback('Authorization revoked. New model requests from this application will fail until you authorize it again.');
+      grants.reload();
+    } catch (caught) { setError(`${message(caught)} Refresh to check the current authorization.`); }
+    finally { setBusy(false); setSelected(null); }
+  };
+  return <><section className="panel"><h2>Application authorizations</h2><p>You can authorize several provider connections for one application. The application's code can call any model on each authorized connection.</p>
+    <LoadingError state={grants.state} retry={() => grants.reload()} />
+    {grants.state.kind === 'ready' && (grants.state.value.length === 0 ? <p>No applications are authorized to use your models.</p> : <div className="credential-list">{grants.state.value.map(item => <article key={`${item.appId}:${item.connectionId}`} className="panel"><h3>{item.appName}</h3><p>Authorized provider: <strong>{item.connectionName}</strong></p><p>Authorized: {date(item.grantedAt)}</p><div className="actions"><a href={`/dashboard/model-consent?app=${item.appId}`}>Authorize another provider</a><button className="danger" disabled={busy} onClick={() => setSelected({appId: item.appId, connectionId: item.connectionId})}>Revoke</button></div></article>)}</div>)}
+    <button disabled={busy} onClick={() => grants.reload()}>Refresh authorizations</button>{feedback && <Feedback>{feedback}</Feedback>}{error && <Feedback error>{error}</Feedback>}
+  </section><section className="panel"><h2>Model requests · last 30 days</h2><p>Token counts are shown only when a provider reported them. They are not a billing total.</p><LoadingError state={usage.state} retry={() => usage.reload()} />
+    {usage.state.kind === 'ready' && (usage.state.value.length === 0 ? <p>No model requests in this period.</p> : <div className="credential-list">{usage.state.value.map(item => {
+      const current = grants.state.kind === 'ready' ? grants.state.value.find(grant => grant.appId === item.appId && grant.connectionId === item.connectionId) : undefined;
+      return <article className="panel" key={`${item.appId}:${item.connectionId}`}><h3>{current ? `${current.appName} · ${current.connectionName}` : `Application ${item.appId.slice(0, 8)} · connection ${item.connectionId.slice(0, 8)}`}</h3><p>{item.requests} requests · {item.succeeded} succeeded · {item.failed} failed · {item.cancelled} cancelled</p><p>Provider-reported tokens: {item.inputTokens} input, {item.outputTokens} output. {item.unknownUsage} {item.unknownUsage === 1 ? 'request has' : 'requests have'} unknown token usage.</p></article>;
+    })}</div>)}<button onClick={() => usage.reload()}>Refresh usage</button>
+  </section>{selected && <Confirm title="Revoke model access?" busy={busy} onClose={() => setSelected(null)} onConfirm={() => { void revoke(); }}>This application will need your authorization before its next model request.</Confirm>}</>;
+}
+function ModelConnections() {
+  const { state, reload } = useResource('/model-connections', modelConnections);
+  const [name, setName] = useState('');
+  const [apiBase, setAPIBase] = useState('');
+  const [modelId, setModelId] = useState('');
+  const [apiKey, setAPIKey] = useState('');
+  const [rotateId, setRotateId] = useState<string | null>(null);
+  const [rotateKey, setRotateKey] = useState('');
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState('');
+  const [error, setError] = useState('');
+  const create = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true); setError(''); setFeedback('');
+    try {
+      await request('/model-connections', modelConnection, { method: 'POST', body: { name, apiBase, modelId, apiKey } });
+      setName(''); setAPIBase(''); setModelId(''); setAPIKey(''); setFeedback('Connection saved. Run the capability test before using it.'); reload();
+    } catch (caught) { setError(message(caught)); }
+    finally { setBusy(false); }
+  };
+  const testConnection = async (id: string) => {
+    if (busy) return;
+    setBusy(true); setError(''); setFeedback('');
+    try { const result = await request(`/model-connections/${id}/test`, modelCapabilities, { method: 'POST' }); setFeedback(result.text.supported || result.stream.supported || result.tools.supported ? 'Capability test finished. Review each result below.' : 'No tested capability is available. Check the connection and provider.'); reload(); }
+    catch (caught) { setError(`${message(caught)} Refresh and try the test again.`); }
+    finally { setBusy(false); }
+  };
+  const rotate = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!rotateId || busy) return;
+    setBusy(true); setError(''); setFeedback('');
+    try { await request(`/model-connections/${rotateId}/key`, success('rotated'), { method: 'POST', body: { apiKey: rotateKey } }); setRotateId(null); setRotateKey(''); setFeedback('Key replaced. Run the capability test again.'); reload(); }
+    catch (caught) { setError(`${message(caught)} Refresh to check whether the key changed.`); }
+    finally { setBusy(false); }
+  };
+  const remove = async () => {
+    if (!deleteId || busy) return;
+    setBusy(true); setError(''); setFeedback('');
+    try { await request(`/model-connections/${deleteId}`, success('deleted'), { method: 'DELETE' }); setFeedback('Connection deleted. New model requests cannot use it.'); reload(); }
+    catch (caught) { setError(`${message(caught)} Refresh to check whether the connection was deleted.`); }
+    finally { setBusy(false); setDeleteId(null); }
+  };
+  return <><div className="page-heading"><p className="eyebrow">ACCESS / MODEL CONNECTIONS</p><h1>Model connections</h1><p>Connect a cloud provider that supports OpenAI Chat Completions. Your API key stays private to your account.</p></div>
+    <section className="panel"><h2>Add a connection</h2><form className="model-form" onSubmit={event => { void create(event); }}>
+      <label htmlFor="model-name">Name</label><input id="model-name" value={name} onChange={event => setName(event.target.value)} maxLength={80} required disabled={busy} />
+      <label htmlFor="model-base">HTTPS API base URL</label><input id="model-base" type="url" inputMode="url" placeholder="https://provider.example/v1" value={apiBase} onChange={event => setAPIBase(event.target.value)} required disabled={busy} />
+      <label htmlFor="model-id">Model ID (optional fallback)</label><input id="model-id" value={modelId} onChange={event => setModelId(event.target.value)} disabled={busy} /><p>Leave blank to discover models from the provider. If discovery fails, enter a model ID manually.</p>
+      <label htmlFor="model-key">Provider API key</label><input id="model-key" type="password" autoComplete="off" value={apiKey} onChange={event => setAPIKey(event.target.value)} required disabled={busy} />
+      <button className="primary" type="submit" disabled={busy}>{busy ? 'Working…' : 'Save connection'}</button>
+    </form></section>
+    <LoadingError state={state} retry={reload} />
+    {state.kind === 'ready' && (state.value.length === 0 ? <section className="empty"><h2>No model connections</h2><p>Add your own cloud provider account above to get started.</p></section> : <div className="credential-list">{state.value.map(item => <section className="panel" key={item.id}><h2>{item.name}</h2><p className="model-address">{item.apiBase}</p><p>Test model: <code>{item.modelId}</code> (capabilities below apply to this model only)</p><ul className="model-capabilities"><CapabilityStatus label="Text" result={item.capabilities?.text} /><CapabilityStatus label="Streaming" result={item.capabilities?.stream} /><CapabilityStatus label="Tools" result={item.capabilities?.tools} /></ul><p>Last changed: {date(item.updatedAt)}</p><div className="actions"><button disabled={busy} onClick={() => { void testConnection(item.id); }}>{busy ? 'Working…' : 'Test capabilities'}</button><button disabled={busy} onClick={() => { setRotateId(item.id); setRotateKey(''); }}>Replace key</button><button className="danger" disabled={busy} onClick={() => setDeleteId(item.id)}>Delete</button></div>{rotateId === item.id && <form className="model-form" onSubmit={event => { void rotate(event); }}><label htmlFor={`rotate-${item.id}`}>New provider API key</label><input id={`rotate-${item.id}`} type="password" autoComplete="off" value={rotateKey} onChange={event => setRotateKey(event.target.value)} required disabled={busy} /><div className="actions"><button className="primary" type="submit" disabled={busy}>Replace key</button><button type="button" disabled={busy} onClick={() => { setRotateId(null); setRotateKey(''); }}>Cancel</button></div></form>}</section>)}</div>)}
+    <button disabled={busy} onClick={() => reload()}>Refresh connections</button>{feedback && <Feedback>{feedback}</Feedback>}{error && <Feedback error>{error}</Feedback>}
+    <ModelAuthorizations />
+    {deleteId && <Confirm title="Delete model connection?" busy={busy} onClose={() => setDeleteId(null)} onConfirm={() => { void remove(); }}>Applications authorized to use this connection will no longer be able to send new model requests.</Confirm>}
+  </>;
+}
 function ProfilePage({ owner, onNameChange }: { owner: Session; onNameChange: (name: string) => void }) {
   const { state, reload } = useResource('/profile', profile);
   const [draft, setDraft] = useState<string | null>(null);
@@ -236,6 +329,12 @@ function ProfilePage({ owner, onNameChange }: { owner: Session; onNameChange: (n
     {state.kind === 'ready' && <><section className="panel"><h2>Display name</h2><form className="profile-form" onSubmit={event => { void save(event); }}><label htmlFor="display-name">Name</label><input id="display-name" value={name} disabled={busy} onChange={event => { setDraft(event.target.value); setFeedback(''); setError(''); }} aria-describedby="display-name-help" /><p id="display-name-help">Optional, up to 80 characters. {state.value.githubUsername ? 'Leave blank to use your GitHub username.' : 'Leave blank to clear it.'}</p><div className="actions"><button className="primary" type="submit" disabled={busy || !valid || name === saved || (name === '' && state.value.displayName === '')}>{busy ? 'Saving…' : 'Save name'}</button><button type="button" disabled={busy || name === saved} onClick={() => { setDraft(null); setError(''); }}>Discard changes</button><button type="button" disabled={busy} onClick={() => { setDraft(null); setFeedback(''); setError(''); reload(); }}>Refresh profile</button></div>{!valid && <Feedback error>Remove leading or trailing spaces, control characters, and use no more than 80 characters.</Feedback>}{feedback && <Feedback>{feedback}</Feedback>}{error && <Feedback error>{error}</Feedback>}</form></section>
       <section className="panel"><h2>User slug</h2><p>Your application addresses end with this slug. {state.value.userSlug ? 'Changing it updates their current addresses; previous addresses remain assigned to the same applications.' : 'Your first application will use your GitHub username when available, or you can choose a slug now.'}</p><SlugEditor label="User slug" value={state.value.userSlug} maxLength={61} save={async next => { await request('/profile/slug', profile, { method: 'PUT', body: { userSlug: next } }); reload(true); }} /></section>
       <section className="panel"><h2>Account details</h2><dl><dt>Account ID</dt><dd><code>{owner.ownerId}</code></dd><dt>Sign-in mode</dt><dd>{owner.authMode === 'dev' ? 'Local development' : 'GitHub'}</dd>{state.value.githubUsername && <><dt>GitHub username</dt><dd>@{state.value.githubUsername}</dd></>}</dl><p>Your account ID is fixed. Changing your display name does not change application addresses.</p></section></>}
+  </>;
+}
+function LocalSetup() {
+  return <><div className="page-heading"><p className="eyebrow">WORKSPACE / LOCAL SETUP</p><h1>Local setup</h1><p>Use a coding agent already installed on your computer, or follow the same steps yourself.</p></div>
+    <section className="panel"><h2>Check this computer</h2><p>Install the Cellapp CLI, then run <code>cellapp doctor</code>. To check a project, add <code>--project /absolute/project</code>. The diagnostic checks your local tools and connection without changing your files or signing in for you.</p><p>Choose an installed coding agent with <code>cellapp set agent codex</code>, <code>cellapp set agent claude</code>, or <code>cellapp set agent cursor</code>. Sign in through that agent’s own instructions.</p></section>
+    <section className="panel"><h2>Build and publish</h2><p>Ask your coding agent to follow the Cellapp setup guide, or follow its manual steps. Authorize the Cellapp deployment tool in your browser when prompted, then build and deploy your static project on this computer.</p><p><a href="https://github.com/cellapp-ai/skills/blob/main/skills/cellapp-deploy/SKILL.md" target="_blank" rel="noopener noreferrer">Read the Cellapp setup and deployment guide</a></p></section>
   </>;
 }
 function Device() {
@@ -288,13 +387,13 @@ function Workspace({ owner }: { owner: Session }) {
     <ConsoleLink className="brand" href="/dashboard" navigate={navigate} aria-label="Cellapp applications"><img src="/dashboard/logos/cellapp-landscape.svg" alt="Cellapp" /></ConsoleLink>
     <button className="menu-toggle" ref={toggle} aria-label={menu ? 'Close menu' : 'Open menu'} aria-expanded={menu} aria-controls="navigation" onClick={() => setMenu(value => !value)}>Menu</button>
     <nav id="navigation" aria-label="Workspace" className={menu ? 'navigation is-open' : 'navigation'}>
-      <div className="nav-group"><p className="nav-label">WORKSPACE</p><ConsoleLink href="/dashboard/applications" navigate={navigate} aria-current={path === '/dashboard' || path.startsWith('/dashboard/applications') ? 'page' : undefined}>Applications</ConsoleLink></div>
-      <div className="nav-group"><p className="nav-label">ACCESS</p><ConsoleLink href="/dashboard/credentials" navigate={navigate} aria-current={path === '/dashboard/credentials' ? 'page' : undefined}>Deployment credentials</ConsoleLink><ConsoleLink href="/dashboard/device" navigate={navigate} aria-current={path === '/dashboard/device' ? 'page' : undefined}>Authorize tool</ConsoleLink></div>
+      <div className="nav-group"><p className="nav-label">WORKSPACE</p><ConsoleLink href="/dashboard/applications" navigate={navigate} aria-current={path === '/dashboard' || path.startsWith('/dashboard/applications') ? 'page' : undefined}>Applications</ConsoleLink><ConsoleLink href="/dashboard/local-setup" navigate={navigate} aria-current={path === '/dashboard/local-setup' ? 'page' : undefined}>Local setup</ConsoleLink></div>
+      <div className="nav-group"><p className="nav-label">ACCESS</p><ConsoleLink href="/dashboard/model-connections" navigate={navigate} aria-current={path === '/dashboard/model-connections' ? 'page' : undefined}>Model connections</ConsoleLink><ConsoleLink href="/dashboard/credentials" navigate={navigate} aria-current={path === '/dashboard/credentials' ? 'page' : undefined}>Deployment credentials</ConsoleLink><ConsoleLink href="/dashboard/device" navigate={navigate} aria-current={path === '/dashboard/device' ? 'page' : undefined}>Authorize tool</ConsoleLink></div>
       <div className="nav-group"><p className="nav-label">ACCOUNT</p><ConsoleLink href="/dashboard/profile" navigate={navigate} aria-current={path === '/dashboard/profile' ? 'page' : undefined}>Profile settings</ConsoleLink></div>
     </nav>
     <div className="account"><p className="eyebrow">{owner.authMode === 'dev' ? 'LOCAL DEVELOPMENT' : 'SIGNED IN'}</p><div className="account-person"><span className="account-avatar" aria-hidden="true"><span>{(username || owner.ownerId).slice(0, 1).toUpperCase()}</span>{owner.avatarUrl && !avatarFailed && <img src={owner.avatarUrl} alt="" onError={() => setAvatarFailed(true)} referrerPolicy="no-referrer" />}</span><span className="account-username" title={username || owner.ownerId}>{username || `${owner.ownerId.slice(0, 8)}…`}</span></div><button disabled={busy} onClick={() => { void logout(); }}>{busy ? 'Signing out…' : 'Sign out'}</button></div>
   </header><main id="content" tabIndex={-1} className="content">{error && <Feedback error>{error}</Feedback>}
-    {path === '/dashboard/credentials' ? <Credentials /> : path === '/dashboard/device' ? <Device key={route} /> : path === '/dashboard/profile' ? <ProfilePage owner={owner} onNameChange={setUsername} /> : /^[a-f0-9]{32}$/.test(id) ? <ApplicationPage key={id} id={id} navigate={navigate} /> : path === '/dashboard' || path === '/dashboard/applications' ? <Applications navigate={navigate} /> : <><h1>Page not found</h1><ConsoleLink href="/dashboard" navigate={navigate}>Return to applications</ConsoleLink></>}
+    {path === '/dashboard/model-connections' ? <ModelConnections /> : path === '/dashboard/credentials' ? <Credentials /> : path === '/dashboard/local-setup' ? <LocalSetup /> : path === '/dashboard/device' ? <Device key={route} /> : path === '/dashboard/profile' ? <ProfilePage owner={owner} onNameChange={setUsername} /> : /^[a-f0-9]{32}$/.test(id) ? <ApplicationPage key={id} id={id} navigate={navigate} /> : path === '/dashboard' || path === '/dashboard/applications' ? <Applications navigate={navigate} /> : <><h1>Page not found</h1><ConsoleLink href="/dashboard" navigate={navigate}>Return to applications</ConsoleLink></>}
   </main></div>;
 }
 export function App() {

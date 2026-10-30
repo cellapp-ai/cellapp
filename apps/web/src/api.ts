@@ -4,6 +4,12 @@ export type Application = { id: string; name: string; namespace: string; slug: s
 export type Release = { id: string; status: string; createdAt: string; publishedAt: string | null; spa: boolean; fileCount: number; bytes: number };
 export type ApplicationDetail = Application & { release: Release | null };
 export type Credential = { id: string; createdAt: string; expiresAt: string };
+export type ModelCapability = { supported: boolean; error?: string };
+export type ModelCapabilities = { text: ModelCapability; stream: ModelCapability; tools: ModelCapability };
+export type ModelConnection = { id: string; name: string; apiBase: string; modelId: string; capabilities: ModelCapabilities | null; createdAt: string; updatedAt: string };
+export type ModelGrant = { appId: string; appName: string; connectionId: string; connectionName: string; grantedAt: string };
+export type ModelUsage = { appId: string; connectionId: string; requests: number; succeeded: number; failed: number; cancelled: number; unknownUsage: number; inputTokens: number; outputTokens: number };
+export type PersonalModel = {id: string; name: string; provider: string};
 export type Access = { requests: { userId: string; status: 'pending' | 'approved' | 'denied'; requestedAt: string }[]; grants: { userId: string; source: string; grantedAt: string }[] };
 export type AnonymousSettings = { pages: boolean; read: boolean; write: boolean; operatorWritesEnabled: boolean; effectiveWrite: boolean };
 export type DataStatus = { state: string; version: number; digest: string };
@@ -171,6 +177,47 @@ export function detail(value: unknown): ApplicationDetail {
 export function credential(value: unknown): Credential {
   const data = record(value);
   return { id: identifier(data.id), createdAt: date(data.createdAt), expiresAt: date(data.expiresAt) };
+}
+export function modelCapabilities(value: unknown): ModelCapabilities {
+  const data = record(value);
+  const capability = (value: unknown): ModelCapability => {
+    const item = record(value);
+    const supported = boolean(item.supported);
+    const error = item.error === undefined ? undefined : text(item.error);
+    if (supported && error) throw new Error('Unexpected model test response.');
+    return { supported, ...(error ? { error } : {}) };
+  };
+  return { text: capability(data.text), stream: capability(data.stream), tools: capability(data.tools) };
+}
+export function modelConnection(value: unknown): ModelConnection {
+  const data = record(value);
+  const base = text(data.apiBase);
+  const address = new URL(base);
+  if (address.protocol !== 'https:' || address.username || address.password || address.search || address.hash) throw new Error('Unexpected model address.');
+  const capabilities = record(data.capabilities);
+  return { id: identifier(data.id), name: text(data.name), apiBase: base, modelId: text(data.modelId),
+    capabilities: Object.keys(capabilities).length === 0 ? null : modelCapabilities(capabilities), createdAt: date(data.createdAt), updatedAt: date(data.updatedAt) };
+}
+export function modelGrant(value: unknown): ModelGrant {
+  const data = record(value);
+  return { appId: identifier(data.appId), appName: text(data.appName), connectionId: identifier(data.connectionId),
+    connectionName: text(data.connectionName), grantedAt: date(data.grantedAt) };
+}
+export function modelUsage(value: unknown): ModelUsage {
+  const data = record(value);
+  return { appId: identifier(data.appId), connectionId: identifier(data.connectionId), requests: number(data.requests),
+    succeeded: number(data.succeeded), failed: number(data.failed), cancelled: number(data.cancelled),
+    unknownUsage: number(data.unknownUsage), inputTokens: number(data.inputTokens), outputTokens: number(data.outputTokens) };
+}
+export function personalModels(value: unknown): PersonalModel[] {
+  const data = record(value);
+  if (data.object !== 'list' || !Array.isArray(data.data)) throw new Error('Unexpected model list.');
+  return data.data.map(value => {
+    const model = record(value);
+    const id = text(model.id);
+    if (!/^cellapp:[a-f0-9]{32}:.{1,256}$/.test(id)) throw new Error('Unexpected model ID.');
+    return {id, name: id.split(':').slice(2).join(':'), provider: text(model.owned_by)};
+  });
 }
 export function list<T>(parse: (value: unknown) => T): (value: unknown) => T[] {
   return (value) => {

@@ -2,7 +2,9 @@
 
 [简体中文](./api-versions.zh-CN.md) · [Version changelog](./api-changelog.md)
 
-Cellapp's application runtime API covers `/_cellapp/me` and the supported table operations under `/_cellapp/db/{table}`. It is separate from the SDK package version, the `/_cellapp/db` route, and the `cellapp.data.json` table-manifest version.
+Cellapp's application runtime API covers `/_cellapp/me`, the supported table operations under `/_cellapp/db/{table}`, and OpenAI-shaped model listing and Chat Completions under `/_cellapp/v1` in contract 1.2. It is separate from the SDK package version, the `/_cellapp/db` route, and the `cellapp.data.json` table-manifest version.
+
+The model SDK requires contract `1.2 = 261027`; a page fixed to `1.1` cannot acquire model access by updating its SDK package alone. Model HTTP routes use their fixed `/v1` base and do not need an extra `v` query parameter. The SDK still includes `v` on identity and table requests.
 
 ## Selecting a contract
 

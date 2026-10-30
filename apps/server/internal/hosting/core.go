@@ -68,6 +68,16 @@ func errorResponse(w http.ResponseWriter, e error) {
 	jsonResponse(w, api.Status, map[string]any{"error": api.Code, "message": api.Message, "details": api.Details})
 }
 
+func modelErrorResponse(w http.ResponseWriter, e error) {
+	var api *APIError
+	if !errors.As(e, &api) {
+		api = &APIError{Status: 500, Code: "internal_error", Message: "Request could not be completed"}
+	}
+	jsonResponse(w, api.Status, map[string]any{"error": map[string]any{
+		"message": api.Message, "type": api.Code, "param": nil, "code": api.Code, "details": api.Details,
+	}})
+}
+
 type Entry struct {
 	Path   string `json:"path"`
 	Size   int64  `json:"size"`

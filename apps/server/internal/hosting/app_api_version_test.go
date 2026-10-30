@@ -17,18 +17,24 @@ func TestAppAPIVersionAliases(t *testing.T) {
 			t.Fatalf("alias %q: %+v, %v", alias, got, err)
 		}
 	}
+	for _, alias := range []string{"1.2", "261027"} {
+		got, err := selectAppAPIContract(httptest.NewRequest("GET", "/_cellapp/me?v="+alias, nil))
+		if err != nil || got.Version != "1.2" {
+			t.Fatalf("alias %q: %+v, %v", alias, got, err)
+		}
+	}
 	got, err := selectAppAPIContract(httptest.NewRequest("GET", "/_cellapp/me", nil))
 	if err != nil || got.Version != appAPILatest {
 		t.Fatalf("latest: %+v, %v", got, err)
 	}
-	for _, query := range []string{"v=", "v=1.1&v=261022", "v=1.2", "v=261023", "v=261332", "v=1.1.261022"} {
+	for _, query := range []string{"v=", "v=1.1&v=261022", "v=1.3", "v=261023", "v=261332", "v=1.1.261022"} {
 		_, err := selectAppAPIContract(httptest.NewRequest("GET", "/_cellapp/me?"+query, nil))
 		api, ok := err.(*APIError)
 		if !ok || api.Code != "unsupported_api_version" {
 			t.Fatalf("query %q: %v", query, err)
 		}
 	}
-	retired := []appAPIContract{{Version: "1.1", Date: "261022", Status: "retired"}, {Version: "1.2", Date: "261023", Status: "supported"}}
+	retired := []appAPIContract{{Version: "1.1", Date: "261022", Status: "retired"}, {Version: "1.2", Date: "261027", Status: "supported"}}
 	for _, alias := range []string{"1.1", "261022"} {
 		_, err := selectAppAPIContractFrom(httptest.NewRequest("GET", "/_cellapp/me?v="+alias, nil), retired, "1.2")
 		api, ok := err.(*APIError)
@@ -42,7 +48,7 @@ func TestAppAPIVersionRegistryValidation(t *testing.T) {
 	base := appAPIContract{Version: "1.1", Date: "261022", Status: "supported"}
 	for _, contracts := range [][]appAPIContract{
 		{base, {Version: "1.2", Date: "261022", Status: "supported"}},
-		{base, {Version: "1.2", Date: "261023", Status: "supported"}},
+		{base, {Version: "1.3", Date: "261023", Status: "supported"}},
 		{base, {Version: "1.1", Date: "261023", Status: "supported"}},
 		{{Version: "1.1", Date: "261332", Status: "supported"}},
 		{{Version: "1.1", Date: "261022", Status: "retired"}},
