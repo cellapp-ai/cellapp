@@ -296,6 +296,7 @@ def release(c):
                         if item.get("revisionName") and item.get("percent", 0) > 0]
     deployed = gcloud("service deploy", "run", "deploy", c["service"], f"--image={image}",
                       "--ingress=" + ("all" if c.get("cloudflare_edge") else "internal-and-cloud-load-balancing"), "--port=8080", "--allow-unauthenticated",
+                      "--no-cpu-throttling", "--min=1",
                       "--startup-probe=httpGet.path=/health,httpGet.port=8080,periodSeconds=5,timeoutSeconds=5,failureThreshold=24",
                       *(["--no-traffic"] if exists else []), *flags, json_output=True)
     revision = deployed.get("status", {}).get("latestCreatedRevisionName")

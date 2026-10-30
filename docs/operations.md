@@ -104,7 +104,7 @@ docker compose -f infra/compose.yaml exec -T postgres psql -U cellapp_rename_adm
 - 已迁移或新建的 PostgreSQL、私有 S3 Bucket 和 HTTPS S3 Endpoint；运行身份能访问它们。应用数据使用独立数据库，按[应用数据运维说明](app-data-operations.md#生产准备)初始化，并为 provisioner 和 PostgREST authenticator 设置不同的生产密码。Secret Manager 中保存 `SECRET`、`DATABASE_URL`、`APP_DATA_DATABASE_URL`、`PGRST_DB_URI`、应用数据 JWT、GitHub OAuth secret 和 S3 凭证；服务账号仅获所需 Secret 的读取权限。秘密值不写入配置 JSON、镜像或构建参数。
 - GitHub OAuth App 的 callback URL 精确等于 `${CONTROL_ORIGIN}/auth/callback`。`CONTROL_ORIGIN` 为 HTTPS 控制域，`APPS_DOMAIN` 为另一个注册域的访客基域，生产 `APP_PORT` 为空。
 - 已配置的 HTTPS 入口：Google 全局外部负载均衡及控制域/访客通配证书，或上文的 Cloudflare Worker、代理 DNS 与专用回源密钥。Cloud Run 原生域名映射不支持所需通配证书；默认 `run.app` 地址不作为产品入口。
-- 已启用的 Cloud Scheduler HTTP job，名称和区域见配置文件，目标为 `https://run.googleapis.com/v2/projects/PROJECT/locations/REGION/jobs/SERVICE-cleanup:run`，用具备 Cloud Run job 执行权限的身份调用。Cloud Run 会缩到零，服务内每分钟清理仅作补充；定时 job 是生产清理入口。
+- 已启用的 Cloud Scheduler HTTP job，名称和区域见配置文件，目标为 `https://run.googleapis.com/v2/projects/PROJECT/locations/REGION/jobs/SERVICE-cleanup:run`，用具备 Cloud Run job 执行权限的身份调用。服务保持至少一个实例并持续分配 CPU，使同容器的 PostgREST 能在请求间处理 PostgreSQL schema 重载通知；这会产生持续的实例费用。定时 job 仍是生产清理入口。
 
 复制 [非秘密配置示例](../infra/cloudrun.example.json) 到 `infra/cloudrun.json` 并填写实际资源名称、生产额度/保留期限及 Secret Manager `name:version` 引用；上线前按预算核定额度，生产缺少任一项会拒绝启动。该本地文件已从 Git、Docker 和 Cloud Build 上传上下文排除。当前环境还必须填入上文的 `cloudflare_edge`；脚本发现已有服务使用公开 ingress 但配置缺少此项时，会在构建前拒绝发布，防止旧本地配置将入口改回已删除的负载均衡。Cloud Run 镜像内的 PostgREST 只监听 `127.0.0.1:3001`；`APP_DATA_JWT_SECRET` 与 `PGRST_JWT_SECRET` 必须引用同一 Secret 版本，且不得与平台 `SECRET` 相同。使用具备 Cloud Build、Artifact Registry、Cloud Run、Secret Manager、Cloud Scheduler 和相关资源读取/部署权限的 gcloud 身份，并使用支持 `gcloud run jobs deploy` 的新版 Google Cloud CLI。运行：
 
@@ -116,7 +116,7 @@ Google Cloud Storage 可通过 XML API 与现有 S3 客户端兼容：`s3_endpoi
 python3 scripts/deploy-cloud-run.py --config infra/cloudrun.json
 ```
 
-脚本以提交 SHA 和时间标记镜像；未提交源码会提示，生产建议在干净 Git 检出上运行。构建完成后记录不可变 digest 作为实际交付标识。它先更新并执行 `SERVICE-migrate` job，成功后更新 `SERVICE-cleanup` job，再以不接流量方式部署服务 revision。Cloudflare 模式会给候选修订版本加 0% 流量标签，确认公开 `/health` 和 Cloud Run 实际健康状态后切流量；两种模式都用 HTTPS 检查控制域 `/dashboard/login` 和无效访客子域的路由。失败时脚本会标记部署未完成；查看对应 Cloud Build、Cloud Run job execution 和 revision，排除原因后重试。迁移成功但后续失败时数据库可能已升级，不应回滚数据库或删除对象；数据库变更必须保持与上一服务版本兼容。
+脚本以提交 SHA 和时间标记镜像；未提交源码会提示，生产建议在干净 Git 检出上运行。构建完成后记录不可变 digest 作为实际交付标识。它先更新并执行 `SERVICE-migrate` job，成功后更新 `SERVICE-cleanup` job，再以不接流量方式部署服务 revision。服务 revision 使用持续 CPU 与至少一个常驻实例，以维持 PostgREST 的 PostgreSQL 通知监听；迁移和清理 job 不采用服务实例设置。Cloudflare 模式会给候选修订版本加 0% 流量标签，确认公开 `/health` 和 Cloud Run 实际健康状态后切流量；两种模式都用 HTTPS 检查控制域 `/dashboard/login` 和无效访客子域的路由。失败时脚本会标记部署未完成；查看对应 Cloud Build、Cloud Run job execution 和 revision，排除原因后重试。迁移成功但后续失败时数据库可能已升级，不应回滚数据库或删除对象；数据库变更必须保持与上一服务版本兼容。
 
 切流量前记下旧 revision。若新 revision 上线后验收失败，将服务流量切回旧 revision（替换示例值），保留数据库、对象和 Secret：
 
